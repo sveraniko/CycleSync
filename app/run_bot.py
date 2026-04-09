@@ -3,11 +3,13 @@ import asyncio
 import structlog
 from aiogram import Bot, Dispatcher
 
+from app.application.protocols import DraftApplicationService
 from app.application.search import SearchApplicationService
 from app.bots.router import get_root_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.infrastructure.bootstrap import close_infrastructure, init_infrastructure
+from app.infrastructure.protocols import SqlAlchemyDraftRepository
 from app.infrastructure.search import SqlAlchemySearchRepository
 
 
@@ -28,6 +30,8 @@ async def run_bot() -> None:
     )
     search_repository = SqlAlchemySearchRepository(infra.db_session_factory)
     search_service = SearchApplicationService(repository=search_repository, gateway=infra.search_gateway)
+    draft_repository = SqlAlchemyDraftRepository(infra.db_session_factory)
+    draft_service = DraftApplicationService(repository=draft_repository)
 
     bot = Bot(token=settings.bot_token)
     dispatcher = Dispatcher()
@@ -35,7 +39,7 @@ async def run_bot() -> None:
 
     logger.info("bot_startup", env=settings.app_env)
     try:
-        await dispatcher.start_polling(bot, search_service=search_service)
+        await dispatcher.start_polling(bot, search_service=search_service, draft_service=draft_service)
     finally:
         await bot.session.close()
         await close_infrastructure(infra)
