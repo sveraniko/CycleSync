@@ -9,6 +9,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      meilisearch:
+        condition: service_started
     ports:
       - "8000:8000"
 
@@ -22,6 +24,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      meilisearch:
+        condition: service_started
 
   postgres:
     image: postgres:16-alpine
@@ -48,6 +52,15 @@ services:
       retries: 10
     ports:
       - "6379:6379"
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.13
+    environment:
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_ENV: development
+      MEILI_MASTER_KEY: ${MEILISEARCH_API_KEY:-}
+    ports:
+      - "7700:7700"
 
 volumes:
   pg_data:
