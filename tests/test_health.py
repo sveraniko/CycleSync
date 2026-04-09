@@ -10,10 +10,12 @@ def test_live() -> None:
     assert response.json()["status"] == "ok"
 
 
-def test_diagnostics() -> None:
+def test_diagnostics_shape() -> None:
     with TestClient(app) as client:
         response = client.get("/health/diagnostics")
     assert response.status_code == 200
     payload = response.json()
     assert "readiness" in payload
-    assert "app_name" in payload
+    assert "dependencies" in payload
+    assert "postgres" in payload["dependencies"]
+    assert "redis" in payload["dependencies"]

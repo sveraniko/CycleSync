@@ -1,1 +1,5 @@
-"""Domain layer package (reserved for PR2+)."""
+"""Domain package."""
+
+from app.domain import models
+
+__all__ = ["models"]

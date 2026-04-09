@@ -17,16 +17,18 @@ async def live() -> dict[str, str]:
 async def ready(request: Request) -> dict[str, object]:
     infra = request.app.state.infra
 
-    db_ok = await db_healthcheck(infra.db_engine)
-    redis_ok = await redis_healthcheck(infra.redis)
+    postgres = await db_healthcheck(infra.db_engine)
+    redis = await redis_healthcheck(infra.redis)
 
-    overall = "ok" if db_ok and redis_ok else "degraded"
+    overall_ok = postgres["ok"] and redis["ok"]
+    checks = {
+        "postgres": postgres,
+        "redis": redis,
+    }
+
     return {
-        "status": overall,
-        "checks": {
-            "postgres": "ok" if db_ok else "error",
-            "redis": "ok" if redis_ok else "error",
-        },
+        "status": "ok" if overall_ok else "degraded",
+        "checks": checks,
     }
 
 
@@ -39,5 +41,9 @@ async def diagnostics(request: Request) -> dict[str, object]:
         "env": settings.app_env,
         "timezone": settings.timezone_default,
         "timestamp_utc": datetime.now(UTC).isoformat(),
-        "readiness": ready_payload,
+        "dependencies": ready_payload["checks"],
+        "readiness": {
+            "status": ready_payload["status"],
+            "ok": ready_payload["status"] == "ok",
+        },
     }
