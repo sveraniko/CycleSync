@@ -13,6 +13,11 @@ from app.application.protocols.schemas import (
     DraftSettingsInput,
     DraftSettingsView,
     DraftView,
+    PulseIngredientProfile,
+    PulsePlanEntry,
+    PulsePlanPreviewPersistPayload,
+    PulsePlanPreviewView,
+    PulseProductProfile,
 )
 from app.domain.models import (
     Brand,
@@ -22,6 +27,9 @@ from app.domain.models import (
     ProtocolDraft,
     ProtocolDraftItem,
     ProtocolDraftSettings,
+    PulseCalculationRun,
+    PulsePlanPreview,
+    PulsePlanPreviewEntry,
 )
 
 
@@ -233,6 +241,103 @@ class SqlAlchemyDraftRepository:
                 if half_life is not None:
                     grouped[product_id].has_half_life = True
             return list(grouped.values())
+
+    async def list_pulse_product_profiles(self, draft_id: UUID) -> list[PulseProductProfile]:
+        async with self.session_factory() as session:
+            rows = await session.execute(
+                select(
+                    CompoundProduct.id,
+                    CompoundProduct.display_name,
+                    CompoundProduct.concentration_value,
+                    CompoundProduct.max_injection_volume_ml,
+                    CompoundIngredient.ingredient_name,
+                    CompoundIngredient.half_life_days,
+                    CompoundIngredient.amount,
+                    CompoundIngredient.is_pulse_driver,
+                )
+                .join(ProtocolDraftItem, ProtocolDraftItem.product_id == CompoundProduct.id)
+                .outerjoin(CompoundIngredient, CompoundIngredient.product_id == CompoundProduct.id)
+                .where(ProtocolDraftItem.draft_id == draft_id)
+                .order_by(CompoundProduct.display_name, CompoundIngredient.sort_order)
+            )
+            grouped: dict[UUID, PulseProductProfile] = {}
+            for row in rows:
+                if row[0] not in grouped:
+                    grouped[row[0]] = PulseProductProfile(
+                        product_id=row[0],
+                        product_name=row[1],
+                        concentration_mg_ml=row[2],
+                        max_injection_volume_ml=row[3],
+                        ingredients=[],
+                    )
+                if row[4]:
+                    grouped[row[0]].ingredients.append(
+                        PulseIngredientProfile(
+                            ingredient_name=row[4],
+                            half_life_days=row[5],
+                            amount_mg=row[6],
+                            is_pulse_driver=row[7],
+                        )
+                    )
+            return list(grouped.values())
+
+    async def create_pulse_plan_preview(self, payload: PulsePlanPreviewPersistPayload) -> PulsePlanPreviewView:
+        async with self.session_factory() as session:
+            run = PulseCalculationRun(
+                draft_id=payload.draft_id,
+                preset_requested=payload.preset_requested,
+                preset_applied=payload.preset_applied,
+                status=payload.status,
+                degraded_fallback=payload.degraded_fallback,
+                settings_snapshot_json=payload.settings_snapshot,
+                summary_metrics_json=payload.summary_metrics,
+                warning_flags_json=payload.warning_flags,
+                error_message=payload.error_message,
+            )
+            session.add(run)
+            await session.flush()
+
+            preview = PulsePlanPreview(
+                draft_id=payload.draft_id,
+                calculation_run_id=run.id,
+                preset_requested=payload.preset_requested,
+                preset_applied=payload.preset_applied,
+                status=payload.status,
+                degraded_fallback=payload.degraded_fallback,
+                settings_snapshot_json=payload.settings_snapshot,
+                summary_metrics_json=payload.summary_metrics,
+                warning_flags_json=payload.warning_flags,
+            )
+            session.add(preview)
+            await session.flush()
+
+            for entry in payload.entries:
+                session.add(
+                    PulsePlanPreviewEntry(
+                        preview_id=preview.id,
+                        day_offset=entry.day_offset,
+                        scheduled_day=entry.scheduled_day,
+                        product_id=entry.product_id,
+                        ingredient_context=entry.ingredient_context,
+                        volume_ml=entry.volume_ml,
+                        computed_mg=entry.computed_mg,
+                        injection_event_key=entry.injection_event_key,
+                        sequence_no=entry.sequence_no,
+                    )
+                )
+            await session.commit()
+
+            return PulsePlanPreviewView(
+                preview_id=preview.id,
+                draft_id=payload.draft_id,
+                preset_requested=payload.preset_requested,
+                preset_applied=payload.preset_applied,
+                status=payload.status,
+                degraded_fallback=payload.degraded_fallback,
+                summary_metrics=payload.summary_metrics,
+                warning_flags=payload.warning_flags,
+                entries=payload.entries,
+            )
 
     async def _fetch_active_draft(self, session, user_id: str) -> ProtocolDraft | None:
         return await session.scalar(

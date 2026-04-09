@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
+from app.application.protocols.pulse_engine import PulseCalculationEngine
 from app.application.protocols.repository import DraftRepository
 from app.application.protocols.schemas import (
     AddProductToDraftResult,
@@ -8,6 +9,8 @@ from app.application.protocols.schemas import (
     DraftSettingsInput,
     DraftSettingsView,
     DraftView,
+    PulsePlanPreviewPersistPayload,
+    PulsePlanPreviewView,
 )
 
 
@@ -17,9 +20,15 @@ class DraftReadinessValidator:
 
 
 class DraftApplicationService:
-    def __init__(self, repository: DraftRepository, readiness_validator: DraftReadinessValidator | None = None) -> None:
+    def __init__(
+        self,
+        repository: DraftRepository,
+        readiness_validator: DraftReadinessValidator | None = None,
+        pulse_engine: PulseCalculationEngine | None = None,
+    ) -> None:
         self.repository = repository
         self.readiness_validator = readiness_validator
+        self.pulse_engine = pulse_engine
 
     async def get_or_create_active_draft(self, user_id: str) -> DraftView:
         draft, created = await self.repository.get_or_create_active_draft(user_id)
@@ -119,3 +128,67 @@ class DraftApplicationService:
             raise RuntimeError("readiness validator is not configured")
         draft = await self.get_or_create_active_draft(user_id)
         return await self.readiness_validator.validate(draft)
+
+    async def generate_pulse_plan_preview(self, user_id: str) -> PulsePlanPreviewView:
+        if self.pulse_engine is None:
+            raise RuntimeError("pulse engine is not configured")
+
+        draft = await self.get_or_create_active_draft(user_id)
+        settings = await self.repository.get_draft_settings(draft.draft_id)
+        products = await self.repository.list_pulse_product_profiles(draft.draft_id)
+
+        await self.repository.enqueue_event(
+            event_type="pulse_calculation_started",
+            aggregate_type="protocol_draft",
+            aggregate_id=draft.draft_id,
+            payload={"user_id": user_id},
+        )
+
+        result = self.pulse_engine.calculate(settings=settings, products=products)
+        payload = PulsePlanPreviewPersistPayload(
+            draft_id=draft.draft_id,
+            preset_requested=result.preset_requested,
+            preset_applied=result.preset_applied,
+            status=result.status,
+            degraded_fallback=result.degraded_fallback,
+            settings_snapshot={
+                "weekly_target_total_mg": str(settings.weekly_target_total_mg) if settings else None,
+                "duration_weeks": settings.duration_weeks if settings else None,
+                "preset_code": settings.preset_code if settings else None,
+                "max_injection_volume_ml": str(settings.max_injection_volume_ml) if settings else None,
+                "max_injections_per_week": settings.max_injections_per_week if settings else None,
+                "planned_start_date": settings.planned_start_date.isoformat() if settings and settings.planned_start_date else None,
+            },
+            summary_metrics=result.summary_metrics,
+            warning_flags=result.warning_flags,
+            entries=result.entries,
+            error_message=result.error_message,
+        )
+        preview = await self.repository.create_pulse_plan_preview(payload)
+
+        if preview.status == "failed_validation":
+            await self.repository.enqueue_event(
+                event_type="pulse_plan_preview_failed",
+                aggregate_type="pulse_plan_preview",
+                aggregate_id=preview.preview_id,
+                payload={
+                    "user_id": user_id,
+                    "draft_id": str(draft.draft_id),
+                    "validation_issues": result.validation_issues,
+                },
+            )
+        else:
+            await self.repository.enqueue_event(
+                event_type="pulse_plan_preview_generated",
+                aggregate_type="pulse_plan_preview",
+                aggregate_id=preview.preview_id,
+                payload={"user_id": user_id, "draft_id": str(draft.draft_id), "status": preview.status},
+            )
+            await self.repository.enqueue_event(
+                event_type="pulse_plan_preview_regenerated",
+                aggregate_type="pulse_plan_preview",
+                aggregate_id=preview.preview_id,
+                payload={"user_id": user_id, "draft_id": str(draft.draft_id)},
+            )
+
+        return preview

@@ -8,7 +8,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.types.callback_query import CallbackQuery
 
 from app.application.protocols import DraftApplicationService
-from app.application.protocols.schemas import DraftSettingsInput, DraftView
+from app.application.protocols.schemas import DraftSettingsInput, DraftView, PulsePlanPreviewView
 
 router = Router(name="draft")
 
@@ -16,6 +16,13 @@ PRESET_LABELS = {
     "unified_rhythm": "Unified Rhythm",
     "layered_pulse": "Layered Pulse",
     "golden_pulse": "Golden Pulse / Conveyor",
+}
+
+STATUS_LABELS = {
+    "success": "✅ success",
+    "success_with_warnings": "⚠️ success_with_warnings",
+    "degraded_fallback": "⚠️ degraded_fallback",
+    "failed_validation": "❌ failed_validation",
 }
 
 
@@ -131,6 +138,14 @@ async def on_continue_to_calculation(
     await callback.answer()
 
 
+@router.callback_query(F.data == "draft:calculate:run")
+async def on_run_pulse_calculation(callback: CallbackQuery, draft_service: DraftApplicationService) -> None:
+    user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+    preview = await draft_service.generate_pulse_plan_preview(user_id)
+    await callback.message.answer(_render_preview_summary(preview), reply_markup=build_preview_actions())
+    await callback.answer()
+
+
 @router.message(CalculationInputState.weekly_target_total_mg)
 async def on_weekly_target_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
     value = _parse_decimal(message.text)
@@ -198,7 +213,7 @@ async def on_max_injections_input(message: Message, state: FSMContext, draft_ser
     await _save_settings_patch(draft_service, user_id, max_injections_per_week=value)
     readiness = await draft_service.get_draft_readiness(user_id)
     await state.clear()
-    await message.answer(_render_readiness_summary(readiness), reply_markup=build_draft_shortcut())
+    await message.answer(_render_readiness_summary(readiness), reply_markup=build_readiness_actions())
 
 
 def build_draft_shortcut() -> InlineKeyboardMarkup:
@@ -212,6 +227,26 @@ def build_preset_actions() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text=label, callback_data=f"draft:calc:preset:{code}")]
             for code, label in PRESET_LABELS.items()
+        ]
+    )
+
+
+def build_readiness_actions() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Рассчитать preview pulse plan", callback_data="draft:calculate:run")],
+            [InlineKeyboardButton(text="Сменить preset", callback_data="draft:calculate")],
+            [InlineKeyboardButton(text="Draft", callback_data="draft:open")],
+        ]
+    )
+
+
+def build_preview_actions() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Пересчитать preview", callback_data="draft:calculate:run")],
+            [InlineKeyboardButton(text="Сменить preset", callback_data="draft:calculate")],
+            [InlineKeyboardButton(text="Activation (PR3 seam)", callback_data="draft:open")],
         ]
     )
 
@@ -261,11 +296,49 @@ def _render_readiness_summary(readiness) -> str:
     lines = [readiness.summary]
     if not readiness.issues:
         lines.append("✅ Все обязательные input-параметры заполнены.")
+        lines.append("Готово: можно запускать pulse plan preview.")
         return "\n".join(lines)
 
     for issue in readiness.issues:
         prefix = "❌" if issue.severity == "error" else "⚠️"
         lines.append(f"{prefix} {issue.message}")
+    return "\n".join(lines)
+
+
+def _render_preview_summary(preview: PulsePlanPreviewView) -> str:
+    lines = [
+        "Pulse Plan Preview",
+        f"Статус: {STATUS_LABELS.get(preview.status, preview.status)}",
+        f"Preset: {PRESET_LABELS.get(preview.preset_applied, preview.preset_applied)}",
+    ]
+
+    if preview.degraded_fallback:
+        lines.append("⚠️ Golden Pulse деградирован в layered_pulse (deterministic fallback).")
+
+    if preview.summary_metrics:
+        lines.extend(
+            [
+                "\nSummary metrics:",
+                f"- flatness/stability: {preview.summary_metrics.get('flatness_stability_score')}",
+                f"- injections/week est: {preview.summary_metrics.get('estimated_injections_per_week')}",
+                f"- max volume/event ml: {preview.summary_metrics.get('max_volume_per_event_ml')}",
+            ]
+        )
+
+    if preview.warning_flags:
+        lines.append("\nWarnings:")
+        lines.extend(f"- {flag}" for flag in preview.warning_flags)
+
+    if preview.entries:
+        lines.append("\nSchedule preview (first 8):")
+        for entry in preview.entries[:8]:
+            lines.append(
+                f"- day+{entry.day_offset} | mg={entry.computed_mg} | ml={entry.volume_ml} | event={entry.injection_event_key}"
+            )
+        if len(preview.entries) > 8:
+            lines.append(f"… еще {len(preview.entries) - 8} entries")
+
+    lines.append("\nActivation пока не выполняется в PR2 (будет в PR3).")
     return "\n".join(lines)
 
 

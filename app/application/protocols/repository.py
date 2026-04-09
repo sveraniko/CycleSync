@@ -1,9 +1,17 @@
-from decimal import Decimal
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
-from app.application.protocols.schemas import AddProductToDraftResult, DraftSettingsInput, DraftSettingsView, DraftView
+from app.application.protocols.schemas import (
+    AddProductToDraftResult,
+    DraftSettingsInput,
+    DraftSettingsView,
+    DraftView,
+    PulsePlanPreviewPersistPayload,
+    PulsePlanPreviewView,
+    PulseProductProfile,
+)
 
 
 @dataclass(slots=True)
@@ -61,4 +69,10 @@ class DraftRepository:
         raise NotImplementedError
 
     async def list_calculation_products(self, draft_id: UUID) -> list[DraftCalculationProductInfo]:
+        raise NotImplementedError
+
+    async def list_pulse_product_profiles(self, draft_id: UUID) -> list[PulseProductProfile]:
+        raise NotImplementedError
+
+    async def create_pulse_plan_preview(self, payload: PulsePlanPreviewPersistPayload) -> PulsePlanPreviewView:
         raise NotImplementedError
