@@ -1,4 +1,4 @@
-.PHONY: up down logs api bot format lint test db-upgrade db-downgrade db-revision db-current db-reset-local
+.PHONY: up down logs api bot format lint test db-upgrade db-downgrade db-revision db-current db-reset-local catalog-ingest search-rebuild check-connectivity
 
 up:
 	docker compose up --build -d
@@ -14,6 +14,15 @@ api:
 
 bot:
 	python -m app.run_bot
+
+catalog-ingest:
+	python -m scripts.run_catalog_ingest
+
+search-rebuild:
+	python -m scripts.rebuild_search_projection
+
+check-connectivity:
+	python -m scripts.check_connectivity
 
 format:
 	python -m black app tests

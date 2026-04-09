@@ -17,7 +17,13 @@ async def run_catalog_ingest() -> None:
         logger.warning("catalog_ingest_disabled")
         return
 
-    infra = await init_infrastructure(postgres_dsn=settings.postgres_dsn, redis_dsn=settings.redis_dsn)
+    infra = await init_infrastructure(
+        postgres_dsn=settings.postgres_dsn,
+        redis_dsn=settings.redis_dsn,
+        meilisearch_url=settings.meilisearch_url,
+        meilisearch_api_key=settings.meilisearch_api_key,
+        meilisearch_index=settings.meilisearch_index,
+    )
     try:
         async with infra.db_session_factory() as session:
             repository = SqlAlchemyCatalogRepository(session=session)
