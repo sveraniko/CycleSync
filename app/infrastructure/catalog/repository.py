@@ -79,6 +79,10 @@ class SqlAlchemyCatalogRepository:
                 concentration_basis=product.concentration_basis,
                 official_url=product.official_url,
                 authenticity_notes=product.authenticity_notes,
+                max_injection_volume_ml=product.max_injection_volume_ml,
+                is_automatable=product.is_automatable,
+                pharmacology_notes=product.pharmacology_notes,
+                composition_basis_notes=product.composition_basis_notes,
                 source="google_sheets",
                 source_ref=product.source_row_key,
                 is_active=True,
@@ -91,6 +95,10 @@ class SqlAlchemyCatalogRepository:
             existing.trade_name = product.trade_name
             existing.official_url = product.official_url
             existing.authenticity_notes = product.authenticity_notes
+            existing.max_injection_volume_ml = product.max_injection_volume_ml
+            existing.is_automatable = product.is_automatable
+            existing.pharmacology_notes = product.pharmacology_notes
+            existing.composition_basis_notes = product.composition_basis_notes
             existing.concentration_value = product.concentration_value
             existing.concentration_unit = product.concentration_unit
             existing.concentration_basis = product.concentration_basis
@@ -127,6 +135,11 @@ class SqlAlchemyCatalogRepository:
                     amount=ingredient.amount,
                     unit=ingredient.unit,
                     basis=ingredient.basis,
+                    half_life_days=ingredient.half_life_days,
+                    dose_guidance_min_mg_week=ingredient.dose_guidance_min_mg_week,
+                    dose_guidance_max_mg_week=ingredient.dose_guidance_max_mg_week,
+                    dose_guidance_typical_mg_week=ingredient.dose_guidance_typical_mg_week,
+                    is_pulse_driver=ingredient.is_pulse_driver,
                     sort_order=index,
                     is_active=True,
                 )

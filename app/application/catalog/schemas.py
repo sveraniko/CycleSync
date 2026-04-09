@@ -9,6 +9,11 @@ class IngredientInput:
     amount: Decimal | None
     unit: str | None
     basis: str | None
+    half_life_days: Decimal | None
+    dose_guidance_min_mg_week: Decimal | None
+    dose_guidance_max_mg_week: Decimal | None
+    dose_guidance_typical_mg_week: Decimal | None
+    is_pulse_driver: bool | None
 
 
 @dataclass(slots=True)
@@ -24,6 +29,10 @@ class CatalogProductInput:
     concentration_basis: str | None
     official_url: str | None
     authenticity_notes: str | None
+    max_injection_volume_ml: Decimal | None
+    is_automatable: bool
+    pharmacology_notes: str | None
+    composition_basis_notes: str | None
     aliases: list[str]
     ingredients: list[IngredientInput]
     image_refs: list[str]

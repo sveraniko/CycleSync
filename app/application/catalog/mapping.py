@@ -1,5 +1,6 @@
 from app.application.catalog.normalization import (
     normalize_concentration,
+    parse_bool,
     normalize_text,
     parse_decimal,
     split_list_field,
@@ -8,16 +9,23 @@ from app.application.catalog.schemas import CatalogProductInput, IngredientInput
 
 
 def parse_ingredient_token(token: str) -> IngredientInput:
-    # name|qualifier|amount|unit|basis
+    # name|qualifier|amount|unit|basis|half_life_days|dose_min|dose_max|dose_typical|is_pulse_driver
     parts = [part.strip() for part in token.split("|")]
-    padded = parts + [""] * (5 - len(parts))
-    name, qualifier, amount_raw, unit, basis = padded[:5]
+    padded = parts + [""] * (10 - len(parts))
+    name, qualifier, amount_raw, unit, basis, half_life_raw, dose_min_raw, dose_max_raw, dose_typical_raw, pulse_raw = (
+        padded[:10]
+    )
     return IngredientInput(
         ingredient_name=normalize_text(name),
         qualifier=normalize_text(qualifier) if qualifier else None,
         amount=parse_decimal(amount_raw),
         unit=normalize_text(unit) if unit else None,
         basis=normalize_text(basis) if basis else None,
+        half_life_days=parse_decimal(half_life_raw),
+        dose_guidance_min_mg_week=parse_decimal(dose_min_raw),
+        dose_guidance_max_mg_week=parse_decimal(dose_max_raw),
+        dose_guidance_typical_mg_week=parse_decimal(dose_typical_raw),
+        is_pulse_driver=parse_bool(pulse_raw),
     )
 
 
@@ -50,6 +58,10 @@ def map_sheet_row(row: dict[str, str], row_number: int) -> tuple[CatalogProductI
         concentration_basis=concentration_basis,
         official_url=normalize_text(row.get("official_url", "")) or None,
         authenticity_notes=normalize_text(row.get("authenticity_notes", "")) or None,
+        max_injection_volume_ml=parse_decimal(row.get("max_injection_volume_ml")),
+        is_automatable=parse_bool(row.get("is_automatable")) is not False,
+        pharmacology_notes=normalize_text(row.get("pharmacology_notes", "")) or None,
+        composition_basis_notes=normalize_text(row.get("composition_basis_notes", "")) or None,
         aliases=split_list_field(row.get("aliases", "")),
         ingredients=ingredients,
         image_refs=split_list_field(row.get("image_refs", "")),

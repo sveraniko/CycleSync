@@ -1,4 +1,4 @@
-from app.bots.handlers.draft import build_draft_actions, build_draft_shortcut
+from app.bots.handlers.draft import PRESET_LABELS, build_draft_actions, build_draft_shortcut, build_preset_actions
 from app.application.protocols.schemas import DraftItemView, DraftView
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -44,3 +44,15 @@ def test_build_draft_actions_contains_remove_clear_and_calculation() -> None:
     assert "К расчету" in labels
     assert "draft:clear:confirm" in callbacks
     assert "draft:calculate" in callbacks
+
+
+def test_build_preset_actions_contains_all_presets() -> None:
+    keyboard = build_preset_actions()
+    callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+
+    assert len(callbacks) == 3
+    assert "draft:calc:preset:unified_rhythm" in callbacks
+    assert "draft:calc:preset:layered_pulse" in callbacks
+    assert "draft:calc:preset:golden_pulse" in callbacks
+    assert set(labels) == set(PRESET_LABELS.values())

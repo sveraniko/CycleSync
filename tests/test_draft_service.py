@@ -1,10 +1,13 @@
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from app.application.protocols.draft_service import DraftApplicationService
-from app.application.protocols.schemas import AddProductToDraftResult, DraftItemView, DraftView
+from app.application.protocols.readiness import ProtocolDraftReadinessService
+from app.application.protocols.repository import DraftCalculationProductInfo
+from app.application.protocols.schemas import AddProductToDraftResult, DraftItemView, DraftSettingsInput, DraftSettingsView, DraftView
 
 
 @dataclass
@@ -21,6 +24,8 @@ class FakeDraftRepository:
         self.draft_id = uuid4()
         self.items: list[DraftItemView] = []
         self.events: list[EventRecord] = []
+        self.settings: DraftSettingsView | None = None
+        self.calculation_products: list[DraftCalculationProductInfo] = []
 
     async def get_or_create_active_draft(self, user_id: str):
         created = not hasattr(self, "_created")
@@ -67,6 +72,26 @@ class FakeDraftRepository:
                 payload=payload,
             )
         )
+
+    async def upsert_draft_settings(self, draft_id: UUID, settings: DraftSettingsInput) -> DraftSettingsView:
+        now = datetime.now(timezone.utc)
+        self.settings = DraftSettingsView(
+            draft_id=draft_id,
+            weekly_target_total_mg=settings.weekly_target_total_mg,
+            duration_weeks=settings.duration_weeks,
+            preset_code=settings.preset_code,
+            max_injection_volume_ml=settings.max_injection_volume_ml,
+            max_injections_per_week=settings.max_injections_per_week,
+            planned_start_date=settings.planned_start_date,
+            updated_at=now,
+        )
+        return self.settings
+
+    async def get_draft_settings(self, draft_id: UUID) -> DraftSettingsView | None:
+        return self.settings
+
+    async def list_calculation_products(self, draft_id: UUID) -> list[DraftCalculationProductInfo]:
+        return self.calculation_products
 
     def _build_draft(self, user_id: str) -> DraftView:
         now = datetime.now(timezone.utc)
@@ -125,3 +150,41 @@ def test_draft_service_add_duplicate_is_idempotent() -> None:
 
     draft_item_added_events = [e for e in repo.events if e.event_type == "draft_item_added"]
     assert len(draft_item_added_events) == 1
+
+
+def test_draft_settings_persistence_and_readiness() -> None:
+    repo = FakeDraftRepository()
+    repo.calculation_products = [
+        DraftCalculationProductInfo(
+            product_id=uuid4(),
+            product_name="Test Product",
+            is_automatable=True,
+            max_injection_volume_ml=Decimal("2.0"),
+            ingredient_names=["Testosterone Enanthate"],
+            has_half_life=True,
+        )
+    ]
+    readiness = ProtocolDraftReadinessService(repository=repo)
+    service = DraftApplicationService(repository=repo, readiness_validator=readiness)
+
+    asyncio.run(service.add_product_to_draft("u1", uuid4()))
+    saved = asyncio.run(
+        service.save_draft_settings(
+            "u1",
+            DraftSettingsInput(
+                weekly_target_total_mg=Decimal("350"),
+                duration_weeks=12,
+                preset_code="unified_rhythm",
+                max_injection_volume_ml=Decimal("2.5"),
+                max_injections_per_week=3,
+            ),
+        )
+    )
+    assert saved.weekly_target_total_mg == Decimal("350")
+    loaded = asyncio.run(service.get_draft_settings("u1"))
+    assert loaded is not None
+    assert loaded.preset_code == "unified_rhythm"
+
+    readiness_result = asyncio.run(service.get_draft_readiness("u1"))
+    assert readiness_result.ready is True
+    assert readiness_result.issues == []
