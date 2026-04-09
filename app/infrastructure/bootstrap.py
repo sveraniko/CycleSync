@@ -26,5 +26,5 @@ async def init_infrastructure(postgres_dsn: str, redis_dsn: str) -> Infrastructu
 
 
 async def close_infrastructure(infra: Infrastructure) -> None:
-    await infra.redis.close()
+    await infra.redis.aclose()
     await infra.db_engine.dispose()
