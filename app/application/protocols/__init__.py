@@ -1,3 +1,4 @@
 from app.application.protocols.draft_service import DraftApplicationService
+from app.application.protocols.readiness import ProtocolDraftReadinessService
 
-__all__ = ["DraftApplicationService"]
+__all__ = ["DraftApplicationService", "ProtocolDraftReadinessService"]

@@ -1,4 +1,7 @@
-from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint, text
+from datetime import date
+from decimal import Decimal
+
+from sqlalchemy import Date, ForeignKey, Index, Numeric, SmallInteger, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -51,5 +54,27 @@ class ProtocolDraftItem(SchemaTableMixin, BaseModel):
     __table_args__ = (
         UniqueConstraint("draft_id", "product_id", name="uq_protocol_draft_item_product"),
         Index("ix_protocol_draft_items_draft_id", "draft_id"),
+        {"schema": __schema_name__},
+    )
+
+
+class ProtocolDraftSettings(SchemaTableMixin, BaseModel):
+    __tablename__ = "protocol_draft_settings"
+    __schema_name__ = "protocols"
+
+    draft_id: Mapped[UUID] = mapped_column(
+        ForeignKey("protocols.protocol_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    weekly_target_total_mg: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    duration_weeks: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    preset_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    max_injection_volume_ml: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    max_injections_per_week: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    planned_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("draft_id", name="uq_protocol_draft_settings_draft_id"),
+        Index("ix_protocol_draft_settings_draft_id", "draft_id"),
         {"schema": __schema_name__},
     )

@@ -1,13 +1,28 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from app.application.protocols.repository import DraftProductInfo
-from app.application.protocols.schemas import AddProductToDraftResult, DraftItemView, DraftView
-from app.domain.models import Brand, CompoundProduct, OutboxEvent, ProtocolDraft, ProtocolDraftItem
+from app.application.protocols.repository import DraftCalculationProductInfo, DraftProductInfo
+from app.application.protocols.schemas import (
+    AddProductToDraftResult,
+    DraftItemView,
+    DraftSettingsInput,
+    DraftSettingsView,
+    DraftView,
+)
+from app.domain.models import (
+    Brand,
+    CompoundIngredient,
+    CompoundProduct,
+    OutboxEvent,
+    ProtocolDraft,
+    ProtocolDraftItem,
+    ProtocolDraftSettings,
+)
 
 
 class SqlAlchemyDraftRepository:
@@ -27,12 +42,16 @@ class SqlAlchemyDraftRepository:
             draft = await self._fetch_active_draft(session, user_id)
             if draft is None:  # pragma: no cover
                 raise RuntimeError("failed to load active draft after commit")
-            return self._to_draft_view(draft), created
+            settings = await self._get_settings(session, draft.id)
+            return self._to_draft_view(draft, settings), created
 
     async def get_active_draft(self, user_id: str) -> DraftView | None:
         async with self.session_factory() as session:
             draft = await self._fetch_active_draft(session, user_id)
-            return self._to_draft_view(draft) if draft else None
+            if draft is None:
+                return None
+            settings = await self._get_settings(session, draft.id)
+            return self._to_draft_view(draft, settings)
 
     async def add_product_to_draft(self, user_id: str, product_id: UUID) -> AddProductToDraftResult:
         async with self.session_factory() as session:
@@ -76,7 +95,12 @@ class SqlAlchemyDraftRepository:
             item = next((i for i in draft.items if i.product_id == product_id), None)
             if item is None:  # pragma: no cover
                 raise RuntimeError("failed to load draft item after add")
-            return AddProductToDraftResult(draft=self._to_draft_view(draft), item=self._to_item_view(item), added=added)
+            settings = await self._get_settings(session, draft.id)
+            return AddProductToDraftResult(
+                draft=self._to_draft_view(draft, settings),
+                item=self._to_item_view(item),
+                added=added,
+            )
 
     async def remove_item_from_draft(self, user_id: str, item_id: UUID) -> DraftView | None:
         async with self.session_factory() as session:
@@ -90,11 +114,15 @@ class SqlAlchemyDraftRepository:
                 )
             )
             if item is None:
-                return self._to_draft_view(draft)
+                settings = await self._get_settings(session, draft.id)
+                return self._to_draft_view(draft, settings)
             await session.delete(item)
             await session.commit()
             draft = await self._fetch_active_draft(session, user_id)
-            return self._to_draft_view(draft) if draft else None
+            if draft is None:
+                return None
+            settings = await self._get_settings(session, draft.id)
+            return self._to_draft_view(draft, settings)
 
     async def clear_draft(self, user_id: str) -> DraftView | None:
         async with self.session_factory() as session:
@@ -104,7 +132,10 @@ class SqlAlchemyDraftRepository:
             await session.execute(delete(ProtocolDraftItem).where(ProtocolDraftItem.draft_id == draft.id))
             await session.commit()
             draft = await self._fetch_active_draft(session, user_id)
-            return self._to_draft_view(draft) if draft else None
+            if draft is None:
+                return None
+            settings = await self._get_settings(session, draft.id)
+            return self._to_draft_view(draft, settings)
 
     async def get_product_info(self, product_id: UUID) -> DraftProductInfo | None:
         async with self.session_factory() as session:
@@ -143,6 +174,66 @@ class SqlAlchemyDraftRepository:
             )
             await session.commit()
 
+    async def upsert_draft_settings(self, draft_id: UUID, settings: DraftSettingsInput) -> DraftSettingsView:
+        async with self.session_factory() as session:
+            existing = await self._get_settings(session, draft_id)
+            if existing is None:
+                row = ProtocolDraftSettings(draft_id=draft_id)
+                session.add(row)
+                await session.flush()
+            else:
+                row = await session.scalar(select(ProtocolDraftSettings).where(ProtocolDraftSettings.draft_id == draft_id))
+                if row is None:  # pragma: no cover
+                    raise RuntimeError("failed to resolve settings row")
+
+            row.weekly_target_total_mg = settings.weekly_target_total_mg
+            row.duration_weeks = settings.duration_weeks
+            row.preset_code = settings.preset_code
+            row.max_injection_volume_ml = settings.max_injection_volume_ml
+            row.max_injections_per_week = settings.max_injections_per_week
+            row.planned_start_date = settings.planned_start_date
+            await session.commit()
+            await session.refresh(row)
+            return self._to_settings_view(row)
+
+    async def get_draft_settings(self, draft_id: UUID) -> DraftSettingsView | None:
+        async with self.session_factory() as session:
+            row = await self._get_settings(session, draft_id)
+            return self._to_settings_view(row) if row else None
+
+    async def list_calculation_products(self, draft_id: UUID) -> list[DraftCalculationProductInfo]:
+        async with self.session_factory() as session:
+            rows = await session.execute(
+                select(
+                    CompoundProduct.id,
+                    CompoundProduct.display_name,
+                    CompoundProduct.is_automatable,
+                    CompoundProduct.max_injection_volume_ml,
+                    CompoundIngredient.ingredient_name,
+                    CompoundIngredient.half_life_days,
+                )
+                .join(ProtocolDraftItem, ProtocolDraftItem.product_id == CompoundProduct.id)
+                .outerjoin(CompoundIngredient, CompoundIngredient.product_id == CompoundProduct.id)
+                .where(ProtocolDraftItem.draft_id == draft_id)
+                .order_by(CompoundProduct.display_name, CompoundIngredient.sort_order)
+            )
+            grouped: dict[UUID, DraftCalculationProductInfo] = {}
+            for product_id, display_name, is_automatable, max_volume, ingredient_name, half_life in rows:
+                if product_id not in grouped:
+                    grouped[product_id] = DraftCalculationProductInfo(
+                        product_id=product_id,
+                        product_name=display_name,
+                        is_automatable=is_automatable,
+                        max_injection_volume_ml=max_volume,
+                        ingredient_names=[],
+                        has_half_life=False,
+                    )
+                if ingredient_name:
+                    grouped[product_id].ingredient_names.append(ingredient_name)
+                if half_life is not None:
+                    grouped[product_id].has_half_life = True
+            return list(grouped.values())
+
     async def _fetch_active_draft(self, session, user_id: str) -> ProtocolDraft | None:
         return await session.scalar(
             select(ProtocolDraft)
@@ -162,7 +253,23 @@ class SqlAlchemyDraftRepository:
             created_at=item.created_at,
         )
 
-    def _to_draft_view(self, draft: ProtocolDraft) -> DraftView:
+    async def _get_settings(self, session, draft_id: UUID) -> ProtocolDraftSettings | None:
+        return await session.scalar(select(ProtocolDraftSettings).where(ProtocolDraftSettings.draft_id == draft_id))
+
+    @staticmethod
+    def _to_settings_view(row: ProtocolDraftSettings) -> DraftSettingsView:
+        return DraftSettingsView(
+            draft_id=row.draft_id,
+            weekly_target_total_mg=row.weekly_target_total_mg,
+            duration_weeks=row.duration_weeks,
+            preset_code=row.preset_code,
+            max_injection_volume_ml=row.max_injection_volume_ml,
+            max_injections_per_week=row.max_injections_per_week,
+            planned_start_date=row.planned_start_date,
+            updated_at=row.updated_at,
+        )
+
+    def _to_draft_view(self, draft: ProtocolDraft, settings: ProtocolDraftSettings | None) -> DraftView:
         return DraftView(
             draft_id=draft.id,
             user_id=draft.user_id,
@@ -170,4 +277,5 @@ class SqlAlchemyDraftRepository:
             created_at=draft.created_at,
             updated_at=draft.updated_at,
             items=[self._to_item_view(item) for item in draft.items],
+            settings=self._to_settings_view(settings) if settings else None,
         )

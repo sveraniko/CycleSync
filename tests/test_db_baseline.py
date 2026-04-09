@@ -9,6 +9,7 @@ from app.domain.models import (
     SearchQueryLog,
     ProtocolDraft,
     ProtocolDraftItem,
+    ProtocolDraftSettings,
 )
 
 
@@ -35,3 +36,4 @@ def test_search_read_models_bound_to_search_read_schema() -> None:
 def test_protocol_models_bound_to_protocols_schema() -> None:
     assert ProtocolDraft.__table__.schema == "protocols"
     assert ProtocolDraftItem.__table__.schema == "protocols"
+    assert ProtocolDraftSettings.__table__.schema == "protocols"

@@ -8,7 +8,7 @@ from app.domain.models.compound_catalog import (
     ProductMediaRef,
 )
 from app.domain.models.ops import JobRun, OutboxEvent, ProjectionCheckpoint
-from app.domain.models.protocols import ProtocolDraft, ProtocolDraftItem
+from app.domain.models.protocols import ProtocolDraft, ProtocolDraftItem, ProtocolDraftSettings
 from app.domain.models.search_read import SearchProjectionState, SearchQueryLog
 
 __all__ = [
@@ -26,4 +26,5 @@ __all__ = [
     "SearchQueryLog",
     "ProtocolDraft",
     "ProtocolDraftItem",
+    "ProtocolDraftSettings",
 ]

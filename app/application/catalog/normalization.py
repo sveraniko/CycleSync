@@ -48,6 +48,19 @@ def parse_decimal(value: str | None) -> Decimal | None:
         return None
 
 
+def parse_bool(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    token = normalize_lookup(value)
+    if not token:
+        return None
+    if token in {"1", "true", "yes", "y", "да", "on"}:
+        return True
+    if token in {"0", "false", "no", "n", "нет", "off"}:
+        return False
+    return None
+
+
 def normalize_concentration(concentration_raw: str | None) -> tuple[Decimal | None, str | None, str | None]:
     if not concentration_raw:
         return None, None, None

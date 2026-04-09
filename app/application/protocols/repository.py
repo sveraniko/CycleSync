@@ -1,8 +1,9 @@
+from decimal import Decimal
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.application.protocols.schemas import AddProductToDraftResult, DraftView
+from app.application.protocols.schemas import AddProductToDraftResult, DraftSettingsInput, DraftSettingsView, DraftView
 
 
 @dataclass(slots=True)
@@ -10,6 +11,16 @@ class DraftProductInfo:
     product_id: UUID
     product_name: str
     brand_name: str
+
+
+@dataclass(slots=True)
+class DraftCalculationProductInfo:
+    product_id: UUID
+    product_name: str
+    is_automatable: bool
+    max_injection_volume_ml: Decimal | None
+    ingredient_names: list[str]
+    has_half_life: bool
 
 
 class DraftRepository:
@@ -41,4 +52,13 @@ class DraftRepository:
         correlation_id: str | None = None,
         occurred_at: datetime | None = None,
     ) -> None:
+        raise NotImplementedError
+
+    async def upsert_draft_settings(self, draft_id: UUID, settings: DraftSettingsInput) -> DraftSettingsView:
+        raise NotImplementedError
+
+    async def get_draft_settings(self, draft_id: UUID) -> DraftSettingsView | None:
+        raise NotImplementedError
+
+    async def list_calculation_products(self, draft_id: UUID) -> list[DraftCalculationProductInfo]:
         raise NotImplementedError
