@@ -3,7 +3,7 @@ import asyncio
 import structlog
 from aiogram import Bot, Dispatcher
 
-from app.application.protocols import DraftApplicationService, ProtocolDraftReadinessService
+from app.application.protocols import DraftApplicationService, ProtocolDraftReadinessService, PulseCalculationEngine
 from app.application.search import SearchApplicationService
 from app.bots.router import get_root_router
 from app.core.config import get_settings
@@ -32,7 +32,12 @@ async def run_bot() -> None:
     search_service = SearchApplicationService(repository=search_repository, gateway=infra.search_gateway)
     draft_repository = SqlAlchemyDraftRepository(infra.db_session_factory)
     readiness_service = ProtocolDraftReadinessService(repository=draft_repository)
-    draft_service = DraftApplicationService(repository=draft_repository, readiness_validator=readiness_service)
+    pulse_engine = PulseCalculationEngine()
+    draft_service = DraftApplicationService(
+        repository=draft_repository,
+        readiness_validator=readiness_service,
+        pulse_engine=pulse_engine,
+    )
 
     bot = Bot(token=settings.bot_token)
     dispatcher = Dispatcher()

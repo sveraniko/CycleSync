@@ -69,3 +69,72 @@ class DraftReadinessResult:
     ready: bool
     summary: str
     issues: list[DraftReadinessIssue]
+
+
+@dataclass(slots=True)
+class PulseIngredientProfile:
+    ingredient_name: str
+    half_life_days: Decimal | None
+    amount_mg: Decimal | None
+    is_pulse_driver: bool | None
+
+
+@dataclass(slots=True)
+class PulseProductProfile:
+    product_id: UUID
+    product_name: str
+    concentration_mg_ml: Decimal | None
+    max_injection_volume_ml: Decimal | None
+    ingredients: list[PulseIngredientProfile]
+
+
+@dataclass(slots=True)
+class PulsePlanEntry:
+    day_offset: int
+    scheduled_day: date | None
+    product_id: UUID
+    ingredient_context: str | None
+    volume_ml: Decimal
+    computed_mg: Decimal
+    injection_event_key: str
+    sequence_no: int
+
+
+@dataclass(slots=True)
+class PulsePlanPreviewPersistPayload:
+    draft_id: UUID
+    preset_requested: str
+    preset_applied: str
+    status: str
+    degraded_fallback: bool
+    settings_snapshot: dict
+    summary_metrics: dict | None
+    warning_flags: list[str]
+    entries: list[PulsePlanEntry]
+    error_message: str | None = None
+
+
+@dataclass(slots=True)
+class PulsePlanPreviewView:
+    preview_id: UUID
+    draft_id: UUID
+    preset_requested: str
+    preset_applied: str
+    status: str
+    degraded_fallback: bool
+    summary_metrics: dict | None
+    warning_flags: list[str]
+    entries: list[PulsePlanEntry]
+
+
+@dataclass(slots=True)
+class PulseCalculationResult:
+    status: str
+    preset_requested: str
+    preset_applied: str
+    degraded_fallback: bool
+    warning_flags: list[str]
+    summary_metrics: dict | None
+    entries: list[PulsePlanEntry]
+    validation_issues: list[str]
+    error_message: str | None = None

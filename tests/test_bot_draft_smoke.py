@@ -1,7 +1,17 @@
-from app.bots.handlers.draft import PRESET_LABELS, build_draft_actions, build_draft_shortcut, build_preset_actions
-from app.application.protocols.schemas import DraftItemView, DraftView
 from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import uuid4
+
+from app.bots.handlers.draft import (
+    PRESET_LABELS,
+    build_draft_actions,
+    build_draft_shortcut,
+    build_preset_actions,
+    build_preview_actions,
+    build_readiness_actions,
+    _render_preview_summary,
+)
+from app.application.protocols.schemas import DraftItemView, DraftView, PulsePlanEntry, PulsePlanPreviewView
 
 
 def _draft_with_item() -> DraftView:
@@ -56,3 +66,45 @@ def test_build_preset_actions_contains_all_presets() -> None:
     assert "draft:calc:preset:layered_pulse" in callbacks
     assert "draft:calc:preset:golden_pulse" in callbacks
     assert set(labels) == set(PRESET_LABELS.values())
+
+
+def test_build_readiness_and_preview_actions() -> None:
+    readiness = build_readiness_actions()
+    preview = build_preview_actions()
+
+    readiness_callbacks = [b.callback_data for row in readiness.inline_keyboard for b in row]
+    preview_callbacks = [b.callback_data for row in preview.inline_keyboard for b in row]
+    assert "draft:calculate:run" in readiness_callbacks
+    assert "draft:calculate:run" in preview_callbacks
+
+
+def test_render_preview_summary_smoke() -> None:
+    preview = PulsePlanPreviewView(
+        preview_id=uuid4(),
+        draft_id=uuid4(),
+        preset_requested="golden_pulse",
+        preset_applied="layered_pulse",
+        status="degraded_fallback",
+        degraded_fallback=True,
+        summary_metrics={
+            "flatness_stability_score": 88.2,
+            "estimated_injections_per_week": 4,
+            "max_volume_per_event_ml": 1.1,
+        },
+        warning_flags=["golden_pulse_fallback_to_layered"],
+        entries=[
+            PulsePlanEntry(
+                day_offset=0,
+                scheduled_day=None,
+                product_id=uuid4(),
+                ingredient_context="Test",
+                volume_ml=Decimal("1.0"),
+                computed_mg=Decimal("100"),
+                injection_event_key="evt_d0",
+                sequence_no=0,
+            )
+        ],
+    )
+    text = _render_preview_summary(preview)
+    assert "degraded_fallback" in text
+    assert "Warnings:" in text

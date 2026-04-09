@@ -9,6 +9,7 @@ from app.domain.models.compound_catalog import (
 )
 from app.domain.models.ops import JobRun, OutboxEvent, ProjectionCheckpoint
 from app.domain.models.protocols import ProtocolDraft, ProtocolDraftItem, ProtocolDraftSettings
+from app.domain.models.pulse_engine import PulseCalculationRun, PulsePlanPreview, PulsePlanPreviewEntry
 from app.domain.models.search_read import SearchProjectionState, SearchQueryLog
 
 __all__ = [
@@ -27,4 +28,7 @@ __all__ = [
     "ProtocolDraft",
     "ProtocolDraftItem",
     "ProtocolDraftSettings",
+    "PulseCalculationRun",
+    "PulsePlanPreview",
+    "PulsePlanPreviewEntry",
 ]

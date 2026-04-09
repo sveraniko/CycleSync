@@ -10,6 +10,9 @@ from app.domain.models import (
     ProtocolDraft,
     ProtocolDraftItem,
     ProtocolDraftSettings,
+    PulseCalculationRun,
+    PulsePlanPreview,
+    PulsePlanPreviewEntry,
 )
 
 
@@ -37,3 +40,10 @@ def test_protocol_models_bound_to_protocols_schema() -> None:
     assert ProtocolDraft.__table__.schema == "protocols"
     assert ProtocolDraftItem.__table__.schema == "protocols"
     assert ProtocolDraftSettings.__table__.schema == "protocols"
+
+
+
+def test_pulse_engine_models_bound_to_pulse_engine_schema() -> None:
+    assert PulseCalculationRun.__table__.schema == "pulse_engine"
+    assert PulsePlanPreview.__table__.schema == "pulse_engine"
+    assert PulsePlanPreviewEntry.__table__.schema == "pulse_engine"
