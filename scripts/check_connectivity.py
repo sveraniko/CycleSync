@@ -10,9 +10,9 @@ async def main() -> None:
     settings = get_settings()
     infra = await init_infrastructure(settings.postgres_dsn, settings.redis_dsn)
     try:
-        db_ok = await db_healthcheck(infra.db_engine)
-        redis_ok = await redis_healthcheck(infra.redis)
-        print({"postgres": db_ok, "redis": redis_ok})
+        db = await db_healthcheck(infra.db_engine)
+        redis = await redis_healthcheck(infra.redis)
+        print({"postgres": db, "redis": redis})
     finally:
         await close_infrastructure(infra)
 

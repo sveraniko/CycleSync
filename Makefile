@@ -1,4 +1,4 @@
-.PHONY: up down logs api bot format lint test
+.PHONY: up down logs api bot format lint test db-upgrade db-downgrade db-revision db-current db-reset-local
 
 up:
 	docker compose up --build -d
@@ -23,3 +23,21 @@ lint:
 
 test:
 	pytest -q
+
+db-upgrade:
+	alembic upgrade head
+
+db-downgrade:
+	alembic downgrade -1
+
+db-revision:
+	alembic revision --autogenerate -m "$(MSG)"
+
+db-current:
+	alembic current
+
+db-reset-local:
+	docker compose down -v
+	docker compose up -d postgres redis
+	sleep 5
+	alembic upgrade head
