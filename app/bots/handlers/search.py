@@ -55,12 +55,6 @@ async def on_open_card(callback: CallbackQuery, search_service: SearchApplicatio
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("search:draft:"))
-async def on_add_to_draft(callback: CallbackQuery) -> None:
-    await callback.message.answer("`+Draft` hook готов. Persistence будет подключен в PR3.")
-    await callback.answer()
-
-
 def build_result_actions(product_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[

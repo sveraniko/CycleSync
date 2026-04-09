@@ -7,6 +7,8 @@ from app.domain.models import (
     ProjectionCheckpoint,
     SearchProjectionState,
     SearchQueryLog,
+    ProtocolDraft,
+    ProtocolDraftItem,
 )
 
 
@@ -28,3 +30,8 @@ def test_compound_catalog_models_bound_to_compound_catalog_schema() -> None:
 def test_search_read_models_bound_to_search_read_schema() -> None:
     assert SearchProjectionState.__table__.schema == "search_read"
     assert SearchQueryLog.__table__.schema == "search_read"
+
+
+def test_protocol_models_bound_to_protocols_schema() -> None:
+    assert ProtocolDraft.__table__.schema == "protocols"
+    assert ProtocolDraftItem.__table__.schema == "protocols"
