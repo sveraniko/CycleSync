@@ -18,6 +18,9 @@ async def lifespan(app: FastAPI):
     infra = await init_infrastructure(
         postgres_dsn=settings.postgres_dsn,
         redis_dsn=settings.redis_dsn,
+        meilisearch_url=settings.meilisearch_url,
+        meilisearch_api_key=settings.meilisearch_api_key,
+        meilisearch_index=settings.meilisearch_index,
     )
     app.state.settings = settings
     app.state.infra = infra

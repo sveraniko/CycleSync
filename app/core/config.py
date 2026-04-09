@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     google_sheets_service_account_json: str = Field(default="")
     google_sheets_use_service_account: bool = Field(default=False)
 
+    meilisearch_url: str = Field(default="http://localhost:7700")
+    meilisearch_api_key: str = Field(default="")
+    meilisearch_index: str = Field(default="compound_search")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

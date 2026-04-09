@@ -5,6 +5,8 @@ from app.domain.models import (
     JobRun,
     OutboxEvent,
     ProjectionCheckpoint,
+    SearchProjectionState,
+    SearchQueryLog,
 )
 
 
@@ -20,3 +22,9 @@ def test_ops_models_bound_to_ops_schema() -> None:
 
 def test_compound_catalog_models_bound_to_compound_catalog_schema() -> None:
     assert Brand.__table__.schema == "compound_catalog"
+
+
+
+def test_search_read_models_bound_to_search_read_schema() -> None:
+    assert SearchProjectionState.__table__.schema == "search_read"
+    assert SearchQueryLog.__table__.schema == "search_read"

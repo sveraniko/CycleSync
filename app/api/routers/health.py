@@ -20,10 +20,13 @@ async def ready(request: Request) -> dict[str, object]:
     postgres = await db_healthcheck(infra.db_engine)
     redis = await redis_healthcheck(infra.redis)
 
+    search = await infra.search_gateway.healthcheck()
+
     overall_ok = postgres["ok"] and redis["ok"]
     checks = {
         "postgres": postgres,
         "redis": redis,
+        "search": search,
     }
 
     return {
