@@ -7,4 +7,4 @@ router = Router(name="start")
 
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    await message.answer("CycleSync bot shell is running.")
+    await message.answer("Привет! Введи название препарата или компонент, и я найду подходящие позиции.")
