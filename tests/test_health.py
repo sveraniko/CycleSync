@@ -19,3 +19,4 @@ def test_diagnostics_shape() -> None:
     assert "dependencies" in payload
     assert "postgres" in payload["dependencies"]
     assert "redis" in payload["dependencies"]
+    assert "catalog_source" in payload
