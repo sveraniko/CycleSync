@@ -16,10 +16,12 @@ bot:
 	python -m app.run_bot
 
 format:
-	python -m compileall app tests
+	python -m black app tests
+	python -m ruff check --fix app tests
 
 lint:
-	python -m compileall app tests
+	python -m black --check app tests
+	python -m ruff check app tests
 
 test:
 	pytest -q
