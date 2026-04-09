@@ -28,6 +28,13 @@ class Settings(BaseSettings):
 
     timezone_default: str = Field(default="UTC")
 
+    catalog_ingest_enabled: bool = Field(default=False)
+    google_sheets_sheet_id: str = Field(default="")
+    google_sheets_tab_name: str = Field(default="Catalog")
+    google_sheets_credentials_path: str = Field(default="")
+    google_sheets_service_account_json: str = Field(default="")
+    google_sheets_use_service_account: bool = Field(default=False)
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

@@ -10,3 +10,6 @@ redis==6.4.0
 aiogram==3.22.0
 structlog==25.4.0
 httpx==0.28.1
+
+google-auth==2.41.1
+requests==2.32.5
