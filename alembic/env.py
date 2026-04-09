@@ -3,13 +3,12 @@ from __future__ import annotations
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.core.config import get_settings
-from app.domain.db import Base
 from app.domain import models  # noqa: F401
+from app.domain.db import Base
 
 config = context.config
 
@@ -54,19 +53,15 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 def run_migrations_online() -> None:
-    connectable = async_engine_from_config(
+    connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        future=True,
     )
 
-    async def run_async_migrations() -> None:
-        async with connectable.connect() as connection:
-            await connection.run_sync(do_run_migrations)
-
-    import asyncio
-
-    asyncio.run(run_async_migrations())
+    with connectable.connect() as connection:
+        do_run_migrations(connection)
 
 
 if context.is_offline_mode():
