@@ -9,9 +9,10 @@ from app.bots.handlers.draft import (
     build_preset_actions,
     build_preview_actions,
     build_readiness_actions,
+    _render_active_protocol_summary,
     _render_preview_summary,
 )
-from app.application.protocols.schemas import DraftItemView, DraftView, PulsePlanEntry, PulsePlanPreviewView
+from app.application.protocols.schemas import ActiveProtocolView, DraftItemView, DraftView, PulsePlanEntry, PulsePlanPreviewView
 
 
 def _draft_with_item() -> DraftView:
@@ -76,6 +77,7 @@ def test_build_readiness_and_preview_actions() -> None:
     preview_callbacks = [b.callback_data for row in preview.inline_keyboard for b in row]
     assert "draft:calculate:run" in readiness_callbacks
     assert "draft:calculate:run" in preview_callbacks
+    assert "draft:activate:latest" in preview_callbacks
 
 
 def test_render_preview_summary_smoke() -> None:
@@ -108,3 +110,19 @@ def test_render_preview_summary_smoke() -> None:
     text = _render_preview_summary(preview)
     assert "degraded_fallback" in text
     assert "Warnings:" in text
+
+
+def test_render_active_protocol_summary_smoke() -> None:
+    active = ActiveProtocolView(
+        protocol_id=uuid4(),
+        draft_id=uuid4(),
+        source_preview_id=uuid4(),
+        pulse_plan_id=uuid4(),
+        status="active",
+        settings_snapshot={"preset_code": "layered_pulse", "duration_weeks": 8, "weekly_target_total_mg": "250"},
+        summary_metrics={"flatness_stability_score": 88.2},
+        warning_flags=[],
+    )
+    text = _render_active_protocol_summary(active)
+    assert "Protocol activated" in text
+    assert "Wave 3" in text

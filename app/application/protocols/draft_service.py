@@ -4,6 +4,7 @@ from uuid import UUID
 from app.application.protocols.pulse_engine import PulseCalculationEngine
 from app.application.protocols.repository import DraftRepository
 from app.application.protocols.schemas import (
+    ActiveProtocolView,
     AddProductToDraftResult,
     DraftReadinessResult,
     DraftSettingsInput,
@@ -192,3 +193,41 @@ class DraftApplicationService:
             )
 
         return preview
+
+    async def confirm_latest_preview_activation(self, user_id: str) -> ActiveProtocolView:
+        active = await self.repository.promote_latest_preview_to_active(user_id=user_id)
+        await self.repository.enqueue_event(
+            event_type="protocol_activated",
+            aggregate_type="protocol",
+            aggregate_id=active.protocol_id,
+            payload={
+                "user_id": user_id,
+                "draft_id": str(active.draft_id),
+                "source_preview_id": str(active.source_preview_id) if active.source_preview_id else None,
+            },
+        )
+        await self.repository.enqueue_event(
+            event_type="pulse_plan_activated",
+            aggregate_type="pulse_plan",
+            aggregate_id=active.pulse_plan_id,
+            payload={"user_id": user_id, "protocol_id": str(active.protocol_id)},
+        )
+        await self.repository.enqueue_event(
+            event_type="reminder_schedule_requested",
+            aggregate_type="protocol",
+            aggregate_id=active.protocol_id,
+            payload={"user_id": user_id, "pulse_plan_id": str(active.pulse_plan_id)},
+        )
+        return active
+
+    async def cancel_active_protocol(self, user_id: str) -> bool:
+        protocol_id = await self.repository.cancel_active_protocol(user_id=user_id)
+        if protocol_id is None:
+            return False
+        await self.repository.enqueue_event(
+            event_type="protocol_cancelled",
+            aggregate_type="protocol",
+            aggregate_id=protocol_id,
+            payload={"user_id": user_id},
+        )
+        return True
