@@ -75,6 +75,9 @@ class DraftRepository:
     async def list_pulse_product_profiles(self, draft_id: UUID) -> list[PulseProductProfile]:
         raise NotImplementedError
 
+    async def has_successful_preview_for_draft(self, draft_id: UUID) -> bool:
+        raise NotImplementedError
+
     async def create_pulse_plan_preview(self, payload: PulsePlanPreviewPersistPayload) -> PulsePlanPreviewView:
         raise NotImplementedError
 

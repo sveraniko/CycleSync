@@ -77,6 +77,9 @@ class PulseIngredientProfile:
     half_life_days: Decimal | None
     amount_mg: Decimal | None
     is_pulse_driver: bool | None
+    dose_guidance_min_mg_week: Decimal | None = None
+    dose_guidance_max_mg_week: Decimal | None = None
+    dose_guidance_typical_mg_week: Decimal | None = None
 
 
 @dataclass(slots=True)
@@ -110,6 +113,10 @@ class PulsePlanPreviewPersistPayload:
     settings_snapshot: dict
     summary_metrics: dict | None
     warning_flags: list[str]
+    allocation_mode: str | None
+    guidance_coverage_score: Decimal | None
+    calculation_quality_flags: list[str]
+    allocation_details: dict | None
     entries: list[PulsePlanEntry]
     error_message: str | None = None
 
@@ -124,6 +131,9 @@ class PulsePlanPreviewView:
     degraded_fallback: bool
     summary_metrics: dict | None
     warning_flags: list[str]
+    allocation_mode: str | None
+    guidance_coverage_score: Decimal | None
+    calculation_quality_flags: list[str]
     entries: list[PulsePlanEntry]
 
 
@@ -135,6 +145,10 @@ class PulseCalculationResult:
     degraded_fallback: bool
     warning_flags: list[str]
     summary_metrics: dict | None
+    allocation_mode: str | None
+    guidance_coverage_score: Decimal | None
+    calculation_quality_flags: list[str]
+    allocation_details: dict | None
     entries: list[PulsePlanEntry]
     validation_issues: list[str]
     error_message: str | None = None

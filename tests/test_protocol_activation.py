@@ -58,6 +58,9 @@ class FakeActivationRepository:
             )
         ]
 
+    async def has_successful_preview_for_draft(self, draft_id):
+        return False
+
     async def create_pulse_plan_preview(self, payload):
         self.preview_payloads.append(payload)
         return PulsePlanPreviewView(
@@ -69,6 +72,9 @@ class FakeActivationRepository:
             degraded_fallback=payload.degraded_fallback,
             summary_metrics=payload.summary_metrics,
             warning_flags=payload.warning_flags,
+            allocation_mode=payload.allocation_mode,
+            guidance_coverage_score=payload.guidance_coverage_score,
+            calculation_quality_flags=payload.calculation_quality_flags,
             entries=payload.entries,
         )
 

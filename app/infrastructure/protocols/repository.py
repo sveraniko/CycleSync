@@ -259,6 +259,9 @@ class SqlAlchemyDraftRepository:
                     CompoundIngredient.half_life_days,
                     CompoundIngredient.amount,
                     CompoundIngredient.is_pulse_driver,
+                    CompoundIngredient.dose_guidance_min_mg_week,
+                    CompoundIngredient.dose_guidance_max_mg_week,
+                    CompoundIngredient.dose_guidance_typical_mg_week,
                 )
                 .join(ProtocolDraftItem, ProtocolDraftItem.product_id == CompoundProduct.id)
                 .outerjoin(CompoundIngredient, CompoundIngredient.product_id == CompoundProduct.id)
@@ -282,6 +285,9 @@ class SqlAlchemyDraftRepository:
                             half_life_days=row[5],
                             amount_mg=row[6],
                             is_pulse_driver=row[7],
+                            dose_guidance_min_mg_week=row[8],
+                            dose_guidance_max_mg_week=row[9],
+                            dose_guidance_typical_mg_week=row[10],
                         )
                     )
             return list(grouped.values())
@@ -298,6 +304,10 @@ class SqlAlchemyDraftRepository:
                 settings_snapshot_json=payload.settings_snapshot,
                 summary_metrics_json=payload.summary_metrics,
                 warning_flags_json=payload.warning_flags,
+                allocation_mode=payload.allocation_mode,
+                guidance_coverage_score=payload.guidance_coverage_score,
+                calculation_quality_flags_json=payload.calculation_quality_flags,
+                allocation_details_json=payload.allocation_details,
                 error_message=payload.error_message,
             )
             session.add(run)
@@ -313,6 +323,10 @@ class SqlAlchemyDraftRepository:
                 settings_snapshot_json=payload.settings_snapshot,
                 summary_metrics_json=payload.summary_metrics,
                 warning_flags_json=payload.warning_flags,
+                allocation_mode=payload.allocation_mode,
+                guidance_coverage_score=payload.guidance_coverage_score,
+                calculation_quality_flags_json=payload.calculation_quality_flags,
+                allocation_details_json=payload.allocation_details,
                 lifecycle_status="preview_ready" if payload.status != "failed_validation" else "cancelled",
             )
             session.add(preview)
@@ -358,8 +372,21 @@ class SqlAlchemyDraftRepository:
                 degraded_fallback=payload.degraded_fallback,
                 summary_metrics=payload.summary_metrics,
                 warning_flags=payload.warning_flags,
+                allocation_mode=payload.allocation_mode,
+                guidance_coverage_score=payload.guidance_coverage_score,
+                calculation_quality_flags=payload.calculation_quality_flags,
                 entries=payload.entries,
             )
+
+    async def has_successful_preview_for_draft(self, draft_id: UUID) -> bool:
+        async with self.session_factory() as session:
+            existing = await session.scalar(
+                select(PulsePlanPreview.id).where(
+                    PulsePlanPreview.draft_id == draft_id,
+                    PulsePlanPreview.status != "failed_validation",
+                )
+            )
+            return existing is not None
 
     async def promote_latest_preview_to_active(self, user_id: str) -> ActiveProtocolView:
         async with self.session_factory() as session:

@@ -146,6 +146,7 @@ class DraftApplicationService:
         )
 
         result = self.pulse_engine.calculate(settings=settings, products=products)
+        had_previous_preview = await self.repository.has_successful_preview_for_draft(draft.draft_id)
         payload = PulsePlanPreviewPersistPayload(
             draft_id=draft.draft_id,
             preset_requested=result.preset_requested,
@@ -162,6 +163,10 @@ class DraftApplicationService:
             },
             summary_metrics=result.summary_metrics,
             warning_flags=result.warning_flags,
+            allocation_mode=result.allocation_mode,
+            guidance_coverage_score=result.guidance_coverage_score,
+            calculation_quality_flags=result.calculation_quality_flags,
+            allocation_details=result.allocation_details,
             entries=result.entries,
             error_message=result.error_message,
         )
@@ -179,17 +184,12 @@ class DraftApplicationService:
                 },
             )
         else:
+            preview_event_type = "pulse_plan_preview_regenerated" if had_previous_preview else "pulse_plan_preview_generated"
             await self.repository.enqueue_event(
-                event_type="pulse_plan_preview_generated",
+                event_type=preview_event_type,
                 aggregate_type="pulse_plan_preview",
                 aggregate_id=preview.preview_id,
                 payload={"user_id": user_id, "draft_id": str(draft.draft_id), "status": preview.status},
-            )
-            await self.repository.enqueue_event(
-                event_type="pulse_plan_preview_regenerated",
-                aggregate_type="pulse_plan_preview",
-                aggregate_id=preview.preview_id,
-                payload={"user_id": user_id, "draft_id": str(draft.draft_id)},
             )
 
         return preview

@@ -337,8 +337,14 @@ def _render_preview_summary(preview: PulsePlanPreviewView) -> str:
                 f"- flatness/stability: {preview.summary_metrics.get('flatness_stability_score')}",
                 f"- injections/week est: {preview.summary_metrics.get('estimated_injections_per_week')}",
                 f"- max volume/event ml: {preview.summary_metrics.get('max_volume_per_event_ml')}",
+                f"- allocation mode: {preview.summary_metrics.get('allocation_mode')}",
+                f"- guidance coverage score: {preview.summary_metrics.get('guidance_coverage_score')}",
             ]
         )
+        warning_flags = preview.summary_metrics.get("allocation_warning_flags") or []
+        if warning_flags:
+            lines.append("- allocation quality warnings:")
+            lines.extend(f"  • {flag}" for flag in warning_flags)
 
     if preview.warning_flags:
         lines.append("\nWarnings:")

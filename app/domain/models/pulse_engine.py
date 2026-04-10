@@ -23,6 +23,10 @@ class PulseCalculationRun(SchemaTableMixin, BaseModel):
     settings_snapshot_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
     summary_metrics_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     warning_flags_json: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    allocation_mode: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    guidance_coverage_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    calculation_quality_flags_json: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    allocation_details_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
@@ -51,6 +55,10 @@ class PulsePlanPreview(SchemaTableMixin, BaseModel):
     settings_snapshot_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
     summary_metrics_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     warning_flags_json: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    allocation_mode: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    guidance_coverage_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    calculation_quality_flags_json: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    allocation_details_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     lifecycle_status: Mapped[str] = mapped_column(String(32), nullable=False, default="preview_ready")
     superseded_at: Mapped[date | None] = mapped_column(Date, nullable=True)
 
