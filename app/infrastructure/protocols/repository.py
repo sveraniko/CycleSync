@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.application.protocols.repository import DraftCalculationProductInfo, DraftProductInfo
 from app.application.protocols.schemas import (
+    ActiveProtocolView,
     AddProductToDraftResult,
     DraftItemView,
     DraftSettingsInput,
@@ -24,12 +25,16 @@ from app.domain.models import (
     CompoundIngredient,
     CompoundProduct,
     OutboxEvent,
+    Protocol,
     ProtocolDraft,
     ProtocolDraftItem,
     ProtocolDraftSettings,
     PulseCalculationRun,
+    PulsePlan,
+    PulsePlanEntryRecord,
     PulsePlanPreview,
     PulsePlanPreviewEntry,
+    ReminderScheduleRequest,
 )
 
 
@@ -42,7 +47,7 @@ class SqlAlchemyDraftRepository:
             draft = await self._fetch_active_draft(session, user_id)
             created = False
             if draft is None:
-                draft = ProtocolDraft(user_id=user_id, status="active")
+                draft = ProtocolDraft(user_id=user_id, status="draft")
                 session.add(draft)
                 await session.flush()
                 created = True
@@ -65,7 +70,7 @@ class SqlAlchemyDraftRepository:
         async with self.session_factory() as session:
             draft = await self._fetch_active_draft(session, user_id)
             if draft is None:
-                draft = ProtocolDraft(user_id=user_id, status="active")
+                draft = ProtocolDraft(user_id=user_id, status="draft")
                 session.add(draft)
                 await session.flush()
 
@@ -283,6 +288,7 @@ class SqlAlchemyDraftRepository:
 
     async def create_pulse_plan_preview(self, payload: PulsePlanPreviewPersistPayload) -> PulsePlanPreviewView:
         async with self.session_factory() as session:
+            await self._supersede_preview_ready_protocols(session, payload.draft_id)
             run = PulseCalculationRun(
                 draft_id=payload.draft_id,
                 preset_requested=payload.preset_requested,
@@ -307,9 +313,25 @@ class SqlAlchemyDraftRepository:
                 settings_snapshot_json=payload.settings_snapshot,
                 summary_metrics_json=payload.summary_metrics,
                 warning_flags_json=payload.warning_flags,
+                lifecycle_status="preview_ready" if payload.status != "failed_validation" else "cancelled",
             )
             session.add(preview)
             await session.flush()
+
+            if payload.status != "failed_validation":
+                draft = await session.scalar(select(ProtocolDraft).where(ProtocolDraft.id == payload.draft_id))
+                if draft is None:  # pragma: no cover
+                    raise RuntimeError("draft_not_found_for_preview_protocol")
+                session.add(
+                    Protocol(
+                        user_id=draft.user_id,
+                        draft_id=payload.draft_id,
+                        source_preview_id=preview.id,
+                        status="preview_ready",
+                        settings_snapshot_json=payload.settings_snapshot,
+                        summary_snapshot_json=payload.summary_metrics,
+                    )
+                )
 
             for entry in payload.entries:
                 session.add(
@@ -339,11 +361,120 @@ class SqlAlchemyDraftRepository:
                 entries=payload.entries,
             )
 
+    async def promote_latest_preview_to_active(self, user_id: str) -> ActiveProtocolView:
+        async with self.session_factory() as session:
+            protocol = await session.scalar(
+                select(Protocol)
+                .where(Protocol.user_id == user_id, Protocol.status == "preview_ready")
+                .order_by(Protocol.created_at.desc())
+            )
+            if protocol is None:
+                raise ValueError("preview_not_found")
+
+            now = datetime.now(timezone.utc)
+            superseded = await session.scalars(
+                select(Protocol).where(Protocol.user_id == user_id, Protocol.status == "active")
+            )
+            for prev in superseded:
+                prev.status = "superseded"
+                prev.superseded_at = now
+                prev.superseded_by_protocol_id = protocol.id
+                session.add(prev)
+                session.add(
+                    OutboxEvent(
+                        event_type="protocol_superseded",
+                        aggregate_type="protocol",
+                        aggregate_id=prev.id,
+                        payload_json={"user_id": user_id, "superseded_by_protocol_id": str(protocol.id)},
+                    )
+                )
+
+            preview = None
+            if protocol.source_preview_id:
+                preview = await session.scalar(select(PulsePlanPreview).where(PulsePlanPreview.id == protocol.source_preview_id))
+                if preview:
+                    preview.lifecycle_status = "active"
+
+            pulse_plan = PulsePlan(
+                protocol_id=protocol.id,
+                source_preview_id=protocol.source_preview_id,
+                status="active",
+                preset_requested=preview.preset_requested if preview else "unknown",
+                preset_applied=preview.preset_applied if preview else "unknown",
+                settings_snapshot_json=protocol.settings_snapshot_json,
+                summary_metrics_json=preview.summary_metrics_json if preview else protocol.summary_snapshot_json,
+                warning_flags_json=preview.warning_flags_json if preview else [],
+            )
+            session.add(pulse_plan)
+            await session.flush()
+
+            if preview:
+                preview_entries = await session.scalars(
+                    select(PulsePlanPreviewEntry).where(PulsePlanPreviewEntry.preview_id == preview.id)
+                )
+                for entry in preview_entries:
+                    session.add(
+                        PulsePlanEntryRecord(
+                            pulse_plan_id=pulse_plan.id,
+                            day_offset=entry.day_offset,
+                            scheduled_day=entry.scheduled_day,
+                            product_id=entry.product_id,
+                            ingredient_context=entry.ingredient_context,
+                            volume_ml=entry.volume_ml,
+                            computed_mg=entry.computed_mg,
+                            injection_event_key=entry.injection_event_key,
+                            sequence_no=entry.sequence_no,
+                        )
+                    )
+
+            session.add(
+                ReminderScheduleRequest(
+                    protocol_id=protocol.id,
+                    pulse_plan_id=pulse_plan.id,
+                    status="requested",
+                    payload_json={
+                        "user_id": user_id,
+                        "protocol_id": str(protocol.id),
+                        "pulse_plan_id": str(pulse_plan.id),
+                        "source_preview_id": str(protocol.source_preview_id) if protocol.source_preview_id else None,
+                    },
+                )
+            )
+
+            protocol.status = "active"
+            protocol.activated_at = now
+            session.add(protocol)
+            await session.commit()
+
+            return ActiveProtocolView(
+                protocol_id=protocol.id,
+                draft_id=protocol.draft_id,
+                source_preview_id=protocol.source_preview_id,
+                pulse_plan_id=pulse_plan.id,
+                status=protocol.status,
+                settings_snapshot=protocol.settings_snapshot_json,
+                summary_metrics=pulse_plan.summary_metrics_json,
+                warning_flags=pulse_plan.warning_flags_json or [],
+            )
+
+    async def cancel_active_protocol(self, user_id: str) -> UUID | None:
+        async with self.session_factory() as session:
+            protocol = await session.scalar(
+                select(Protocol).where(Protocol.user_id == user_id, Protocol.status == "active").order_by(Protocol.created_at.desc())
+            )
+            if protocol is None:
+                return None
+            protocol.status = "cancelled"
+            protocol.cancelled_at = datetime.now(timezone.utc)
+            session.add(protocol)
+            await session.commit()
+            return protocol.id
+
     async def _fetch_active_draft(self, session, user_id: str) -> ProtocolDraft | None:
         return await session.scalar(
             select(ProtocolDraft)
             .options(selectinload(ProtocolDraft.items))
-            .where(ProtocolDraft.user_id == user_id, ProtocolDraft.status == "active")
+            .where(ProtocolDraft.user_id == user_id, ProtocolDraft.status == "draft")
         )
 
     @staticmethod
@@ -384,3 +515,18 @@ class SqlAlchemyDraftRepository:
             items=[self._to_item_view(item) for item in draft.items],
             settings=self._to_settings_view(settings) if settings else None,
         )
+
+    async def _supersede_preview_ready_protocols(self, session, draft_id: UUID) -> None:
+        rows = await session.scalars(
+            select(Protocol).where(Protocol.draft_id == draft_id, Protocol.status == "preview_ready")
+        )
+        for protocol in rows:
+            protocol.status = "superseded"
+            protocol.superseded_at = datetime.now(timezone.utc)
+            session.add(protocol)
+            if protocol.source_preview_id:
+                preview = await session.scalar(select(PulsePlanPreview).where(PulsePlanPreview.id == protocol.source_preview_id))
+                if preview is not None:
+                    preview.lifecycle_status = "superseded"
+                    preview.superseded_at = datetime.now(timezone.utc).date()
+                    session.add(preview)

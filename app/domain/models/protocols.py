@@ -1,7 +1,8 @@
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Date, ForeignKey, Index, Numeric, SmallInteger, String, Text, UniqueConstraint, text
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, SmallInteger, String, Text, UniqueConstraint, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,7 +14,7 @@ class ProtocolDraft(SchemaTableMixin, BaseModel):
     __schema_name__ = "protocols"
 
     user_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
 
     items: Mapped[list["ProtocolDraftItem"]] = relationship(
         back_populates="draft",
@@ -26,7 +27,7 @@ class ProtocolDraft(SchemaTableMixin, BaseModel):
             "uq_protocol_drafts_user_active",
             "user_id",
             unique=True,
-            postgresql_where=text("status = 'active'"),
+            postgresql_where=text("status = 'draft'"),
         ),
         Index("ix_protocol_drafts_user_status", "user_id", "status"),
         {"schema": __schema_name__},
@@ -76,5 +77,37 @@ class ProtocolDraftSettings(SchemaTableMixin, BaseModel):
     __table_args__ = (
         UniqueConstraint("draft_id", name="uq_protocol_draft_settings_draft_id"),
         Index("ix_protocol_draft_settings_draft_id", "draft_id"),
+        {"schema": __schema_name__},
+    )
+
+
+class Protocol(SchemaTableMixin, BaseModel):
+    __tablename__ = "protocols"
+    __schema_name__ = "protocols"
+
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    draft_id: Mapped[UUID] = mapped_column(
+        ForeignKey("protocols.protocol_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_preview_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("pulse_engine.pulse_plan_previews.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="preview_ready")
+    activated_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    superseded_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    superseded_by_protocol_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("protocols.protocols.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    settings_snapshot_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    summary_snapshot_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    __table_args__ = (
+        Index("ix_protocols_user_status_created_at", "user_id", "status", "created_at"),
+        Index("ix_protocols_draft_id_created_at", "draft_id", "created_at"),
+        UniqueConstraint("source_preview_id", name="uq_protocols_source_preview_id"),
         {"schema": __schema_name__},
     )

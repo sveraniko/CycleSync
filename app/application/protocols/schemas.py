@@ -138,3 +138,15 @@ class PulseCalculationResult:
     entries: list[PulsePlanEntry]
     validation_issues: list[str]
     error_message: str | None = None
+
+
+@dataclass(slots=True)
+class ActiveProtocolView:
+    protocol_id: UUID
+    draft_id: UUID
+    source_preview_id: UUID | None
+    pulse_plan_id: UUID
+    status: str
+    settings_snapshot: dict
+    summary_metrics: dict | None
+    warning_flags: list[str]

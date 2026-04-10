@@ -8,7 +8,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.types.callback_query import CallbackQuery
 
 from app.application.protocols import DraftApplicationService
-from app.application.protocols.schemas import DraftSettingsInput, DraftView, PulsePlanPreviewView
+from app.application.protocols.schemas import ActiveProtocolView, DraftSettingsInput, DraftView, PulsePlanPreviewView
 
 router = Router(name="draft")
 
@@ -146,6 +146,20 @@ async def on_run_pulse_calculation(callback: CallbackQuery, draft_service: Draft
     await callback.answer()
 
 
+@router.callback_query(F.data == "draft:activate:latest")
+async def on_activate_latest_preview(callback: CallbackQuery, draft_service: DraftApplicationService) -> None:
+    user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+    try:
+        active = await draft_service.confirm_latest_preview_activation(user_id)
+    except ValueError:
+        await callback.message.answer("Нет готового preview для активации. Сначала запустите расчет.")
+        await callback.answer()
+        return
+
+    await callback.message.answer(_render_active_protocol_summary(active))
+    await callback.answer()
+
+
 @router.message(CalculationInputState.weekly_target_total_mg)
 async def on_weekly_target_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
     value = _parse_decimal(message.text)
@@ -246,7 +260,8 @@ def build_preview_actions() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="Пересчитать preview", callback_data="draft:calculate:run")],
             [InlineKeyboardButton(text="Сменить preset", callback_data="draft:calculate")],
-            [InlineKeyboardButton(text="Activation (PR3 seam)", callback_data="draft:open")],
+            [InlineKeyboardButton(text="Подтвердить и активировать", callback_data="draft:activate:latest")],
+            [InlineKeyboardButton(text="Draft", callback_data="draft:open")],
         ]
     )
 
@@ -338,7 +353,24 @@ def _render_preview_summary(preview: PulsePlanPreviewView) -> str:
         if len(preview.entries) > 8:
             lines.append(f"… еще {len(preview.entries) - 8} entries")
 
-    lines.append("\nActivation пока не выполняется в PR2 (будет в PR3).")
+    lines.append("\nЕсли план устраивает — подтвердите activation.")
+    return "\n".join(lines)
+
+
+def _render_active_protocol_summary(active: ActiveProtocolView) -> str:
+    lines = [
+        "✅ Protocol activated",
+        f"- protocol_id: {active.protocol_id}",
+        f"- pulse_plan_id: {active.pulse_plan_id}",
+        f"- status: {active.status}",
+        "",
+        "Коротко по active truth:",
+        f"- preset: {active.settings_snapshot.get('preset_code')}",
+        f"- duration_weeks: {active.settings_snapshot.get('duration_weeks')}",
+        f"- weekly_target_total_mg: {active.settings_snapshot.get('weekly_target_total_mg')}",
+        "",
+        "Execution/reminders слой продолжается отсюда (Wave 3 расширит delivery/adherence).",
+    ]
     return "\n".join(lines)
 
 

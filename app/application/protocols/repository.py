@@ -4,6 +4,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from app.application.protocols.schemas import (
+    ActiveProtocolView,
     AddProductToDraftResult,
     DraftSettingsInput,
     DraftSettingsView,
@@ -75,4 +76,10 @@ class DraftRepository:
         raise NotImplementedError
 
     async def create_pulse_plan_preview(self, payload: PulsePlanPreviewPersistPayload) -> PulsePlanPreviewView:
+        raise NotImplementedError
+
+    async def promote_latest_preview_to_active(self, user_id: str) -> ActiveProtocolView:
+        raise NotImplementedError
+
+    async def cancel_active_protocol(self, user_id: str) -> UUID | None:
         raise NotImplementedError
