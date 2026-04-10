@@ -20,6 +20,7 @@ class FakePulseRepository:
         self.draft = self._draft()
         self.events: list[str] = []
         self.last_payload = None
+        self.has_previous_preview = False
 
     async def get_or_create_active_draft(self, user_id: str):
         return self.draft, False
@@ -47,6 +48,9 @@ class FakePulseRepository:
             )
         ]
 
+    async def has_successful_preview_for_draft(self, draft_id):
+        return self.has_previous_preview
+
     async def create_pulse_plan_preview(self, payload):
         self.last_payload = payload
         return PulsePlanPreviewView(
@@ -58,6 +62,9 @@ class FakePulseRepository:
             degraded_fallback=payload.degraded_fallback,
             summary_metrics=payload.summary_metrics,
             warning_flags=payload.warning_flags,
+            allocation_mode=payload.allocation_mode,
+            guidance_coverage_score=payload.guidance_coverage_score,
+            calculation_quality_flags=payload.calculation_quality_flags,
             entries=payload.entries,
         )
 
@@ -99,3 +106,32 @@ def test_preview_persistence_and_events() -> None:
     assert "pulse_calculation_started" in repo.events
     assert "pulse_plan_preview_generated" in repo.events
 
+
+def test_regenerated_event_for_subsequent_preview() -> None:
+    repo = FakePulseRepository()
+    repo.has_previous_preview = True
+    service = DraftApplicationService(repository=repo, pulse_engine=PulseCalculationEngine())
+
+    asyncio.run(service.generate_pulse_plan_preview("u1"))
+
+    assert "pulse_plan_preview_regenerated" in repo.events
+    assert "pulse_plan_preview_generated" not in repo.events
+
+
+def test_failed_preview_emits_failed_only() -> None:
+    class FailingRepo(FakePulseRepository):
+        async def get_draft_settings(self, draft_id):
+            return None
+
+        async def list_pulse_product_profiles(self, draft_id):
+            return []
+
+    repo = FailingRepo()
+    service = DraftApplicationService(repository=repo, pulse_engine=PulseCalculationEngine())
+
+    preview = asyncio.run(service.generate_pulse_plan_preview("u1"))
+
+    assert preview.status == "failed_validation"
+    assert "pulse_plan_preview_failed" in repo.events
+    assert "pulse_plan_preview_generated" not in repo.events
+    assert "pulse_plan_preview_regenerated" not in repo.events

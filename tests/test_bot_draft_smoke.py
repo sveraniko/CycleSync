@@ -92,8 +92,14 @@ def test_render_preview_summary_smoke() -> None:
             "flatness_stability_score": 88.2,
             "estimated_injections_per_week": 4,
             "max_volume_per_event_ml": 1.1,
+            "allocation_mode": "guidance_weighted",
+            "guidance_coverage_score": 92.0,
+            "allocation_warning_flags": [],
         },
         warning_flags=["golden_pulse_fallback_to_layered"],
+        allocation_mode="guidance_weighted",
+        guidance_coverage_score=Decimal("92.0"),
+        calculation_quality_flags=[],
         entries=[
             PulsePlanEntry(
                 day_offset=0,
@@ -110,6 +116,7 @@ def test_render_preview_summary_smoke() -> None:
     text = _render_preview_summary(preview)
     assert "degraded_fallback" in text
     assert "Warnings:" in text
+    assert "allocation mode" in text
 
 
 def test_render_active_protocol_summary_smoke() -> None:

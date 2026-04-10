@@ -54,6 +54,10 @@ class PulseCalculationEngine:
                 degraded_fallback=False,
                 warning_flags=[],
                 summary_metrics=None,
+                allocation_mode=None,
+                guidance_coverage_score=None,
+                calculation_quality_flags=[],
+                allocation_details=None,
                 entries=[],
                 validation_issues=validation_issues,
                 error_message="validation_failed",
@@ -70,7 +74,8 @@ class PulseCalculationEngine:
             degraded_fallback = True
             warning_flags.append("golden_pulse_fallback_to_layered")
 
-        plans = self._build_plan_products(settings, products, strategy)
+        allocation_context = self._resolve_allocation(products, settings.weekly_target_total_mg or Decimal("0"))
+        plans = self._build_plan_products(settings, products, strategy, allocation_context["per_product_mg"])
         if preset_requested == "golden_pulse" and strategy == "golden_pulse":
             self._optimize_phase_offsets(plans)
 
@@ -89,9 +94,14 @@ class PulseCalculationEngine:
             "flatness_stability_score": float(flatness_score),
             "estimated_injections_per_week": estimated_injections,
             "max_volume_per_event_ml": float(max_volume),
+            "allocation_mode": allocation_context["allocation_mode"],
+            "per_product_weekly_target_mg": {k: float(v) for k, v in allocation_context["per_product_mg"].items()},
+            "guidance_coverage_score": float(allocation_context["guidance_coverage_score"]),
+            "allocation_warning_flags": allocation_context["quality_flags"],
             "warning_flags": warning_flags,
             "degraded_fallback": degraded_fallback,
         }
+        warning_flags = sorted(set(warning_flags + allocation_context["quality_flags"]))
 
         status = "success"
         if warning_flags:
@@ -106,6 +116,10 @@ class PulseCalculationEngine:
             degraded_fallback=degraded_fallback,
             warning_flags=warning_flags,
             summary_metrics=summary_metrics,
+            allocation_mode=allocation_context["allocation_mode"],
+            guidance_coverage_score=allocation_context["guidance_coverage_score"],
+            calculation_quality_flags=allocation_context["quality_flags"],
+            allocation_details=allocation_context["allocation_details"],
             entries=entries,
             validation_issues=[],
         )
@@ -115,8 +129,8 @@ class PulseCalculationEngine:
         settings: DraftSettingsView,
         products: list[PulseProductProfile],
         strategy: str,
+        weekly_mg_by_product: dict[str, Decimal],
     ) -> list[_PlanProduct]:
-        per_product_target = (settings.weekly_target_total_mg or Decimal("0")) / Decimal(max(len(products), 1))
         output: list[_PlanProduct] = []
 
         for idx, product in enumerate(sorted(products, key=lambda p: str(p.product_id))):
@@ -137,15 +151,131 @@ class PulseCalculationEngine:
             phase = idx % max(day_interval, 1)
 
             output.append(
-                _PlanProduct(
-                    profile=product,
-                    weekly_mg=per_product_target,
-                    injections_per_week=injections,
-                    day_interval=day_interval,
-                    phase=phase,
-                )
+                    _PlanProduct(
+                        profile=product,
+                        weekly_mg=weekly_mg_by_product.get(str(product.product_id), Decimal("0")),
+                        injections_per_week=injections,
+                        day_interval=day_interval,
+                        phase=phase,
+                    )
             )
         return output
+
+    def _resolve_allocation(self, products: list[PulseProductProfile], weekly_target_total_mg: Decimal) -> dict:
+        sorted_products = sorted(products, key=lambda p: str(p.product_id))
+        has_driver = any(any(i.is_pulse_driver for i in product.ingredients) for product in sorted_products)
+        half_life_values = [
+            self._effective_half_life(product)
+            for product in sorted_products
+            if any(i.half_life_days and i.half_life_days > 0 for i in product.ingredients)
+        ]
+        guidance_present = []
+        fallback_count = 0
+        weighted_inputs: dict[str, Decimal] = {}
+        mode = "equal_fallback"
+
+        typical_values: dict[str, Decimal] = {}
+        range_values: dict[str, Decimal] = {}
+        for product in sorted_products:
+            product_key = str(product.product_id)
+            typical_total = sum(
+                (i.dose_guidance_typical_mg_week or Decimal("0"))
+                for i in product.ingredients
+                if i.dose_guidance_typical_mg_week and i.dose_guidance_typical_mg_week > 0
+            )
+            range_mid_total = sum(
+                ((i.dose_guidance_min_mg_week or Decimal("0")) + (i.dose_guidance_max_mg_week or Decimal("0"))) / Decimal("2")
+                for i in product.ingredients
+                if i.dose_guidance_min_mg_week and i.dose_guidance_max_mg_week and i.dose_guidance_min_mg_week > 0 and i.dose_guidance_max_mg_week > 0
+            )
+            if typical_total > 0:
+                typical_values[product_key] = typical_total
+                guidance_present.append(True)
+            elif range_mid_total > 0:
+                range_values[product_key] = range_mid_total
+                guidance_present.append(True)
+            else:
+                guidance_present.append(False)
+
+        if len(typical_values) == len(sorted_products):
+            weighted_inputs = typical_values
+            mode = "guidance_weighted"
+        elif len(typical_values) + len(range_values) > 0:
+            mode = "guidance_range_weighted"
+            for product in sorted_products:
+                key = str(product.product_id)
+                if key in typical_values:
+                    weighted_inputs[key] = typical_values[key]
+                elif key in range_values:
+                    weighted_inputs[key] = range_values[key]
+                else:
+                    fallback_count += 1
+                    weighted_inputs[key] = self._driver_half_life_weight(product, has_driver)
+        elif has_driver or half_life_values:
+            mode = "driver_biased"
+            for product in sorted_products:
+                weighted_inputs[str(product.product_id)] = self._driver_half_life_weight(product, has_driver)
+        else:
+            mode = "equal_fallback"
+            for product in sorted_products:
+                weighted_inputs[str(product.product_id)] = Decimal("1")
+            fallback_count = len(sorted_products)
+
+        total_weight = sum(weighted_inputs.values()) or Decimal("1")
+        per_product_mg: dict[str, Decimal] = {}
+        for idx, product in enumerate(sorted_products):
+            key = str(product.product_id)
+            if idx == len(sorted_products) - 1:
+                allocated = weekly_target_total_mg - sum(per_product_mg.values())
+            else:
+                allocated = ((weekly_target_total_mg * weighted_inputs[key]) / total_weight).quantize(Decimal("0.0001"))
+            per_product_mg[key] = max(Decimal("0"), allocated)
+
+        guidance_coverage = Decimal(str(sum(1 for x in guidance_present if x) / max(len(sorted_products), 1)))
+        half_life_coverage = Decimal(
+            str(
+                sum(
+                    1
+                    for product in sorted_products
+                    if any(i.half_life_days and i.half_life_days > 0 for i in product.ingredients)
+                )
+                / max(len(sorted_products), 1)
+            )
+        )
+        score = (guidance_coverage * Decimal("0.65") + half_life_coverage * Decimal("0.35")) * Decimal("100")
+        if mode == "equal_fallback":
+            score -= Decimal("15")
+        score = max(Decimal("0"), min(Decimal("100"), score)).quantize(Decimal("0.01"))
+
+        quality_flags: list[str] = []
+        if guidance_coverage < Decimal("1"):
+            quality_flags.append("dose_guidance_missing_for_some_products")
+        if mode == "equal_fallback":
+            quality_flags.append("allocation_used_equal_fallback")
+        if not has_driver:
+            quality_flags.append("pulse_driver_missing")
+        if half_life_values and (max(half_life_values) / max(min(half_life_values), Decimal("0.1"))) >= Decimal("6"):
+            quality_flags.append("half_life_conflict_detected")
+
+        return {
+            "allocation_mode": mode,
+            "per_product_mg": per_product_mg,
+            "guidance_coverage_score": score,
+            "quality_flags": quality_flags,
+            "allocation_details": {
+                "weights": {k: float(v) for k, v in weighted_inputs.items()},
+                "mode": mode,
+                "fallback_products_count": fallback_count,
+            },
+        }
+
+    def _driver_half_life_weight(self, product: PulseProductProfile, has_driver: bool) -> Decimal:
+        half_life = self._effective_half_life(product)
+        inverse_half_life_component = Decimal("1") / max(half_life, Decimal("0.5"))
+        driver_multiplier = Decimal("1")
+        if has_driver and any(i.is_pulse_driver for i in product.ingredients):
+            driver_multiplier = Decimal("1.35")
+        return (driver_multiplier + inverse_half_life_component).quantize(Decimal("0.0001"))
 
     def _generate_entries(self, settings: DraftSettingsView, plans: list[_PlanProduct]) -> tuple[list[PulsePlanEntry], Decimal, int]:
         total_days = (settings.duration_weeks or 0) * 7
