@@ -5,7 +5,14 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.application.reminders.repository import ReminderRepository
+from app.application.reminders.adherence import (
+    AdherenceCounterSnapshot,
+    classify_protocol_integrity,
+    compute_consecutive_negative_windows,
+)
 from app.application.reminders.schemas import (
+    ProtocolAdherenceSummaryView,
+    ProtocolStatusView,
     PulsePlanEntryView,
     ReminderDiagnostics,
     ReminderRuntimeView,
@@ -17,6 +24,7 @@ from app.domain.models.protocols import Protocol
 from app.domain.models.pulse_engine import PulsePlanEntryRecord
 from app.domain.models.reminders import (
     ProtocolAdherenceEvent,
+    ProtocolAdherenceSummary,
     ProtocolReminder,
     ReminderScheduleRequest,
 )
@@ -411,6 +419,11 @@ class SqlAlchemyReminderRepository(ReminderRepository):
         payload_json: dict,
     ) -> None:
         async with self.session_factory() as session:
+            previous_state = await session.scalar(
+                select(ProtocolAdherenceSummary.integrity_state).where(
+                    ProtocolAdherenceSummary.protocol_id == protocol_id
+                )
+            )
             session.add(
                 ProtocolAdherenceEvent(
                     protocol_id=protocol_id,
@@ -421,6 +434,13 @@ class SqlAlchemyReminderRepository(ReminderRepository):
                     occurred_at=occurred_at,
                     payload_json=payload_json,
                 )
+            )
+            summary = await self._rebuild_protocol_summary_in_session(session, protocol_id)
+            await self._emit_integrity_events(
+                session=session,
+                protocol_id=protocol_id,
+                summary=summary,
+                previous_state=previous_state,
             )
             await session.commit()
 
@@ -449,12 +469,80 @@ class SqlAlchemyReminderRepository(ReminderRepository):
                     ProtocolReminder.status == "failed_delivery"
                 )
             )
+            integrity_rows = await session.execute(
+                select(
+                    ProtocolAdherenceSummary.integrity_state,
+                    func.count(ProtocolAdherenceSummary.id),
+                ).group_by(ProtocolAdherenceSummary.integrity_state)
+            )
+            reason_rows = await session.execute(
+                select(
+                    ProtocolAdherenceSummary.integrity_reason_code,
+                    func.count(ProtocolAdherenceSummary.id),
+                )
+                .where(ProtocolAdherenceSummary.integrity_reason_code.is_not(None))
+                .group_by(ProtocolAdherenceSummary.integrity_reason_code)
+            )
+            integrity_counts = {k: int(v) for k, v in integrity_rows.all()}
             return ReminderDiagnostics(
                 pending_requests=int(pending or 0),
                 failed_requests=int(failed or 0),
                 materialized_rows=int(materialized_rows or 0),
                 status_counts={k: int(v) for k, v in state_rows.all()},
                 failed_delivery_count=int(failed_delivery or 0),
+                integrity_state_counts=integrity_counts,
+                broken_protocol_count=int(integrity_counts.get("broken", 0)),
+                degraded_protocol_count=int(integrity_counts.get("degraded", 0)),
+                top_integrity_reason_codes={k: int(v) for k, v in reason_rows.all()},
+            )
+
+    async def rebuild_adherence_summary_for_protocol(
+        self, protocol_id: UUID
+    ) -> ProtocolAdherenceSummaryView | None:
+        async with self.session_factory() as session:
+            summary = await self._rebuild_protocol_summary_in_session(session, protocol_id)
+            await session.commit()
+            return summary
+
+    async def get_protocol_status_for_user(self, user_id: str) -> ProtocolStatusView:
+        async with self.session_factory() as session:
+            active_protocol = await session.scalar(
+                select(Protocol)
+                .where(Protocol.user_id == user_id, Protocol.status == "active")
+                .order_by(Protocol.created_at.desc())
+            )
+            if active_protocol is None:
+                return ProtocolStatusView(
+                    has_active_protocol=False,
+                    integrity_state=None,
+                    explanation="No active protocol.",
+                    summary=None,
+                )
+
+            summary_row = await session.scalar(
+                select(ProtocolAdherenceSummary).where(
+                    ProtocolAdherenceSummary.protocol_id == active_protocol.id
+                )
+            )
+            if summary_row is None:
+                return ProtocolStatusView(
+                    has_active_protocol=True,
+                    integrity_state="healthy",
+                    explanation="No adherence actions yet.",
+                    summary=None,
+                )
+
+            summary = self._to_adherence_summary_view(summary_row)
+            misses = summary.skipped_count + summary.expired_count
+            explanation = (
+                f"State={summary.integrity_state}. "
+                f"Completion {summary.completion_rate:.0%}, misses {misses}."
+            )
+            return ProtocolStatusView(
+                has_active_protocol=True,
+                integrity_state=summary.integrity_state,
+                explanation=explanation,
+                summary=summary,
             )
 
     def _to_runtime_view(self, row: ProtocolReminder) -> ReminderRuntimeView:
@@ -473,3 +561,199 @@ class SqlAlchemyReminderRepository(ReminderRepository):
             last_message_chat_id=row.last_message_chat_id,
             last_message_id=row.last_message_id,
         )
+
+    @staticmethod
+    def _to_adherence_summary_view(
+        row: ProtocolAdherenceSummary,
+    ) -> ProtocolAdherenceSummaryView:
+        return ProtocolAdherenceSummaryView(
+            protocol_id=row.protocol_id,
+            pulse_plan_id=row.pulse_plan_id,
+            user_id=row.user_id,
+            completed_count=row.completed_count,
+            skipped_count=row.skipped_count,
+            snoozed_count=row.snoozed_count,
+            expired_count=row.expired_count,
+            total_actionable_count=row.total_actionable_count,
+            completion_rate=float(row.completion_rate),
+            skip_rate=float(row.skip_rate),
+            expiry_rate=float(row.expiry_rate),
+            last_action_at=row.last_action_at,
+            integrity_state=row.integrity_state,
+            integrity_reason_code=row.integrity_reason_code,
+            broken_reason_code=row.broken_reason_code,
+            integrity_detail_json=row.integrity_detail_json or {},
+            updated_at=row.updated_at,
+        )
+
+    async def _rebuild_protocol_summary_in_session(
+        self, session, protocol_id: UUID
+    ) -> ProtocolAdherenceSummaryView | None:
+        counts = (
+            await session.execute(
+                select(
+                    ProtocolAdherenceEvent.action_code,
+                    func.count(ProtocolAdherenceEvent.id),
+                )
+                .where(ProtocolAdherenceEvent.protocol_id == protocol_id)
+                .group_by(ProtocolAdherenceEvent.action_code)
+            )
+        ).all()
+        if not counts:
+            return None
+
+        latest = await session.scalar(
+            select(ProtocolAdherenceEvent)
+            .where(ProtocolAdherenceEvent.protocol_id == protocol_id)
+            .order_by(ProtocolAdherenceEvent.occurred_at.desc())
+        )
+        if latest is None:
+            return None
+
+        count_map = {code: int(value) for code, value in counts}
+        completed = count_map.get("done", 0)
+        skipped = count_map.get("skip", 0)
+        snoozed = count_map.get("snooze", 0)
+        expired = count_map.get("expired", 0)
+        actionable = completed + skipped + expired
+        completion_rate = (completed / actionable) if actionable else 0.0
+        skip_rate = (skipped / actionable) if actionable else 0.0
+        expiry_rate = (expired / actionable) if actionable else 0.0
+
+        recent_actions = list(
+            await session.scalars(
+                select(ProtocolAdherenceEvent.action_code)
+                .where(ProtocolAdherenceEvent.protocol_id == protocol_id)
+                .order_by(ProtocolAdherenceEvent.occurred_at.desc())
+                .limit(12)
+            )
+        )
+        consecutive_negative, consecutive_expired = compute_consecutive_negative_windows(
+            recent_actions
+        )
+        classification = classify_protocol_integrity(
+            AdherenceCounterSnapshot(
+                completed_count=completed,
+                skipped_count=skipped,
+                snoozed_count=snoozed,
+                expired_count=expired,
+                total_actionable_count=actionable,
+                completion_rate=completion_rate,
+                skip_rate=skip_rate,
+                expiry_rate=expiry_rate,
+                last_action_at=latest.occurred_at,
+                consecutive_negative_count=consecutive_negative,
+                consecutive_expiry_count=consecutive_expired,
+            )
+        )
+
+        row = await session.scalar(
+            select(ProtocolAdherenceSummary).where(
+                ProtocolAdherenceSummary.protocol_id == protocol_id
+            )
+        )
+        if row is None:
+            row = ProtocolAdherenceSummary(
+                protocol_id=protocol_id,
+                pulse_plan_id=latest.pulse_plan_id,
+                user_id=latest.user_id,
+            )
+        row.pulse_plan_id = latest.pulse_plan_id
+        row.user_id = latest.user_id
+        row.completed_count = completed
+        row.skipped_count = skipped
+        row.snoozed_count = snoozed
+        row.expired_count = expired
+        row.total_actionable_count = actionable
+        row.completion_rate = completion_rate
+        row.skip_rate = skip_rate
+        row.expiry_rate = expiry_rate
+        row.last_action_at = latest.occurred_at
+        row.integrity_state = classification.integrity_state
+        row.integrity_reason_code = classification.reason_code
+        row.broken_reason_code = (
+            classification.reason_code if classification.integrity_state == "broken" else None
+        )
+        row.integrity_detail_json = classification.detail_payload
+        session.add(row)
+
+        protocol = await session.scalar(select(Protocol).where(Protocol.id == protocol_id))
+        if protocol is not None:
+            if classification.integrity_state in {"degraded", "broken"}:
+                if protocol.protocol_integrity_flagged_at is None:
+                    protocol.protocol_integrity_flagged_at = datetime.now(
+                        latest.occurred_at.tzinfo
+                    )
+            if classification.integrity_state == "broken" and protocol.protocol_broken_at is None:
+                protocol.protocol_broken_at = datetime.now(latest.occurred_at.tzinfo)
+            session.add(protocol)
+        await session.flush()
+        return self._to_adherence_summary_view(row)
+
+    async def _emit_integrity_events(
+        self,
+        *,
+        session,
+        protocol_id: UUID,
+        summary: ProtocolAdherenceSummaryView | None,
+        previous_state: str | None,
+    ) -> None:
+        if summary is None:
+            return
+        session.add(
+            OutboxEvent(
+                event_type="protocol_integrity_updated",
+                aggregate_type="protocol",
+                aggregate_id=protocol_id,
+                payload_json={
+                    "protocol_id": str(summary.protocol_id),
+                    "user_id": summary.user_id,
+                    "integrity_state": summary.integrity_state,
+                    "integrity_reason_code": summary.integrity_reason_code,
+                    "completion_rate": summary.completion_rate,
+                    "skip_rate": summary.skip_rate,
+                    "expiry_rate": summary.expiry_rate,
+                    "total_actionable_count": summary.total_actionable_count,
+                },
+                status="pending",
+            )
+        )
+        if summary.integrity_state == "degraded" and previous_state != "degraded":
+            session.add(
+                OutboxEvent(
+                    event_type="protocol_degraded",
+                    aggregate_type="protocol",
+                    aggregate_id=protocol_id,
+                    payload_json={
+                        "protocol_id": str(summary.protocol_id),
+                        "reason_code": summary.integrity_reason_code,
+                    },
+                    status="pending",
+                )
+            )
+        if summary.integrity_state == "broken" and previous_state != "broken":
+            session.add(
+                OutboxEvent(
+                    event_type="protocol_broken",
+                    aggregate_type="protocol",
+                    aggregate_id=protocol_id,
+                    payload_json={
+                        "protocol_id": str(summary.protocol_id),
+                        "reason_code": summary.broken_reason_code,
+                    },
+                    status="pending",
+                )
+            )
+        if (
+            summary.integrity_state == "healthy"
+            and previous_state in {"watch", "degraded", "broken"}
+        ):
+            session.add(
+                OutboxEvent(
+                    event_type="protocol_integrity_recovered",
+                    aggregate_type="protocol",
+                    aggregate_id=protocol_id,
+                    payload_json={"protocol_id": str(summary.protocol_id)},
+                    status="pending",
+                )
+            )

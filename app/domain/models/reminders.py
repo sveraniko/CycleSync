@@ -6,6 +6,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Float,
     Index,
     Integer,
     String,
@@ -151,6 +152,45 @@ class ProtocolAdherenceEvent(SchemaTableMixin, BaseModel):
             "ix_protocol_adherence_events_user_occurred",
             "user_id",
             "occurred_at",
+        ),
+        {"schema": __schema_name__},
+    )
+
+
+class ProtocolAdherenceSummary(SchemaTableMixin, BaseModel):
+    __tablename__ = "protocol_adherence_summaries"
+    __schema_name__ = "adherence"
+
+    protocol_id: Mapped[UUID] = mapped_column(
+        ForeignKey("protocols.protocols.id", ondelete="CASCADE"), nullable=False
+    )
+    pulse_plan_id: Mapped[UUID] = mapped_column(
+        ForeignKey("pulse_engine.pulse_plans.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    completed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    snoozed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    expired_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_actionable_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    skip_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    expiry_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    last_action_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    integrity_state: Mapped[str] = mapped_column(String(32), nullable=False, default="healthy")
+    integrity_reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    broken_reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    integrity_detail_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+    __table_args__ = (
+        UniqueConstraint("protocol_id", name="uq_protocol_adherence_summaries_protocol"),
+        Index("ix_protocol_adherence_summaries_user_updated", "user_id", "updated_at"),
+        Index(
+            "ix_protocol_adherence_summaries_integrity_state_updated",
+            "integrity_state",
+            "updated_at",
         ),
         {"schema": __schema_name__},
     )

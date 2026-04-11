@@ -2,6 +2,8 @@ from datetime import date, datetime, time
 from uuid import UUID
 
 from app.application.reminders.schemas import (
+    ProtocolAdherenceSummaryView,
+    ProtocolStatusView,
     PulsePlanEntryView,
     ReminderDiagnostics,
     ReminderRuntimeView,
@@ -134,4 +136,12 @@ class ReminderRepository:
         raise NotImplementedError
 
     async def get_diagnostics(self) -> ReminderDiagnostics:
+        raise NotImplementedError
+
+    async def rebuild_adherence_summary_for_protocol(
+        self, protocol_id: UUID
+    ) -> ProtocolAdherenceSummaryView | None:
+        raise NotImplementedError
+
+    async def get_protocol_status_for_user(self, user_id: str) -> ProtocolStatusView:
         raise NotImplementedError

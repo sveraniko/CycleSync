@@ -267,6 +267,12 @@ class ReminderApplicationService:
     async def get_diagnostics(self):
         return await self.repository.get_diagnostics()
 
+    async def rebuild_protocol_adherence_summary(self, protocol_id):
+        return await self.repository.rebuild_adherence_summary_for_protocol(protocol_id)
+
+    async def get_user_protocol_status(self, user_id: str):
+        return await self.repository.get_protocol_status_for_user(user_id)
+
     async def _materialize_single_request(
         self, request
     ) -> ReminderMaterializationResult:
