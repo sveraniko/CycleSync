@@ -8,7 +8,12 @@ from app.domain.models.compound_catalog import (
     ProductMediaRef,
 )
 from app.domain.models.ops import JobRun, OutboxEvent, ProjectionCheckpoint
-from app.domain.models.protocols import Protocol, ProtocolDraft, ProtocolDraftItem, ProtocolDraftSettings
+from app.domain.models.protocols import (
+    Protocol,
+    ProtocolDraft,
+    ProtocolDraftItem,
+    ProtocolDraftSettings,
+)
 from app.domain.models.pulse_engine import (
     PulseCalculationRun,
     PulsePlan,
@@ -16,7 +21,8 @@ from app.domain.models.pulse_engine import (
     PulsePlanPreview,
     PulsePlanPreviewEntry,
 )
-from app.domain.models.reminders import ReminderScheduleRequest
+from app.domain.models.reminders import ProtocolReminder, ReminderScheduleRequest
+from app.domain.models.user_registry import UserNotificationSettings
 from app.domain.models.search_read import SearchProjectionState, SearchQueryLog
 
 __all__ = [
@@ -42,4 +48,6 @@ __all__ = [
     "PulsePlan",
     "PulsePlanEntryRecord",
     "ReminderScheduleRequest",
+    "ProtocolReminder",
+    "UserNotificationSettings",
 ]

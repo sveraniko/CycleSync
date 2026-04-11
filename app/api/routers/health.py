@@ -1,11 +1,42 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
+from sqlalchemy import text
 
 from app.infrastructure.db import db_healthcheck
 from app.infrastructure.redis import redis_healthcheck
 
 router = APIRouter(prefix="/health", tags=["health"])
+
+
+async def _load_reminder_foundation_metrics(session_factory) -> dict[str, int]:
+    try:
+        async with session_factory() as session:
+            pending = await session.scalar(
+                text(
+                    "SELECT count(*) FROM reminders.reminder_schedule_requests WHERE status = 'requested'"
+                )
+            )
+            failed = await session.scalar(
+                text(
+                    "SELECT count(*) FROM reminders.reminder_schedule_requests WHERE status = 'failed'"
+                )
+            )
+            materialized = await session.scalar(
+                text("SELECT count(*) FROM reminders.protocol_reminders")
+            )
+
+        return {
+            "pending_schedule_requests": int(pending or 0),
+            "failed_schedule_requests": int(failed or 0),
+            "materialized_reminder_rows": int(materialized or 0),
+        }
+    except Exception:
+        return {
+            "pending_schedule_requests": 0,
+            "failed_schedule_requests": 0,
+            "materialized_reminder_rows": 0,
+        }
 
 
 @router.get("/live")
@@ -39,7 +70,12 @@ async def ready(request: Request) -> dict[str, object]:
 async def diagnostics(request: Request) -> dict[str, object]:
     settings = request.app.state.settings
     ready_payload = await ready(request)
-    catalog_source_configured = bool(settings.google_sheets_sheet_id and settings.google_sheets_tab_name)
+    catalog_source_configured = bool(
+        settings.google_sheets_sheet_id and settings.google_sheets_tab_name
+    )
+    reminder_metrics = await _load_reminder_foundation_metrics(
+        request.app.state.infra.db_session_factory
+    )
     return {
         "app_name": settings.app_name,
         "env": settings.app_env,
@@ -50,6 +86,7 @@ async def diagnostics(request: Request) -> dict[str, object]:
             "status": ready_payload["status"],
             "ok": ready_payload["status"] == "ok",
         },
+        "reminders_foundation": reminder_metrics,
         "catalog_source": {
             "configured": catalog_source_configured,
             "source": "google_sheets",

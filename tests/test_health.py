@@ -21,3 +21,4 @@ def test_diagnostics_shape() -> None:
     assert "redis" in payload["dependencies"]
     assert "search" in payload["dependencies"]
     assert "catalog_source" in payload
+    assert "reminders_foundation" in payload
