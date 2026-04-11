@@ -1069,5 +1069,163 @@ def upgrade() -> None:
         op.alter_column("protocol_adherence_summaries", col, server_default=None, schema="adherence")
 
 
+    # from 20260411_0013_wave6_pr1_labs_foundation.py
+    op.create_table(
+        "markers",
+        sa.Column("marker_code", sa.String(length=64), nullable=False),
+        sa.Column("display_name", sa.String(length=128), nullable=False),
+        sa.Column("category_code", sa.String(length=64), nullable=False),
+        sa.Column("default_unit", sa.String(length=32), nullable=False),
+        sa.Column("accepted_units", postgresql.ARRAY(sa.String(length=32)), nullable=False),
+        sa.Column("notes", sa.Text(), nullable=True),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.PrimaryKeyConstraint("id", name="pk_labs_markers"),
+        sa.UniqueConstraint("marker_code", name="uq_labs_markers_marker_code"),
+        schema="labs",
+    )
+    op.create_index("ix_labs_markers_category_active", "markers", ["category_code", "is_active"], unique=False, schema="labs")
+
+    op.create_table(
+        "marker_aliases",
+        sa.Column("marker_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("alias_text", sa.String(length=128), nullable=False),
+        sa.Column("normalized_alias", sa.String(length=128), nullable=False),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["marker_id"], ["labs.markers.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id", name="pk_labs_marker_aliases"),
+        sa.UniqueConstraint("marker_id", "normalized_alias", name="uq_labs_marker_aliases_marker_alias"),
+        schema="labs",
+    )
+    op.create_index("ix_labs_marker_aliases_normalized_alias", "marker_aliases", ["normalized_alias"], unique=False, schema="labs")
+
+    op.create_table(
+        "lab_panels",
+        sa.Column("panel_code", sa.String(length=64), nullable=False),
+        sa.Column("display_name", sa.String(length=128), nullable=False),
+        sa.Column("notes", sa.Text(), nullable=True),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.PrimaryKeyConstraint("id", name="pk_labs_lab_panels"),
+        sa.UniqueConstraint("panel_code", name="uq_labs_lab_panels_panel_code"),
+        schema="labs",
+    )
+    op.create_index("ix_labs_lab_panels_active", "lab_panels", ["is_active"], unique=False, schema="labs")
+
+    op.create_table(
+        "lab_panel_markers",
+        sa.Column("panel_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("marker_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("sort_order", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("is_required", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["panel_id"], ["labs.lab_panels.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["marker_id"], ["labs.markers.id"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("id", name="pk_labs_lab_panel_markers"),
+        sa.UniqueConstraint("panel_id", "marker_id", name="uq_labs_panel_markers_pair"),
+        schema="labs",
+    )
+    op.create_index("ix_labs_lab_panel_markers_panel_order", "lab_panel_markers", ["panel_id", "sort_order"], unique=False, schema="labs")
+
+    op.create_table(
+        "lab_reports",
+        sa.Column("user_id", sa.String(length=64), nullable=False),
+        sa.Column("protocol_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("report_date", sa.Date(), nullable=False),
+        sa.Column("source_lab_name", sa.String(length=128), nullable=True),
+        sa.Column("notes", sa.Text(), nullable=True),
+        sa.Column("finalized_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["protocol_id"], ["protocols.protocols.id"], ondelete="SET NULL"),
+        sa.PrimaryKeyConstraint("id", name="pk_labs_lab_reports"),
+        schema="labs",
+    )
+    op.create_index("ix_labs_lab_reports_user_date", "lab_reports", ["user_id", "report_date"], unique=False, schema="labs")
+    op.create_index("ix_labs_lab_reports_protocol_date", "lab_reports", ["protocol_id", "report_date"], unique=False, schema="labs")
+
+    op.create_table(
+        "lab_report_entries",
+        sa.Column("lab_report_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("marker_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("entered_value", sa.String(length=64), nullable=False),
+        sa.Column("numeric_value", sa.Numeric(precision=14, scale=4), nullable=True),
+        sa.Column("unit", sa.String(length=32), nullable=False),
+        sa.Column("reference_min", sa.Numeric(precision=14, scale=4), nullable=True),
+        sa.Column("reference_max", sa.Numeric(precision=14, scale=4), nullable=True),
+        sa.Column("entered_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["lab_report_id"], ["labs.lab_reports.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["marker_id"], ["labs.markers.id"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("id", name="pk_labs_lab_report_entries"),
+        sa.UniqueConstraint("lab_report_id", "marker_id", name="uq_labs_report_entries_report_marker"),
+        schema="labs",
+    )
+    op.create_index("ix_labs_lab_report_entries_report_entered", "lab_report_entries", ["lab_report_id", "entered_at"], unique=False, schema="labs")
+
+    op.execute(sa.text("""
+        INSERT INTO labs.markers (id, marker_code, display_name, category_code, default_unit, accepted_units, notes, is_active)
+        VALUES
+        (gen_random_uuid(), 'testosterone_total', 'Total Testosterone', 'male_hormones', 'ng/dL', ARRAY['ng/dL','nmol/L'], NULL, true),
+        (gen_random_uuid(), 'testosterone_free', 'Free Testosterone', 'male_hormones', 'pg/mL', ARRAY['pg/mL','ng/dL'], NULL, true),
+        (gen_random_uuid(), 'shbg', 'SHBG', 'male_hormones', 'nmol/L', ARRAY['nmol/L'], NULL, true),
+        (gen_random_uuid(), 'lh', 'LH', 'male_hormones', 'mIU/mL', ARRAY['mIU/mL','IU/L'], NULL, true),
+        (gen_random_uuid(), 'fsh', 'FSH', 'male_hormones', 'mIU/mL', ARRAY['mIU/mL','IU/L'], NULL, true),
+        (gen_random_uuid(), 'prolactin', 'Prolactin', 'male_hormones', 'ng/mL', ARRAY['ng/mL','mIU/L'], NULL, true),
+        (gen_random_uuid(), 'estradiol', 'Estradiol', 'male_hormones', 'pg/mL', ARRAY['pg/mL','pmol/L'], NULL, true),
+        (gen_random_uuid(), 'dhea_s', 'DHEA-S', 'male_hormones', 'ug/dL', ARRAY['ug/dL','umol/L'], NULL, true),
+        (gen_random_uuid(), 'hematocrit', 'Hematocrit', 'hematology', '%', ARRAY['%'], NULL, true),
+        (gen_random_uuid(), 'hemoglobin', 'Hemoglobin', 'hematology', 'g/dL', ARRAY['g/dL','g/L'], NULL, true),
+        (gen_random_uuid(), 'rbc', 'RBC', 'hematology', 'x10^12/L', ARRAY['x10^12/L'], NULL, true),
+        (gen_random_uuid(), 'cholesterol_total', 'Total Cholesterol', 'lipids', 'mg/dL', ARRAY['mg/dL','mmol/L'], NULL, true),
+        (gen_random_uuid(), 'cholesterol_ldl', 'LDL Cholesterol', 'lipids', 'mg/dL', ARRAY['mg/dL','mmol/L'], NULL, true),
+        (gen_random_uuid(), 'cholesterol_hdl', 'HDL Cholesterol', 'lipids', 'mg/dL', ARRAY['mg/dL','mmol/L'], NULL, true),
+        (gen_random_uuid(), 'triglycerides', 'Triglycerides', 'lipids', 'mg/dL', ARRAY['mg/dL','mmol/L'], NULL, true),
+        (gen_random_uuid(), 'alt', 'ALT', 'liver', 'U/L', ARRAY['U/L'], NULL, true),
+        (gen_random_uuid(), 'ast', 'AST', 'liver', 'U/L', ARRAY['U/L'], NULL, true),
+        (gen_random_uuid(), 'ggt', 'GGT', 'liver', 'U/L', ARRAY['U/L'], NULL, true),
+        (gen_random_uuid(), 'glucose_fasting', 'Fasting Glucose', 'metabolic', 'mg/dL', ARRAY['mg/dL','mmol/L'], NULL, true),
+        (gen_random_uuid(), 'hba1c', 'HbA1c', 'metabolic', '%', ARRAY['%'], NULL, true),
+        (gen_random_uuid(), 'igf_1', 'IGF-1', 'gh_related', 'ng/mL', ARRAY['ng/mL','nmol/L'], NULL, true)
+    """))
+
+    op.execute(sa.text("""
+        INSERT INTO labs.lab_panels (id, panel_code, display_name, notes, is_active)
+        VALUES
+        (gen_random_uuid(), 'male_hormones', 'Male Hormones', NULL, true),
+        (gen_random_uuid(), 'hematology', 'Hematology / Blood Thickness', NULL, true),
+        (gen_random_uuid(), 'lipids', 'Lipids', NULL, true),
+        (gen_random_uuid(), 'liver', 'Liver', NULL, true),
+        (gen_random_uuid(), 'metabolic', 'Metabolic', NULL, true),
+        (gen_random_uuid(), 'gh_related', 'GH-related', NULL, true)
+    """))
+
+    op.execute(sa.text("""
+        INSERT INTO labs.lab_panel_markers (id, panel_id, marker_id, sort_order, is_required)
+        SELECT gen_random_uuid(), p.id, m.id, row_number() OVER (PARTITION BY p.id ORDER BY m.display_name), false
+        FROM labs.lab_panels p
+        JOIN labs.markers m ON (
+            (p.panel_code = 'male_hormones' AND m.category_code = 'male_hormones') OR
+            (p.panel_code = 'hematology' AND m.category_code = 'hematology') OR
+            (p.panel_code = 'lipids' AND m.category_code = 'lipids') OR
+            (p.panel_code = 'liver' AND m.category_code = 'liver') OR
+            (p.panel_code = 'metabolic' AND m.category_code = 'metabolic') OR
+            (p.panel_code = 'gh_related' AND (m.category_code = 'gh_related' OR m.marker_code = 'glucose_fasting'))
+        )
+    """))
+
+
 def downgrade() -> None:
     raise NotImplementedError("Baseline downgrade is intentionally unsupported in pre-release consolidation.")

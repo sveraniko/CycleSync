@@ -29,6 +29,14 @@ from app.domain.models.reminders import (
 )
 from app.domain.models.user_registry import UserNotificationSettings
 from app.domain.models.search_read import SearchProjectionState, SearchQueryLog
+from app.domain.models.labs import (
+    LabMarker,
+    LabMarkerAlias,
+    LabPanel,
+    LabPanelMarker,
+    LabReport,
+    LabReportEntry,
+)
 
 __all__ = [
     "OutboxEvent",
@@ -57,4 +65,10 @@ __all__ = [
     "ProtocolAdherenceEvent",
     "ProtocolAdherenceSummary",
     "UserNotificationSettings",
+    "LabMarker",
+    "LabMarkerAlias",
+    "LabPanel",
+    "LabPanelMarker",
+    "LabReport",
+    "LabReportEntry",
 ]
