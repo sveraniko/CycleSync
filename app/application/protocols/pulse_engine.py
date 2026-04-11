@@ -22,6 +22,12 @@ class _PlanProduct:
     phase: int
 
 
+@dataclass(slots=True)
+class _HalfLifeResolution:
+    value: Decimal
+    mode: str
+
+
 class PulseCalculationEngine:
     def calculate(
         self,
@@ -76,8 +82,17 @@ class PulseCalculationEngine:
 
         allocation_context = self._resolve_allocation(products, settings.weekly_target_total_mg or Decimal("0"))
         plans = self._build_plan_products(settings, products, strategy, allocation_context["per_product_mg"])
+
+        optimization_applied = False
+        optimization_gain = Decimal("0.00")
+        optimization_before = None
+        optimization_after = None
         if preset_requested == "golden_pulse" and strategy == "golden_pulse":
-            self._optimize_phase_offsets(plans)
+            optimization_before = self._calculate_flatness(settings, plans)
+            optimized = self._optimize_phase_offsets(settings, plans)
+            optimization_after = self._calculate_flatness(settings, plans)
+            optimization_gain = (optimization_after - optimization_before).quantize(Decimal("0.01"))
+            optimization_applied = optimized and optimization_gain > Decimal("0")
 
         entries, max_volume, estimated_injections = self._generate_entries(settings, plans)
         if max_volume > settings.max_injection_volume_ml:
@@ -97,6 +112,13 @@ class PulseCalculationEngine:
             "allocation_mode": allocation_context["allocation_mode"],
             "per_product_weekly_target_mg": {k: float(v) for k, v in allocation_context["per_product_mg"].items()},
             "guidance_coverage_score": float(allocation_context["guidance_coverage_score"]),
+            "guidance_band_fit_score": float(allocation_context["guidance_band_fit_score"]),
+            "effective_half_life_mode": allocation_context["effective_half_life_mode"],
+            "half_life_resolution_quality": float(allocation_context["half_life_resolution_quality"]),
+            "optimization_applied": optimization_applied,
+            "optimization_gain": float(optimization_gain),
+            "optimization_flatness_before": float(optimization_before) if optimization_before is not None else None,
+            "optimization_flatness_after": float(optimization_after) if optimization_after is not None else None,
             "allocation_warning_flags": allocation_context["quality_flags"],
             "warning_flags": warning_flags,
             "degraded_fallback": degraded_fallback,
@@ -138,7 +160,13 @@ class PulseCalculationEngine:
             injections = 1
             if strategy == "unified_rhythm":
                 anchor = max(self._effective_half_life(p) for p in products)
-                injections = max(1, min(settings.max_injections_per_week or 1, int((Decimal("7") / (anchor * Decimal("0.65"))).to_integral_value(rounding=ROUND_HALF_UP))))
+                injections = max(
+                    1,
+                    min(
+                        settings.max_injections_per_week or 1,
+                        int((Decimal("7") / (anchor * Decimal("0.65"))).to_integral_value(rounding=ROUND_HALF_UP)),
+                    ),
+                )
             elif strategy == "layered_pulse":
                 injections = max(1, int((Decimal("7") / (half_life * Decimal("0.55"))).to_integral_value(rounding=ROUND_HALF_UP)))
                 injections = min(injections, settings.max_injections_per_week or injections)
@@ -151,13 +179,13 @@ class PulseCalculationEngine:
             phase = idx % max(day_interval, 1)
 
             output.append(
-                    _PlanProduct(
-                        profile=product,
-                        weekly_mg=weekly_mg_by_product.get(str(product.product_id), Decimal("0")),
-                        injections_per_week=injections,
-                        day_interval=day_interval,
-                        phase=phase,
-                    )
+                _PlanProduct(
+                    profile=product,
+                    weekly_mg=weekly_mg_by_product.get(str(product.product_id), Decimal("0")),
+                    injections_per_week=injections,
+                    day_interval=day_interval,
+                    phase=phase,
+                )
             )
         return output
 
@@ -169,6 +197,15 @@ class PulseCalculationEngine:
             for product in sorted_products
             if any(i.half_life_days and i.half_life_days > 0 for i in product.ingredients)
         ]
+
+        half_life_resolutions = {str(product.product_id): self._effective_half_life_resolution(product) for product in sorted_products}
+        per_product_half_life = {key: float(resolution.value) for key, resolution in half_life_resolutions.items()}
+        per_product_half_life_mode = {key: resolution.mode for key, resolution in half_life_resolutions.items()}
+        weighted_resolution_count = sum(1 for resolution in half_life_resolutions.values() if resolution.mode == "amount_weighted")
+        fallback_resolution_count = len(sorted_products) - weighted_resolution_count
+        effective_half_life_mode = "amount_weighted" if fallback_resolution_count == 0 else "mixed_fallback"
+        half_life_resolution_quality = Decimal(str(weighted_resolution_count / max(len(sorted_products), 1))).quantize(Decimal("0.01"))
+
         guidance_present = []
         fallback_count = 0
         weighted_inputs: dict[str, Decimal] = {}
@@ -186,7 +223,10 @@ class PulseCalculationEngine:
             range_mid_total = sum(
                 ((i.dose_guidance_min_mg_week or Decimal("0")) + (i.dose_guidance_max_mg_week or Decimal("0"))) / Decimal("2")
                 for i in product.ingredients
-                if i.dose_guidance_min_mg_week and i.dose_guidance_max_mg_week and i.dose_guidance_min_mg_week > 0 and i.dose_guidance_max_mg_week > 0
+                if i.dose_guidance_min_mg_week
+                and i.dose_guidance_max_mg_week
+                and i.dose_guidance_min_mg_week > 0
+                and i.dose_guidance_max_mg_week > 0
             )
             if typical_total > 0:
                 typical_values[product_key] = typical_total
@@ -242,10 +282,10 @@ class PulseCalculationEngine:
                 / max(len(sorted_products), 1)
             )
         )
-        score = (guidance_coverage * Decimal("0.65") + half_life_coverage * Decimal("0.35")) * Decimal("100")
+        guidance_coverage_score = (guidance_coverage * Decimal("0.65") + half_life_coverage * Decimal("0.35")) * Decimal("100")
         if mode == "equal_fallback":
-            score -= Decimal("15")
-        score = max(Decimal("0"), min(Decimal("100"), score)).quantize(Decimal("0.01"))
+            guidance_coverage_score -= Decimal("15")
+        guidance_coverage_score = max(Decimal("0"), min(Decimal("100"), guidance_coverage_score)).quantize(Decimal("0.01"))
 
         quality_flags: list[str] = []
         if guidance_coverage < Decimal("1"):
@@ -257,15 +297,33 @@ class PulseCalculationEngine:
         if half_life_values and (max(half_life_values) / max(min(half_life_values), Decimal("0.1"))) >= Decimal("6"):
             quality_flags.append("half_life_conflict_detected")
 
+        boundary_results, boundary_summary, guidance_band_fit_score = self._evaluate_guidance_boundaries(sorted_products, per_product_mg)
+        if boundary_summary["below_range_count"] > 0:
+            quality_flags.append("allocation_below_guidance_for_some_products")
+        if boundary_summary["above_range_count"] > 0:
+            quality_flags.append("allocation_above_guidance_for_some_products")
+        if boundary_summary["below_range_count"] > 0 or boundary_summary["above_range_count"] > 0:
+            quality_flags.append("allocation_outside_guidance_band")
+
         return {
             "allocation_mode": mode,
             "per_product_mg": per_product_mg,
-            "guidance_coverage_score": score,
+            "guidance_coverage_score": guidance_coverage_score,
+            "guidance_band_fit_score": guidance_band_fit_score,
+            "effective_half_life_mode": effective_half_life_mode,
+            "half_life_resolution_quality": half_life_resolution_quality,
             "quality_flags": quality_flags,
             "allocation_details": {
                 "weights": {k: float(v) for k, v in weighted_inputs.items()},
                 "mode": mode,
                 "fallback_products_count": fallback_count,
+                "effective_half_life_mode": effective_half_life_mode,
+                "per_product_effective_half_life_days": per_product_half_life,
+                "per_product_half_life_resolution_mode": per_product_half_life_mode,
+                "per_product_allocated_mg_week": {k: float(v) for k, v in per_product_mg.items()},
+                "per_product_guidance_band": boundary_results,
+                "guidance_band_fit_score": float(guidance_band_fit_score),
+                "boundary_summary": boundary_summary,
             },
         }
 
@@ -329,19 +387,144 @@ class PulseCalculationEngine:
         if avg == 0:
             return Decimal("0")
         variance = sum((x - avg) ** 2 for x in series) / len(series)
-        stddev = variance ** 0.5
+        stddev = variance**0.5
         coeff = stddev / avg
         score = max(0.0, 100.0 - coeff * 100.0)
         return Decimal(str(score)).quantize(Decimal("0.01"))
 
     @staticmethod
     def _effective_half_life(product: PulseProductProfile) -> Decimal:
-        values = [i.half_life_days for i in product.ingredients if i.half_life_days and i.half_life_days > 0]
-        if not values:
-            return Decimal("3")
-        return sum(values) / Decimal(len(values))
+        return PulseCalculationEngine._effective_half_life_resolution(product).value
 
     @staticmethod
-    def _optimize_phase_offsets(plans: list[_PlanProduct]) -> None:
-        for idx, plan in enumerate(plans):
-            plan.phase = (idx * 2) % max(plan.day_interval, 1)
+    def _effective_half_life_resolution(product: PulseProductProfile) -> _HalfLifeResolution:
+        weighted_sum = Decimal("0")
+        weight_total = Decimal("0")
+
+        for ingredient in product.ingredients:
+            if not ingredient.half_life_days or ingredient.half_life_days <= 0:
+                continue
+            amount_weight = ingredient.amount_mg if ingredient.amount_mg and ingredient.amount_mg > 0 else Decimal("0")
+            if amount_weight <= 0:
+                continue
+            if ingredient.is_pulse_driver:
+                amount_weight *= Decimal("1.15")
+            weighted_sum += ingredient.half_life_days * amount_weight
+            weight_total += amount_weight
+
+        if weight_total > 0:
+            return _HalfLifeResolution(
+                value=(weighted_sum / weight_total).quantize(Decimal("0.0001")),
+                mode="amount_weighted",
+            )
+
+        simple_values = [i.half_life_days for i in product.ingredients if i.half_life_days and i.half_life_days > 0]
+        if simple_values:
+            return _HalfLifeResolution(
+                value=(sum(simple_values) / Decimal(len(simple_values))).quantize(Decimal("0.0001")),
+                mode="arithmetic_fallback",
+            )
+        return _HalfLifeResolution(value=Decimal("3.0000"), mode="default_fallback")
+
+    def _evaluate_guidance_boundaries(
+        self,
+        products: list[PulseProductProfile],
+        per_product_mg: dict[str, Decimal],
+    ) -> tuple[dict[str, dict], dict[str, int], Decimal]:
+        boundary_results: dict[str, dict] = {}
+        evaluated_count = 0
+        in_range_count = 0
+
+        for product in products:
+            key = str(product.product_id)
+            allocated = per_product_mg.get(key, Decimal("0"))
+            expected_min = sum(
+                (i.dose_guidance_min_mg_week or Decimal("0"))
+                for i in product.ingredients
+                if i.dose_guidance_min_mg_week and i.dose_guidance_min_mg_week > 0
+            )
+            expected_max = sum(
+                (i.dose_guidance_max_mg_week or Decimal("0"))
+                for i in product.ingredients
+                if i.dose_guidance_max_mg_week and i.dose_guidance_max_mg_week > 0
+            )
+
+            status = "no_guidance"
+            if expected_min > 0 and expected_max > 0 and expected_max >= expected_min:
+                evaluated_count += 1
+                if allocated < expected_min:
+                    status = "below_range"
+                elif allocated > expected_max:
+                    status = "above_range"
+                else:
+                    status = "in_range"
+                    in_range_count += 1
+
+            boundary_results[key] = {
+                "allocated_mg_week": float(allocated),
+                "expected_min_mg_week": float(expected_min) if expected_min > 0 else None,
+                "expected_max_mg_week": float(expected_max) if expected_max > 0 else None,
+                "status": status,
+            }
+
+        below_range_count = sum(1 for result in boundary_results.values() if result["status"] == "below_range")
+        above_range_count = sum(1 for result in boundary_results.values() if result["status"] == "above_range")
+        guidance_band_fit_score = Decimal("100.00")
+        if evaluated_count > 0:
+            guidance_band_fit_score = (Decimal(in_range_count) / Decimal(evaluated_count) * Decimal("100")).quantize(Decimal("0.01"))
+
+        summary = {
+            "evaluated_products_count": evaluated_count,
+            "in_range_count": in_range_count,
+            "below_range_count": below_range_count,
+            "above_range_count": above_range_count,
+        }
+        return boundary_results, summary, guidance_band_fit_score
+
+    def _optimize_phase_offsets(self, settings: DraftSettingsView, plans: list[_PlanProduct]) -> bool:
+        if not plans:
+            return False
+
+        original_phases = [plan.phase for plan in plans]
+        global_best = self._calculate_flatness(settings, plans)
+
+        for _ in range(3):
+            improved_in_pass = False
+            for plan in plans:
+                start_phase = plan.phase
+                best_phase = start_phase
+                best_score = global_best
+
+                for candidate in range(max(plan.day_interval, 1)):
+                    if candidate == start_phase:
+                        continue
+                    plan.phase = candidate
+                    candidate_score = self._calculate_flatness(settings, plans)
+                    if candidate_score > best_score:
+                        best_score = candidate_score
+                        best_phase = candidate
+
+                plan.phase = best_phase
+                if best_score > global_best:
+                    global_best = best_score
+                    improved_in_pass = True
+
+            if not improved_in_pass:
+                break
+
+        final_score = self._calculate_flatness(settings, plans)
+        if final_score <= self._calculate_flatness(settings, [
+            _PlanProduct(
+                profile=plan.profile,
+                weekly_mg=plan.weekly_mg,
+                injections_per_week=plan.injections_per_week,
+                day_interval=plan.day_interval,
+                phase=original_phase,
+            )
+            for plan, original_phase in zip(plans, original_phases, strict=True)
+        ]):
+            for plan, original_phase in zip(plans, original_phases, strict=True):
+                plan.phase = original_phase
+            return False
+
+        return True
