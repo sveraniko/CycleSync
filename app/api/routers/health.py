@@ -35,14 +35,29 @@ async def _load_reminder_foundation_metrics(session_factory) -> dict[str, int]:
                     "SELECT count(*) FROM reminders.protocol_reminders WHERE status = 'failed_delivery'"
                 )
             )
+            integrity_rows = await session.execute(
+                text(
+                    "SELECT integrity_state, count(*) FROM adherence.protocol_adherence_summaries GROUP BY integrity_state"
+                )
+            )
+            reason_rows = await session.execute(
+                text(
+                    "SELECT integrity_reason_code, count(*) FROM adherence.protocol_adherence_summaries WHERE integrity_reason_code IS NOT NULL GROUP BY integrity_reason_code"
+                )
+            )
 
         status_counts = {row[0]: int(row[1]) for row in status_rows}
+        integrity_state_counts = {row[0]: int(row[1]) for row in integrity_rows}
         return {
             "pending_schedule_requests": int(pending or 0),
             "failed_schedule_requests": int(failed or 0),
             "materialized_reminder_rows": int(materialized or 0),
             "status_counts": status_counts,
             "failed_delivery_count": int(failed_delivery or 0),
+            "integrity_state_counts": integrity_state_counts,
+            "broken_protocol_count": int(integrity_state_counts.get("broken", 0)),
+            "degraded_protocol_count": int(integrity_state_counts.get("degraded", 0)),
+            "top_integrity_reason_codes": {row[0]: int(row[1]) for row in reason_rows},
         }
     except Exception:
         return {
@@ -51,6 +66,10 @@ async def _load_reminder_foundation_metrics(session_factory) -> dict[str, int]:
             "materialized_reminder_rows": 0,
             "status_counts": {},
             "failed_delivery_count": 0,
+            "integrity_state_counts": {},
+            "broken_protocol_count": 0,
+            "degraded_protocol_count": 0,
+            "top_integrity_reason_codes": {},
         }
 
 

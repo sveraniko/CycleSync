@@ -102,6 +102,12 @@ class Protocol(SchemaTableMixin, BaseModel):
         ForeignKey("protocols.protocols.id", ondelete="SET NULL"),
         nullable=True,
     )
+    protocol_integrity_flagged_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    protocol_broken_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     settings_snapshot_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
     summary_snapshot_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 

@@ -66,6 +66,10 @@ class ReminderDiagnostics:
     materialized_rows: int
     status_counts: dict[str, int]
     failed_delivery_count: int
+    integrity_state_counts: dict[str, int] | None = None
+    broken_protocol_count: int = 0
+    degraded_protocol_count: int = 0
+    top_integrity_reason_codes: dict[str, int] | None = None
 
 
 @dataclass(slots=True)
@@ -89,3 +93,32 @@ class ReminderActionResult:
 class SentMessageRef:
     chat_id: str
     message_id: str
+
+
+@dataclass(slots=True)
+class ProtocolAdherenceSummaryView:
+    protocol_id: UUID
+    pulse_plan_id: UUID
+    user_id: str
+    completed_count: int
+    skipped_count: int
+    snoozed_count: int
+    expired_count: int
+    total_actionable_count: int
+    completion_rate: float
+    skip_rate: float
+    expiry_rate: float
+    last_action_at: datetime | None
+    integrity_state: str
+    integrity_reason_code: str | None
+    broken_reason_code: str | None
+    integrity_detail_json: dict
+    updated_at: datetime
+
+
+@dataclass(slots=True)
+class ProtocolStatusView:
+    has_active_protocol: bool
+    integrity_state: str | None
+    explanation: str
+    summary: ProtocolAdherenceSummaryView | None

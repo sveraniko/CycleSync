@@ -23,6 +23,7 @@ from app.domain.models.pulse_engine import (
 )
 from app.domain.models.reminders import (
     ProtocolAdherenceEvent,
+    ProtocolAdherenceSummary,
     ProtocolReminder,
     ReminderScheduleRequest,
 )
@@ -54,5 +55,6 @@ __all__ = [
     "ReminderScheduleRequest",
     "ProtocolReminder",
     "ProtocolAdherenceEvent",
+    "ProtocolAdherenceSummary",
     "UserNotificationSettings",
 ]

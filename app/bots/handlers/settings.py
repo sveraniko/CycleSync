@@ -78,6 +78,16 @@ async def on_set_time_prompt(callback: CallbackQuery, state: FSMContext) -> None
     await callback.answer()
 
 
+@router.callback_query(F.data == "settings:protocol:status")
+async def on_protocol_status(
+    callback: CallbackQuery, reminder_service: ReminderApplicationService
+) -> None:
+    user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+    status = await reminder_service.get_user_protocol_status(user_id)
+    await callback.message.answer(_render_protocol_status(status))
+    await callback.answer()
+
+
 @router.message(ReminderSettingsState.reminder_time)
 async def on_set_time_input(
     message: Message, state: FSMContext, reminder_service: ReminderApplicationService
@@ -118,6 +128,11 @@ def build_settings_actions(reminders_enabled: bool) -> InlineKeyboardMarkup:
                     text="Set reminder time", callback_data="settings:time:set"
                 )
             ],
+            [
+                InlineKeyboardButton(
+                    text="Protocol status", callback_data="settings:protocol:status"
+                )
+            ]
         ]
     )
 
@@ -129,6 +144,24 @@ def _render_settings(settings) -> str:
             f"- reminders_enabled: {'on' if settings.reminders_enabled else 'off'}",
             f"- preferred_time_local: {settings.preferred_reminder_time_local.strftime('%H:%M') if settings.preferred_reminder_time_local else 'default'}",
             f"- timezone: {settings.timezone_name or 'default'}",
+        ]
+    )
+
+
+def _render_protocol_status(status) -> str:
+    if not status.has_active_protocol:
+        return "Protocol status:\n- no active protocol"
+    if status.summary is None:
+        return "Protocol status:\n- healthy\n- no adherence actions yet"
+    s = status.summary
+    misses = s.skipped_count + s.expired_count
+    return "\n".join(
+        [
+            "Protocol adherence status:",
+            f"- integrity: {s.integrity_state}",
+            f"- completion_rate: {s.completion_rate:.0%}",
+            f"- misses: {misses} (skip={s.skipped_count}, expired={s.expired_count})",
+            f"- reason: {s.integrity_reason_code or 'none'}",
         ]
     )
 

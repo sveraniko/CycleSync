@@ -1,11 +1,18 @@
 from datetime import time
 
 from app.bots.handlers.settings import (
+    _render_protocol_status,
     build_settings_actions,
     _parse_time,
     _render_settings,
 )
-from app.application.reminders.schemas import ReminderSettingsView
+from app.application.reminders.schemas import (
+    ProtocolAdherenceSummaryView,
+    ProtocolStatusView,
+    ReminderSettingsView,
+)
+from uuid import uuid4
+from datetime import datetime, timezone
 
 
 def test_settings_actions_toggle_variants() -> None:
@@ -14,6 +21,7 @@ def test_settings_actions_toggle_variants() -> None:
 
     assert on_markup.inline_keyboard[0][0].callback_data == "settings:reminders:off"
     assert off_markup.inline_keyboard[0][0].callback_data == "settings:reminders:on"
+    assert on_markup.inline_keyboard[2][0].callback_data == "settings:protocol:status"
 
 
 def test_parse_time_and_render_settings_smoke() -> None:
@@ -29,3 +37,34 @@ def test_parse_time_and_render_settings_smoke() -> None:
     text = _render_settings(view)
     assert "reminders_enabled: off" in text
     assert "07:00" in text
+
+
+def test_render_protocol_status_smoke() -> None:
+    summary = ProtocolAdherenceSummaryView(
+        protocol_id=uuid4(),
+        pulse_plan_id=uuid4(),
+        user_id="tg:1",
+        completed_count=5,
+        skipped_count=1,
+        snoozed_count=2,
+        expired_count=1,
+        total_actionable_count=7,
+        completion_rate=5 / 7,
+        skip_rate=1 / 7,
+        expiry_rate=1 / 7,
+        last_action_at=datetime(2026, 4, 11, tzinfo=timezone.utc),
+        integrity_state="watch",
+        integrity_reason_code="recent_misses",
+        broken_reason_code=None,
+        integrity_detail_json={},
+        updated_at=datetime(2026, 4, 11, tzinfo=timezone.utc),
+    )
+    status = ProtocolStatusView(
+        has_active_protocol=True,
+        integrity_state="watch",
+        explanation="demo",
+        summary=summary,
+    )
+    rendered = _render_protocol_status(status)
+    assert "integrity: watch" in rendered
+    assert "completion_rate" in rendered
