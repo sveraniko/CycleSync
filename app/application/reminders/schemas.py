@@ -43,7 +43,49 @@ class ReminderMaterializationResult:
 
 
 @dataclass(slots=True)
+class ReminderRuntimeView:
+    reminder_id: UUID
+    protocol_id: UUID
+    pulse_plan_id: UUID
+    user_id: str
+    status: str
+    scheduled_at_utc: datetime
+    injection_event_key: str
+    payload_json: dict
+    delivery_attempt_count: int
+    awaiting_action_until_utc: datetime | None
+    snoozed_until_utc: datetime | None
+    last_message_chat_id: str | None
+    last_message_id: str | None
+
+
+@dataclass(slots=True)
 class ReminderDiagnostics:
     pending_requests: int
     failed_requests: int
     materialized_rows: int
+    status_counts: dict[str, int]
+    failed_delivery_count: int
+
+
+@dataclass(slots=True)
+class ReminderDispatchReport:
+    due_selected: int
+    sent: int
+    expired: int
+    cleaned: int
+    failed_delivery: int
+
+
+@dataclass(slots=True)
+class ReminderActionResult:
+    reminder_id: UUID
+    action_code: str
+    status: str
+    idempotent: bool
+
+
+@dataclass(slots=True)
+class SentMessageRef:
+    chat_id: str
+    message_id: str

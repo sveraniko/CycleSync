@@ -3,9 +3,28 @@ from zoneinfo import ZoneInfo
 
 from app.application.reminders.repository import ReminderRepository
 from app.application.reminders.schemas import (
+    ReminderActionResult,
+    ReminderDispatchReport,
     ReminderMaterializationResult,
     ReminderSettingsView,
+    SentMessageRef,
 )
+
+
+class ReminderDeliveryGateway:
+    async def send_reminder(
+        self,
+        *,
+        user_id: str,
+        text: str,
+        callback_prefix: str,
+    ) -> SentMessageRef:
+        raise NotImplementedError
+
+    async def cleanup_message(
+        self, *, chat_id: str, message_id: str, text: str
+    ) -> None:
+        raise NotImplementedError
 
 
 class ReminderApplicationService:
@@ -15,10 +34,14 @@ class ReminderApplicationService:
         *,
         default_timezone: str = "UTC",
         default_local_time: time = time(9, 0),
+        awaiting_action_ttl_minutes: int = 180,
+        snooze_minutes: int = 30,
     ) -> None:
         self.repository = repository
         self.default_timezone = default_timezone
         self.default_local_time = default_local_time
+        self.awaiting_action_ttl_minutes = awaiting_action_ttl_minutes
+        self.snooze_minutes = snooze_minutes
 
     async def materialize_requested_schedules(
         self, *, limit: int = 100
@@ -71,6 +94,130 @@ class ReminderApplicationService:
             results.append(result)
 
         return results
+
+    async def dispatch_due_reminders(
+        self,
+        *,
+        delivery_gateway: ReminderDeliveryGateway,
+        now_utc: datetime | None = None,
+        limit: int = 100,
+    ) -> ReminderDispatchReport:
+        now = now_utc or datetime.now(timezone.utc)
+        due = await self.repository.claim_due_reminders(now_utc=now, limit=limit)
+        sent = 0
+        failed = 0
+
+        for reminder in due:
+            try:
+                text = self._render_reminder_text(reminder)
+                sent_ref = await delivery_gateway.send_reminder(
+                    user_id=reminder.user_id,
+                    text=text,
+                    callback_prefix=f"reminder:{reminder.reminder_id}",
+                )
+                await self.repository.mark_delivery_success(
+                    reminder_id=reminder.reminder_id,
+                    sent_at=now,
+                    awaiting_action_until_utc=now
+                    + timedelta(minutes=self.awaiting_action_ttl_minutes),
+                    chat_id=sent_ref.chat_id,
+                    message_id=sent_ref.message_id,
+                )
+                sent += 1
+            except Exception as exc:
+                await self.repository.mark_delivery_failed(
+                    reminder_id=reminder.reminder_id, error=str(exc)
+                )
+                failed += 1
+
+        expired = await self.repository.expire_due_awaiting_actions(now_utc=now)
+        cleaned = 0
+        for reminder in expired:
+            if reminder.last_message_chat_id and reminder.last_message_id:
+                await delivery_gateway.cleanup_message(
+                    chat_id=reminder.last_message_chat_id,
+                    message_id=reminder.last_message_id,
+                    text="Reminder expired. Marked as non-actionable.",
+                )
+            await self.repository.mark_cleaned(reminder.reminder_id, now_utc=now)
+            await self.repository.record_adherence_event(
+                protocol_id=reminder.protocol_id,
+                pulse_plan_id=reminder.pulse_plan_id,
+                reminder_id=reminder.reminder_id,
+                user_id=reminder.user_id,
+                action_code="expired",
+                occurred_at=now,
+                payload_json={"source": "expiry_worker"},
+            )
+            cleaned += 1
+
+        return ReminderDispatchReport(
+            due_selected=len(due),
+            sent=sent,
+            expired=len(expired),
+            cleaned=cleaned,
+            failed_delivery=failed,
+        )
+
+    async def handle_reminder_action(
+        self,
+        *,
+        reminder_id,
+        action_code: str,
+        delivery_gateway: ReminderDeliveryGateway | None = None,
+        now_utc: datetime | None = None,
+    ) -> ReminderActionResult:
+        now = now_utc or datetime.now(timezone.utc)
+        reminder = await self.repository.get_reminder_for_action(reminder_id)
+        if reminder is None:
+            return ReminderActionResult(
+                reminder_id=reminder_id,
+                action_code=action_code,
+                status="not_found",
+                idempotent=True,
+            )
+
+        snoozed_until = None
+        if action_code == "snooze":
+            snoozed_until = now + timedelta(minutes=self.snooze_minutes)
+
+        status, idempotent = await self.repository.apply_user_action(
+            reminder_id=reminder_id,
+            action_code=action_code,
+            acted_at=now,
+            snoozed_until_utc=snoozed_until,
+        )
+
+        if status in {"completed", "skipped", "snoozed"} and not idempotent:
+            await self.repository.record_adherence_event(
+                protocol_id=reminder.protocol_id,
+                pulse_plan_id=reminder.pulse_plan_id,
+                reminder_id=reminder.reminder_id,
+                user_id=reminder.user_id,
+                action_code=action_code,
+                occurred_at=now,
+                payload_json={"injection_event_key": reminder.injection_event_key},
+            )
+
+        if (
+            status in {"completed", "skipped", "snoozed"}
+            and delivery_gateway
+            and reminder.last_message_chat_id
+            and reminder.last_message_id
+        ):
+            await delivery_gateway.cleanup_message(
+                chat_id=reminder.last_message_chat_id,
+                message_id=reminder.last_message_id,
+                text=f"Reminder {status}.",
+            )
+            await self.repository.mark_cleaned(reminder_id, now_utc=now)
+
+        return ReminderActionResult(
+            reminder_id=reminder_id,
+            action_code=action_code,
+            status=status,
+            idempotent=idempotent,
+        )
 
     async def update_reminder_settings(
         self,
@@ -184,6 +331,16 @@ class ReminderApplicationService:
             existing_count=existing_count,
             suppressed_count=suppressed_count,
             status="materialized",
+        )
+
+    def _render_reminder_text(self, reminder) -> str:
+        payload = reminder.payload_json or {}
+        return (
+            f"Injection reminder: {reminder.injection_event_key}\n"
+            f"Product: {payload.get('product_id', 'n/a')}\n"
+            f"mg: {payload.get('computed_mg', 'n/a')}\n"
+            f"ml: {payload.get('volume_ml', 'n/a')}\n"
+            "Select action: Done / Snooze / Skip"
         )
 
 

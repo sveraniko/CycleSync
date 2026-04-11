@@ -1,4 +1,4 @@
-.PHONY: up down logs api bot format lint test db-upgrade db-downgrade db-revision db-current db-reset-local catalog-ingest search-rebuild reminders-materialize check-connectivity
+.PHONY: up down logs api bot format lint test db-upgrade db-downgrade db-revision db-current db-reset-local catalog-ingest search-rebuild reminders-materialize reminders-dispatch check-connectivity
 
 up:
 	docker compose up --build -d
@@ -23,6 +23,9 @@ search-rebuild:
 
 reminders-materialize:
 	python -m scripts.materialize_reminders
+
+reminders-dispatch:
+	python -m scripts.dispatch_reminders
 
 check-connectivity:
 	python -m scripts.check_connectivity

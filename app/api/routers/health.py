@@ -25,17 +25,32 @@ async def _load_reminder_foundation_metrics(session_factory) -> dict[str, int]:
             materialized = await session.scalar(
                 text("SELECT count(*) FROM reminders.protocol_reminders")
             )
+            status_rows = await session.execute(
+                text(
+                    "SELECT status, count(*) FROM reminders.protocol_reminders GROUP BY status"
+                )
+            )
+            failed_delivery = await session.scalar(
+                text(
+                    "SELECT count(*) FROM reminders.protocol_reminders WHERE status = 'failed_delivery'"
+                )
+            )
 
+        status_counts = {row[0]: int(row[1]) for row in status_rows}
         return {
             "pending_schedule_requests": int(pending or 0),
             "failed_schedule_requests": int(failed or 0),
             "materialized_reminder_rows": int(materialized or 0),
+            "status_counts": status_counts,
+            "failed_delivery_count": int(failed_delivery or 0),
         }
     except Exception:
         return {
             "pending_schedule_requests": 0,
             "failed_schedule_requests": 0,
             "materialized_reminder_rows": 0,
+            "status_counts": {},
+            "failed_delivery_count": 0,
         }
 
 
