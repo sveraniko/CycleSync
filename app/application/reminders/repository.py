@@ -94,6 +94,9 @@ class ReminderRepository:
     async def mark_cleaned(self, reminder_id: UUID, *, now_utc: datetime) -> None:
         raise NotImplementedError
 
+    async def mark_message_cleaned(self, reminder_id: UUID, *, now_utc: datetime) -> None:
+        raise NotImplementedError
+
     async def get_reminder_for_action(
         self, reminder_id: UUID
     ) -> ReminderRuntimeView | None:
@@ -107,6 +110,9 @@ class ReminderRepository:
         acted_at: datetime,
         snoozed_until_utc: datetime | None,
     ) -> tuple[str, bool]:
+        raise NotImplementedError
+
+    async def get_protocol_schedule_anchor_date(self, protocol_id: UUID) -> date | None:
         raise NotImplementedError
 
     async def enqueue_event(

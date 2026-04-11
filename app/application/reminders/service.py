@@ -210,7 +210,10 @@ class ReminderApplicationService:
                 message_id=reminder.last_message_id,
                 text=f"Reminder {status}.",
             )
-            await self.repository.mark_cleaned(reminder_id, now_utc=now)
+            if status == "snoozed":
+                await self.repository.mark_message_cleaned(reminder_id, now_utc=now)
+            else:
+                await self.repository.mark_cleaned(reminder_id, now_utc=now)
 
         return ReminderActionResult(
             reminder_id=reminder_id,
@@ -287,15 +290,20 @@ class ReminderApplicationService:
         created_count = 0
         existing_count = 0
         suppressed_count = 0
+        anchor_date = await self.repository.get_protocol_schedule_anchor_date(
+            request.protocol_id
+        )
 
         for entry in entries:
             if entry.entry_id in existing_entry_ids:
                 existing_count += 1
                 continue
 
-            local_date = entry.scheduled_day or (
-                request.created_at.date() + timedelta_days(entry.day_offset)
-            )
+            local_date = entry.scheduled_day
+            if local_date is None:
+                if anchor_date is None:
+                    raise ValueError("protocol_schedule_anchor_missing")
+                local_date = anchor_date + timedelta_days(entry.day_offset)
             local_dt = datetime.combine(local_date, local_time, tzinfo=local_tz)
             utc_dt = local_dt.astimezone(timezone.utc)
 
