@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     redis_dsn: str = Field(default="redis://localhost:6379/0")
 
     timezone_default: str = Field(default="UTC")
+    reminder_default_time_local: str = Field(default="09:00")
 
     catalog_ingest_enabled: bool = Field(default=False)
     google_sheets_sheet_id: str = Field(default="")
