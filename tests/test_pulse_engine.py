@@ -154,6 +154,94 @@ def test_driver_influence_for_driver_biased_mode() -> None:
     assert max(allocations.values()) != min(allocations.values())
 
 
+def test_weighted_effective_half_life_for_mixed_product() -> None:
+    product = PulseProductProfile(
+        product_id=uuid4(),
+        product_name="Mix",
+        concentration_mg_ml=Decimal("250"),
+        max_injection_volume_ml=Decimal("2.5"),
+        ingredients=[
+            PulseIngredientProfile("Long", Decimal("7"), Decimal("200"), True),
+            PulseIngredientProfile("Short", Decimal("1"), Decimal("100"), False),
+        ],
+    )
+
+    value = PulseCalculationEngine._effective_half_life(product)
+    # with driver boost (200*1.15 + 100) weight => 5.1818 days
+    assert value == Decimal("5.1818")
+
+
+def test_allocation_boundary_evaluation_flags_outside_guidance_band() -> None:
+    products = [
+        PulseProductProfile(
+            product_id=uuid4(),
+            product_name="A",
+            concentration_mg_ml=Decimal("200"),
+            max_injection_volume_ml=Decimal("2.5"),
+            ingredients=[
+                PulseIngredientProfile(
+                    "A",
+                    Decimal("4"),
+                    Decimal("100"),
+                    True,
+                    dose_guidance_typical_mg_week=Decimal("200"),
+                    dose_guidance_min_mg_week=Decimal("120"),
+                    dose_guidance_max_mg_week=Decimal("150"),
+                )
+            ],
+        ),
+        PulseProductProfile(
+            product_id=uuid4(),
+            product_name="B",
+            concentration_mg_ml=Decimal("200"),
+            max_injection_volume_ml=Decimal("2.5"),
+            ingredients=[
+                PulseIngredientProfile(
+                    "B",
+                    Decimal("2"),
+                    Decimal("100"),
+                    True,
+                    dose_guidance_typical_mg_week=Decimal("100"),
+                    dose_guidance_min_mg_week=Decimal("40"),
+                    dose_guidance_max_mg_week=Decimal("80"),
+                )
+            ],
+        ),
+    ]
+    result = PulseCalculationEngine().calculate(settings=_settings("layered_pulse"), products=products)
+
+    assert "allocation_above_guidance_for_some_products" in result.calculation_quality_flags
+    assert "allocation_outside_guidance_band" in result.calculation_quality_flags
+    assert (result.summary_metrics or {}).get("guidance_band_fit_score") < 100
+
+
+def test_golden_pulse_optimization_is_deterministic_and_non_regressive() -> None:
+    products = _products()
+    settings = _settings("golden_pulse", max_inj=4)
+
+    first = PulseCalculationEngine().calculate(settings=settings, products=products)
+    second = PulseCalculationEngine().calculate(settings=settings, products=products)
+
+    assert (first.summary_metrics or {}).get("flatness_stability_score") == (second.summary_metrics or {}).get(
+        "flatness_stability_score"
+    )
+    assert (first.summary_metrics or {}).get("optimization_gain", 0) >= 0
+
+
+def test_preview_summary_contains_new_math_diagnostics() -> None:
+    result = PulseCalculationEngine().calculate(settings=_settings("golden_pulse", max_inj=4), products=_products())
+    summary = result.summary_metrics or {}
+    details = result.allocation_details or {}
+
+    assert "guidance_band_fit_score" in summary
+    assert "effective_half_life_mode" in summary
+    assert "optimization_applied" in summary
+    assert "optimization_gain" in summary
+    assert "half_life_resolution_quality" in summary
+    assert "per_product_guidance_band" in details
+    assert "per_product_effective_half_life_days" in details
+
+
 def test_failed_validation_status() -> None:
     result = PulseCalculationEngine().calculate(settings=None, products=[])
     assert result.status == "failed_validation"
