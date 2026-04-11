@@ -1,4 +1,4 @@
-from datetime import datetime, time
+from datetime import date, datetime, time
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
@@ -280,6 +280,21 @@ class SqlAlchemyReminderRepository(ReminderRepository):
                 return
             row.status = "cleaned"
             row.clean_after_utc = now_utc
+            row.last_message_chat_id = None
+            row.last_message_id = None
+            session.add(row)
+            await session.commit()
+
+    async def mark_message_cleaned(self, reminder_id: UUID, *, now_utc: datetime) -> None:
+        async with self.session_factory() as session:
+            row = await session.scalar(
+                select(ProtocolReminder).where(ProtocolReminder.id == reminder_id)
+            )
+            if row is None:
+                return
+            row.clean_after_utc = now_utc
+            row.last_message_chat_id = None
+            row.last_message_id = None
             session.add(row)
             await session.commit()
 
@@ -325,23 +340,49 @@ class SqlAlchemyReminderRepository(ReminderRepository):
                 row.action_code = "done"
                 row.acted_at = acted_at
                 row.clean_after_utc = acted_at
+                row.awaiting_action_until_utc = None
+                row.snoozed_until_utc = None
             elif action_code == "skip":
                 row.status = "skipped"
                 row.action_code = "skip"
                 row.acted_at = acted_at
                 row.clean_after_utc = acted_at
+                row.awaiting_action_until_utc = None
+                row.snoozed_until_utc = None
             elif action_code == "snooze":
                 row.status = "snoozed"
                 row.action_code = "snooze"
                 row.acted_at = acted_at
                 row.snoozed_until_utc = snoozed_until_utc
-                row.clean_after_utc = acted_at
+                row.awaiting_action_until_utc = None
             else:
                 return row.status, True
 
             session.add(row)
             await session.commit()
             return row.status, False
+
+    async def get_protocol_schedule_anchor_date(
+        self, protocol_id: UUID
+    ) -> date | None:
+        async with self.session_factory() as session:
+            protocol = await session.scalar(
+                select(Protocol).where(Protocol.id == protocol_id)
+            )
+            if protocol is None:
+                return None
+
+            snapshot = protocol.settings_snapshot_json or {}
+            planned_start_raw = snapshot.get("planned_start_date")
+            if isinstance(planned_start_raw, str):
+                try:
+                    return datetime.fromisoformat(planned_start_raw).date()
+                except ValueError:
+                    pass
+
+            if protocol.activated_at is not None:
+                return protocol.activated_at.date()
+            return protocol.created_at.date()
 
     async def enqueue_event(
         self, *, event_type: str, aggregate_type: str, aggregate_id: UUID, payload: dict
