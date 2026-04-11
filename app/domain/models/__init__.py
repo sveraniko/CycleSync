@@ -21,7 +21,11 @@ from app.domain.models.pulse_engine import (
     PulsePlanPreview,
     PulsePlanPreviewEntry,
 )
-from app.domain.models.reminders import ProtocolReminder, ReminderScheduleRequest
+from app.domain.models.reminders import (
+    ProtocolAdherenceEvent,
+    ProtocolReminder,
+    ReminderScheduleRequest,
+)
 from app.domain.models.user_registry import UserNotificationSettings
 from app.domain.models.search_read import SearchProjectionState, SearchQueryLog
 
@@ -49,5 +53,6 @@ __all__ = [
     "PulsePlanEntryRecord",
     "ReminderScheduleRequest",
     "ProtocolReminder",
+    "ProtocolAdherenceEvent",
     "UserNotificationSettings",
 ]

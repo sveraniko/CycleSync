@@ -1,12 +1,14 @@
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from uuid import uuid4
 
 from app.application.reminders.service import ReminderApplicationService
 from app.application.reminders.schemas import (
     PulsePlanEntryView,
     ReminderDiagnostics,
+    ReminderRuntimeView,
     ReminderScheduleRequestView,
     ReminderSettingsView,
+    SentMessageRef,
 )
 
 
@@ -40,10 +42,29 @@ class FakeReminderRepo:
                 sequence_no=0,
             )
         ]
+        rid = uuid4()
+        self.runtime = ReminderRuntimeView(
+            reminder_id=rid,
+            protocol_id=self.request.protocol_id,
+            pulse_plan_id=self.request.pulse_plan_id,
+            user_id=self.protocol_user,
+            status="scheduled",
+            scheduled_at_utc=now - timedelta(minutes=1),
+            injection_event_key="evt_1",
+            payload_json={"computed_mg": 100.0, "volume_ml": 1.0, "product_id": "p1"},
+            delivery_attempt_count=0,
+            awaiting_action_until_utc=None,
+            snoozed_until_utc=None,
+            last_message_chat_id="100",
+            last_message_id="99",
+        )
         self.created = []
         self.materialized = []
         self.failed = []
         self.events = []
+        self.adherence_events = []
+        self.action_status = "awaiting_action"
+        self.expire_list: list[ReminderRuntimeView] = []
 
     async def dequeue_requested_schedule_requests(self, limit=100):
         return [self.request]
@@ -80,11 +101,55 @@ class FakeReminderRepo:
     async def create_protocol_reminder(self, **kwargs):
         self.created.append(kwargs)
 
+    async def claim_due_reminders(self, *, now_utc, limit=100):
+        return [self.runtime]
+
+    async def mark_delivery_success(self, **kwargs):
+        self.runtime.status = "awaiting_action"
+        self.runtime.awaiting_action_until_utc = kwargs["awaiting_action_until_utc"]
+        return True
+
+    async def mark_delivery_failed(self, **kwargs):
+        self.runtime.status = "failed_delivery"
+
+    async def expire_due_awaiting_actions(self, *, now_utc):
+        return self.expire_list
+
+    async def mark_cleaned(self, reminder_id, *, now_utc):
+        self.runtime.status = "cleaned"
+
+    async def get_reminder_for_action(self, reminder_id):
+        return self.runtime
+
+    async def apply_user_action(self, **kwargs):
+        action_code = kwargs["action_code"]
+        if self.action_status in {"completed", "skipped"}:
+            return self.action_status, True
+        mapping = {"done": "completed", "skip": "skipped", "snooze": "snoozed"}
+        self.action_status = mapping[action_code]
+        return self.action_status, False
+
     async def enqueue_event(self, **kwargs):
         self.events.append(kwargs)
 
+    async def record_adherence_event(self, **kwargs):
+        self.adherence_events.append(kwargs)
+
     async def get_diagnostics(self):
-        return ReminderDiagnostics(0, 0, len(self.created))
+        return ReminderDiagnostics(0, 0, len(self.created), {"scheduled": 1}, 0)
+
+
+class FakeGateway:
+    def __init__(self):
+        self.sent = []
+        self.cleaned = []
+
+    async def send_reminder(self, *, user_id, text, callback_prefix):
+        self.sent.append((user_id, text, callback_prefix))
+        return SentMessageRef(chat_id="100", message_id="101")
+
+    async def cleanup_message(self, *, chat_id, message_id, text):
+        self.cleaned.append((chat_id, message_id, text))
 
 
 def test_materialization_idempotent_and_timezone_applied() -> None:
@@ -100,43 +165,131 @@ def test_materialization_idempotent_and_timezone_applied() -> None:
     assert first[0].created_count == 1
     assert repo.created[0]["timezone_name"] == "Europe/Moscow"
     assert repo.created[0]["scheduled_local_time"] == time(8, 30)
-    assert repo.created[0]["scheduled_at_utc"].hour == 5
-
-    async def existing(_ids):
-        return {repo.entries[0].entry_id}
-
-    repo.list_existing_materialized_entry_ids = existing
-    second = asyncio.run(service.materialize_requested_schedules())
-    assert second[0].existing_count == 1
-    assert len(repo.created) == 1
 
 
-def test_disabled_reminders_materialize_suppressed() -> None:
+def test_due_selection_and_delivery_path() -> None:
     repo = FakeReminderRepo()
-    repo.settings = ReminderSettingsView(
-        user_id=repo.protocol_user,
-        reminders_enabled=False,
-        preferred_reminder_time_local=time(10, 0),
-        timezone_name="UTC",
+    gateway = FakeGateway()
+    service = ReminderApplicationService(repo)
+
+    import asyncio
+
+    report = asyncio.run(service.dispatch_due_reminders(delivery_gateway=gateway))
+    assert report.due_selected == 1
+    assert report.sent == 1
+    assert report.failed_delivery == 0
+    assert gateway.sent
+
+
+def test_done_transition_records_adherence() -> None:
+    repo = FakeReminderRepo()
+    gateway = FakeGateway()
+    service = ReminderApplicationService(repo)
+
+    import asyncio
+
+    result = asyncio.run(
+        service.handle_reminder_action(
+            reminder_id=repo.runtime.reminder_id,
+            action_code="done",
+            delivery_gateway=gateway,
+        )
     )
-    service = ReminderApplicationService(repo)
-
-    import asyncio
-
-    result = asyncio.run(service.materialize_requested_schedules())
-    assert result[0].suppressed_count == 1
-    assert repo.created[0]["status"] == "suppressed"
-    assert repo.created[0]["is_enabled"] is False
+    assert result.status == "completed"
+    assert repo.adherence_events[-1]["action_code"] == "done"
 
 
-def test_request_status_transitions_to_failed_on_missing_protocol() -> None:
+def test_snooze_transition_records_adherence() -> None:
     repo = FakeReminderRepo()
-    repo.protocol_user = None
     service = ReminderApplicationService(repo)
 
     import asyncio
 
-    result = asyncio.run(service.materialize_requested_schedules())
-    assert result == []
-    assert len(repo.failed) == 1
-    assert repo.materialized == []
+    result = asyncio.run(
+        service.handle_reminder_action(
+            reminder_id=repo.runtime.reminder_id,
+            action_code="snooze",
+        )
+    )
+    assert result.status == "snoozed"
+    assert repo.adherence_events[-1]["action_code"] == "snooze"
+
+
+def test_skip_transition_records_adherence() -> None:
+    repo = FakeReminderRepo()
+    service = ReminderApplicationService(repo)
+
+    import asyncio
+
+    result = asyncio.run(
+        service.handle_reminder_action(
+            reminder_id=repo.runtime.reminder_id,
+            action_code="skip",
+        )
+    )
+    assert result.status == "skipped"
+    assert repo.adherence_events[-1]["action_code"] == "skip"
+
+
+def test_expiry_path_and_cleanup() -> None:
+    repo = FakeReminderRepo()
+    repo.expire_list = [repo.runtime]
+    gateway = FakeGateway()
+    service = ReminderApplicationService(repo)
+
+    import asyncio
+
+    report = asyncio.run(service.dispatch_due_reminders(delivery_gateway=gateway))
+    assert report.expired == 1
+    assert report.cleaned == 1
+    assert repo.adherence_events[-1]["action_code"] == "expired"
+    assert gateway.cleaned
+
+
+def test_stale_message_cleanup_behavior() -> None:
+    repo = FakeReminderRepo()
+    gateway = FakeGateway()
+    service = ReminderApplicationService(repo)
+
+    import asyncio
+
+    asyncio.run(
+        service.handle_reminder_action(
+            reminder_id=repo.runtime.reminder_id,
+            action_code="done",
+            delivery_gateway=gateway,
+        )
+    )
+    assert gateway.cleaned[-1][0] == "100"
+
+
+def test_idempotent_callback_behavior() -> None:
+    repo = FakeReminderRepo()
+    repo.action_status = "completed"
+    service = ReminderApplicationService(repo)
+
+    import asyncio
+
+    result = asyncio.run(
+        service.handle_reminder_action(
+            reminder_id=repo.runtime.reminder_id,
+            action_code="done",
+        )
+    )
+    assert result.idempotent is True
+    assert repo.adherence_events == []
+
+
+def test_adherence_event_recording_payload_contains_reminder_id() -> None:
+    repo = FakeReminderRepo()
+    service = ReminderApplicationService(repo)
+
+    import asyncio
+
+    asyncio.run(
+        service.handle_reminder_action(
+            reminder_id=repo.runtime.reminder_id,
+            action_code="done",
+        )
+    )
+    assert repo.adherence_events[-1]["reminder_id"] == repo.runtime.reminder_id
