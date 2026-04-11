@@ -13,6 +13,11 @@ from app.domain.models import (
     PulseCalculationRun,
     PulsePlanPreview,
     PulsePlanPreviewEntry,
+    LabMarker,
+    LabReport,
+    LabReportEntry,
+    LabPanel,
+    LabPanelMarker,
 )
 
 
@@ -47,3 +52,11 @@ def test_pulse_engine_models_bound_to_pulse_engine_schema() -> None:
     assert PulseCalculationRun.__table__.schema == "pulse_engine"
     assert PulsePlanPreview.__table__.schema == "pulse_engine"
     assert PulsePlanPreviewEntry.__table__.schema == "pulse_engine"
+
+
+def test_labs_models_bound_to_labs_schema() -> None:
+    assert LabMarker.__table__.schema == "labs"
+    assert LabPanel.__table__.schema == "labs"
+    assert LabPanelMarker.__table__.schema == "labs"
+    assert LabReport.__table__.schema == "labs"
+    assert LabReportEntry.__table__.schema == "labs"
