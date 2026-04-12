@@ -4,6 +4,7 @@ import structlog
 from aiogram import Bot, Dispatcher
 
 from app.application.protocols import (
+    CourseEstimatorService,
     DraftApplicationService,
     ProtocolDraftReadinessService,
     PulseCalculationEngine,
@@ -62,6 +63,7 @@ async def run_bot() -> None:
         readiness_validator=readiness_service,
         pulse_engine=pulse_engine,
     )
+    estimator_service = CourseEstimatorService(repository=draft_repository)
 
     reminder_service = ReminderApplicationService(
         repository=reminder_repository,
@@ -102,6 +104,7 @@ async def run_bot() -> None:
             bot,
             search_service=search_service,
             draft_service=draft_service,
+            estimator_service=estimator_service,
             reminder_service=reminder_service,
             labs_service=labs_service,
             labs_triage_service=labs_triage_service,

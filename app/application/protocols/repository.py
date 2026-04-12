@@ -134,6 +134,12 @@ class DraftRepository:
     async def promote_latest_preview_to_active(self, user_id: str) -> ActiveProtocolView:
         raise NotImplementedError
 
+    async def get_latest_preview_id(self, user_id: str) -> UUID | None:
+        raise NotImplementedError
+
+    async def get_latest_active_protocol_id(self, user_id: str) -> UUID | None:
+        raise NotImplementedError
+
     async def cancel_active_protocol(self, user_id: str) -> UUID | None:
         raise NotImplementedError
 

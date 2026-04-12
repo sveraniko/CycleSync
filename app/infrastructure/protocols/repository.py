@@ -630,6 +630,27 @@ class SqlAlchemyDraftRepository:
                 warning_flags=pulse_plan.warning_flags_json or [],
             )
 
+    async def get_latest_preview_id(self, user_id: str) -> UUID | None:
+        async with self.session_factory() as session:
+            draft = await session.scalar(
+                select(ProtocolDraft).where(ProtocolDraft.user_id == user_id, ProtocolDraft.status == "draft")
+            )
+            if draft is None:
+                return None
+            return await session.scalar(
+                select(PulsePlanPreview.id)
+                .where(PulsePlanPreview.draft_id == draft.id)
+                .order_by(PulsePlanPreview.created_at.desc())
+            )
+
+    async def get_latest_active_protocol_id(self, user_id: str) -> UUID | None:
+        async with self.session_factory() as session:
+            return await session.scalar(
+                select(Protocol.id)
+                .where(Protocol.user_id == user_id, Protocol.status == "active")
+                .order_by(Protocol.created_at.desc())
+            )
+
     async def cancel_active_protocol(self, user_id: str) -> UUID | None:
         async with self.session_factory() as session:
             protocol = await session.scalar(

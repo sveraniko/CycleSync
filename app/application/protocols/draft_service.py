@@ -309,6 +309,12 @@ class DraftApplicationService:
         )
         return active
 
+    async def get_latest_preview_id(self, user_id: str) -> UUID | None:
+        return await self.repository.get_latest_preview_id(user_id)
+
+    async def get_latest_active_protocol_id(self, user_id: str) -> UUID | None:
+        return await self.repository.get_latest_active_protocol_id(user_id)
+
     async def cancel_active_protocol(self, user_id: str) -> bool:
         protocol_id = await self.repository.cancel_active_protocol(user_id=user_id)
         if protocol_id is None:

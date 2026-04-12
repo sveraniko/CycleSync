@@ -7,9 +7,10 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.types.callback_query import CallbackQuery
 
-from app.application.protocols import DraftApplicationService
+from app.application.protocols import CourseEstimatorService, DraftApplicationService
 from app.application.protocols.schemas import (
     ActiveProtocolView,
+    CourseEstimate,
     DraftSettingsInput,
     DraftView,
     InventoryConstraintInput,
@@ -216,11 +217,32 @@ async def on_stack_edit(callback: CallbackQuery, state: FSMContext, draft_servic
 async def on_run_pulse_calculation(callback: CallbackQuery, draft_service: DraftApplicationService) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     preview = await draft_service.generate_pulse_plan_preview(user_id)
-    await callback.message.answer(_render_preview_summary(preview), reply_markup=build_preview_actions())
+    await callback.message.answer(_render_preview_summary(preview), reply_markup=build_preview_actions(preview.preview_id))
     await callback.answer()
 
 
-@router.callback_query(F.data == "draft:activate:latest")
+@router.callback_query(F.data.startswith("draft:activate:prepare:"))
+async def on_prepare_activation(
+    callback: CallbackQuery,
+    draft_service: DraftApplicationService,
+    estimator_service: CourseEstimatorService,
+) -> None:
+    preview_id = UUID(callback.data.split(":", 3)[3])
+    try:
+        estimate = await estimator_service.estimate_from_preview(preview_id)
+    except ValueError:
+        await callback.message.answer("Не удалось построить pre-start estimate: preview недоступен.")
+        await callback.answer()
+        return
+
+    await callback.message.answer(
+        _render_pre_start_estimate_snapshot(estimate),
+        reply_markup=build_pre_start_actions(preview_id),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("draft:activate:confirm:"))
 async def on_activate_latest_preview(callback: CallbackQuery, draft_service: DraftApplicationService) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     try:
@@ -230,7 +252,45 @@ async def on_activate_latest_preview(callback: CallbackQuery, draft_service: Dra
         await callback.answer()
         return
 
-    await callback.message.answer(_render_active_protocol_summary(active))
+    await callback.message.answer(_render_active_protocol_summary(active), reply_markup=build_active_protocol_actions())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("draft:estimate:preview:"))
+async def on_preview_estimate(
+    callback: CallbackQuery,
+    estimator_service: CourseEstimatorService,
+) -> None:
+    preview_id = UUID(callback.data.split(":", 3)[3])
+    try:
+        estimate = await estimator_service.estimate_from_preview(preview_id)
+    except ValueError:
+        await callback.message.answer("Course estimate unavailable: preview не найден.")
+        await callback.answer()
+        return
+    await callback.message.answer(_render_course_estimate(estimate))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "draft:estimate:active:latest")
+async def on_active_protocol_estimate(
+    callback: CallbackQuery,
+    draft_service: DraftApplicationService,
+    estimator_service: CourseEstimatorService,
+) -> None:
+    user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+    protocol_id = await draft_service.get_latest_active_protocol_id(user_id)
+    if protocol_id is None:
+        await callback.message.answer("Нет active protocol. Сначала активируйте протокол из preview.")
+        await callback.answer()
+        return
+    try:
+        estimate = await estimator_service.estimate_from_active_protocol(protocol_id)
+    except ValueError:
+        await callback.message.answer("Course estimate unavailable: active protocol не найден.")
+        await callback.answer()
+        return
+    await callback.message.answer(_render_course_estimate(estimate))
     await callback.answer()
 
 
@@ -415,12 +475,32 @@ def build_readiness_actions() -> InlineKeyboardMarkup:
     )
 
 
-def build_preview_actions() -> InlineKeyboardMarkup:
+def build_preview_actions(preview_id: UUID) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Пересчитать preview", callback_data="draft:calculate:run")],
+            [InlineKeyboardButton(text="Course estimate", callback_data=f"draft:estimate:preview:{preview_id}")],
             [InlineKeyboardButton(text="Сменить preset", callback_data="draft:calculate")],
-            [InlineKeyboardButton(text="Подтвердить и активировать", callback_data="draft:activate:latest")],
+            [InlineKeyboardButton(text="Start protocol", callback_data=f"draft:activate:prepare:{preview_id}")],
+            [InlineKeyboardButton(text="Draft", callback_data="draft:open")],
+        ]
+    )
+
+
+def build_pre_start_actions(preview_id: UUID) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Confirm start", callback_data=f"draft:activate:confirm:{preview_id}")],
+            [InlineKeyboardButton(text="Course estimate", callback_data=f"draft:estimate:preview:{preview_id}")],
+            [InlineKeyboardButton(text="Back to preview", callback_data="draft:calculate:run")],
+        ]
+    )
+
+
+def build_active_protocol_actions() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Course estimate", callback_data="draft:estimate:active:latest")],
             [InlineKeyboardButton(text="Draft", callback_data="draft:open")],
         ]
     )
@@ -562,6 +642,90 @@ def _render_active_protocol_summary(active: ActiveProtocolView) -> str:
         "",
         "Execution/reminders слой продолжается отсюда (Wave 3 расширит delivery/adherence).",
     ]
+    return "\n".join(lines)
+
+
+def _render_pre_start_estimate_snapshot(estimate: CourseEstimate) -> str:
+    lines = [
+        "Pre-start course estimate snapshot",
+        f"- source: {estimate.source_type}",
+        f"- duration_weeks: {estimate.duration_weeks or 'unknown'}",
+        f"- products: {estimate.total_products_count}",
+    ]
+    if estimate.has_inventory_comparison:
+        insufficient = [line for line in estimate.lines if line.inventory_sufficiency_status == "insufficient"]
+        if insufficient:
+            lines.append("⚠️ Inventory status: insufficient for full duration.")
+            lines.append("Before start, review `Course estimate` details.")
+        else:
+            lines.append("✅ Inventory status: covers course.")
+    else:
+        lines.append("- inventory comparison: not provided")
+    lines.append("")
+    lines.append("Start is not blocked. Confirm when ready.")
+    return "\n".join(lines)
+
+
+def _render_course_estimate(estimate: CourseEstimate) -> str:
+    insufficient_count = sum(1 for line in estimate.lines if line.inventory_sufficiency_status == "insufficient")
+    sufficient_count = sum(1 for line in estimate.lines if line.inventory_sufficiency_status == "sufficient")
+    unknown_inventory_count = sum(1 for line in estimate.lines if line.inventory_sufficiency_status == "unknown")
+    unsupported_count = sum(1 for line in estimate.lines if line.estimation_status == "unsupported")
+    source_label = "preview-based" if estimate.source_type == "preview" else "active-protocol-based"
+
+    lines = [
+        "Course estimate",
+        f"- source: {source_label}",
+        f"- protocol_input_mode: {INPUT_MODE_LABELS.get(estimate.protocol_input_mode or '', estimate.protocol_input_mode or 'unknown')}",
+        f"- duration_weeks: {estimate.duration_weeks or 'unknown'}",
+        f"- total products: {estimate.total_products_count}",
+        f"- inventory comparison: {'yes' if estimate.has_inventory_comparison else 'no'}",
+        f"- insufficiency warnings: {insufficient_count}",
+        f"- estimation unavailable lines: {unsupported_count}",
+    ]
+    if estimate.has_inventory_comparison:
+        lines.append(f"- covers course: {sufficient_count}")
+        lines.append(f"- insufficient for full duration: {insufficient_count}")
+        if unknown_inventory_count:
+            lines.append(f"- inventory unknown: {unknown_inventory_count}")
+
+    lines.append("")
+    lines.append("Lines:")
+    for line in estimate.lines:
+        lines.append(f"• {line.product_name}")
+        lines.append(f"  - required active total: {line.required_active_mg_total} mg")
+        required_form = (
+            f"{line.required_volume_ml_total} ml"
+            if line.required_volume_ml_total is not None
+            else (
+                f"{line.required_unit_count_total} units"
+                if line.required_unit_count_total is not None
+                else "unknown"
+            )
+        )
+        lines.append(f"  - required form total: {required_form}")
+        lines.append(f"  - package kind: {line.package_kind or 'unknown'}")
+        if line.package_count_required is None or line.package_count_required_rounded is None:
+            lines.append("  - package count: estimation unavailable (unsupported metadata)")
+        else:
+            lines.append(
+                f"  - required packages: {line.package_count_required} (~{line.package_count_required_rounded} rounded)"
+            )
+        if estimate.has_inventory_comparison:
+            if line.available_package_count is None:
+                lines.append("  - available packages: unknown")
+            else:
+                lines.append(f"  - available packages: {line.available_package_count}")
+            if line.inventory_sufficiency_status == "sufficient":
+                lines.append("  - status: covers course")
+            elif line.inventory_sufficiency_status == "insufficient":
+                lines.append("  - status: insufficient for full duration")
+                shortage = line.shortfall_package_count if line.shortfall_package_count is not None else "unknown"
+                lines.append(f"  - shortage: {shortage} packages")
+            else:
+                lines.append("  - status: estimation unavailable")
+        if line.estimation_warnings:
+            lines.append("  - warnings: " + ", ".join(line.estimation_warnings))
     return "\n".join(lines)
 
 
