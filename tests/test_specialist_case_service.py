@@ -4,6 +4,8 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
+
 from app.application.expert_cases import (
     AdherenceCaseContextView,
     LabReportCaseEntryView,
@@ -11,7 +13,10 @@ from app.application.expert_cases import (
     ProtocolCaseContextView,
     PulsePlanCaseContextView,
     SpecialistCaseAssemblyService,
+    SpecialistCaseAccessError,
+    SpecialistCaseDetailView,
     SpecialistCaseListItemView,
+    SpecialistCaseResponseView,
     SpecialistCaseSnapshotView,
     SpecialistCaseStatus,
     SpecialistCaseView,
@@ -33,6 +38,7 @@ class _FakeRepo:
         self.snapshot_id = uuid4()
         self.created_case: SpecialistCaseView | None = None
         self.created_snapshot: SpecialistCaseSnapshotView | None = None
+        self.latest_response: SpecialistCaseResponseView | None = None
 
     async def check_case_access(self, *, user_id: str):
         _ = user_id
@@ -146,7 +152,10 @@ class _FakeRepo:
             opened_reason_code=kwargs["opened_reason_code"],
             opened_at=datetime.fromisoformat(kwargs["opened_at_iso"]),
             closed_at=None,
+            answered_at=None,
             latest_snapshot_id=None,
+            latest_response_id=None,
+            assigned_specialist_id=None,
             notes_from_user=kwargs["notes_from_user"],
         )
         return self.created_case
@@ -177,7 +186,10 @@ class _FakeRepo:
             opened_reason_code=self.created_case.opened_reason_code,
             opened_at=self.created_case.opened_at,
             closed_at=self.created_case.closed_at,
+            answered_at=self.created_case.answered_at,
             latest_snapshot_id=kwargs["latest_snapshot_id"],
+            latest_response_id=self.created_case.latest_response_id,
+            assigned_specialist_id=self.created_case.assigned_specialist_id,
             notes_from_user=self.created_case.notes_from_user,
         )
         return self.created_case
@@ -193,11 +205,105 @@ class _FakeRepo:
                 lab_report_date=date(2026, 4, 12),
                 triage_run_id=self.triage_id,
                 latest_snapshot_id=self.snapshot_id,
+                latest_response_summary=self.latest_response.response_summary if self.latest_response else None,
+                latest_response_created_at=self.latest_response.created_at if self.latest_response else None,
             )
         ]
 
     async def get_latest_user_case(self, *, user_id: str):
         return (await self.list_user_cases(user_id=user_id))[0]
+
+    async def get_user_case_detail(self, *, user_id: str, case_id):
+        detail = await self.get_case_detail(case_id=case_id)
+        if detail is None or detail.case.user_id != user_id:
+            return None
+        return detail
+
+    async def list_awaiting_cases(self, *, limit: int = 20):
+        _ = limit
+        if self.created_case and self.created_case.case_status == SpecialistCaseStatus.AWAITING_SPECIALIST:
+            return await self.list_user_cases(user_id=self.created_case.user_id)
+        return []
+
+    async def get_case_detail(self, *, case_id):
+        if self.created_case is None or self.created_case.case_id != case_id:
+            return None
+        return SpecialistCaseDetailView(case=self.created_case, latest_response=self.latest_response)
+
+    async def assign_case_to_specialist(self, *, case_id, specialist_id: str, case_status: str):
+        assert self.created_case is not None
+        assert self.created_case.case_id == case_id
+        self.created_case = SpecialistCaseView(
+            case_id=self.created_case.case_id,
+            user_id=self.created_case.user_id,
+            protocol_id=self.created_case.protocol_id,
+            lab_report_id=self.created_case.lab_report_id,
+            triage_run_id=self.created_case.triage_run_id,
+            case_status=case_status,
+            opened_reason_code=self.created_case.opened_reason_code,
+            opened_at=self.created_case.opened_at,
+            closed_at=self.created_case.closed_at,
+            answered_at=self.created_case.answered_at,
+            latest_snapshot_id=self.created_case.latest_snapshot_id,
+            latest_response_id=self.created_case.latest_response_id,
+            assigned_specialist_id=specialist_id,
+            notes_from_user=self.created_case.notes_from_user,
+        )
+        return self.created_case
+
+    async def create_case_response(self, **kwargs):
+        self.latest_response = SpecialistCaseResponseView(
+            response_id=uuid4(),
+            case_id=kwargs["case_id"],
+            responded_by=kwargs["responded_by"],
+            response_text=kwargs["response_text"],
+            response_summary=kwargs["response_summary"],
+            is_final=kwargs["is_final"],
+            created_at=datetime.now(timezone.utc),
+        )
+        return self.latest_response
+
+    async def set_case_answered(self, *, case_id, latest_response_id, answered_at_iso):
+        assert self.created_case is not None
+        assert self.created_case.case_id == case_id
+        self.created_case = SpecialistCaseView(
+            case_id=self.created_case.case_id,
+            user_id=self.created_case.user_id,
+            protocol_id=self.created_case.protocol_id,
+            lab_report_id=self.created_case.lab_report_id,
+            triage_run_id=self.created_case.triage_run_id,
+            case_status=SpecialistCaseStatus.ANSWERED,
+            opened_reason_code=self.created_case.opened_reason_code,
+            opened_at=self.created_case.opened_at,
+            closed_at=self.created_case.closed_at,
+            answered_at=datetime.fromisoformat(answered_at_iso),
+            latest_snapshot_id=self.created_case.latest_snapshot_id,
+            latest_response_id=latest_response_id,
+            assigned_specialist_id=self.created_case.assigned_specialist_id,
+            notes_from_user=self.created_case.notes_from_user,
+        )
+        return self.created_case
+
+    async def set_case_closed(self, *, case_id, closed_at_iso):
+        assert self.created_case is not None
+        assert self.created_case.case_id == case_id
+        self.created_case = SpecialistCaseView(
+            case_id=self.created_case.case_id,
+            user_id=self.created_case.user_id,
+            protocol_id=self.created_case.protocol_id,
+            lab_report_id=self.created_case.lab_report_id,
+            triage_run_id=self.created_case.triage_run_id,
+            case_status=SpecialistCaseStatus.CLOSED,
+            opened_reason_code=self.created_case.opened_reason_code,
+            opened_at=self.created_case.opened_at,
+            closed_at=datetime.fromisoformat(closed_at_iso),
+            answered_at=self.created_case.answered_at,
+            latest_snapshot_id=self.created_case.latest_snapshot_id,
+            latest_response_id=self.created_case.latest_response_id,
+            assigned_specialist_id=self.created_case.assigned_specialist_id,
+            notes_from_user=self.created_case.notes_from_user,
+        )
+        return self.created_case
 
     async def enqueue_event(self, **kwargs):
         self.events.append(kwargs["event_type"])
@@ -245,3 +351,71 @@ def test_case_opening_flow_emits_expected_events() -> None:
     assert "specialist_case_created" in repo.events
     assert "specialist_case_snapshot_created" in repo.events
     assert "specialist_case_status_updated" in repo.events
+
+
+def test_case_taken_into_review_transition() -> None:
+    repo = _FakeRepo()
+    service = SpecialistCaseAssemblyService(repository=repo)
+    opened = asyncio.run(service.open_case(user_id="u1", lab_report_id=repo.report_id, notes_from_user=None))
+
+    detail = asyncio.run(service.take_case_in_review(case_id=opened.case.case_id, specialist_id="spec-1"))
+
+    assert detail.case.case_status == SpecialistCaseStatus.IN_REVIEW
+    assert detail.case.assigned_specialist_id == "spec-1"
+    assert "specialist_case_taken_in_review" in repo.events
+
+
+def test_specialist_response_persisted_and_case_answered() -> None:
+    repo = _FakeRepo()
+    service = SpecialistCaseAssemblyService(repository=repo)
+    opened = asyncio.run(service.open_case(user_id="u1", lab_report_id=repo.report_id, notes_from_user=None))
+    asyncio.run(service.take_case_in_review(case_id=opened.case.case_id, specialist_id="spec-1"))
+
+    response = asyncio.run(
+        service.submit_specialist_response(
+            case_id=opened.case.case_id,
+            specialist_id="spec-1",
+            response_text="Hydrate and repeat CBC in 2 weeks.",
+            response_summary="Repeat CBC",
+        )
+    )
+
+    assert response.response_text.startswith("Hydrate")
+    assert repo.created_case is not None
+    assert repo.created_case.case_status == SpecialistCaseStatus.ANSWERED
+    assert repo.created_case.latest_response_id == response.response_id
+    assert "specialist_case_response_created" in repo.events
+    assert "specialist_case_answered" in repo.events
+
+
+def test_user_can_read_answered_case_and_latest_response() -> None:
+    repo = _FakeRepo()
+    service = SpecialistCaseAssemblyService(repository=repo)
+    opened = asyncio.run(service.open_case(user_id="u1", lab_report_id=repo.report_id, notes_from_user=None))
+    asyncio.run(service.take_case_in_review(case_id=opened.case.case_id, specialist_id="spec-1"))
+    asyncio.run(
+        service.submit_specialist_response(
+            case_id=opened.case.case_id,
+            specialist_id="spec-1",
+            response_text="Final recommendation",
+            response_summary="Recommendation",
+        )
+    )
+
+    detail = asyncio.run(service.get_user_case_detail(user_id="u1", case_id=opened.case.case_id))
+    latest = asyncio.run(service.get_latest_user_case(user_id="u1"))
+
+    assert detail is not None
+    assert detail.case.case_status == SpecialistCaseStatus.ANSWERED
+    assert detail.latest_response is not None
+    assert detail.latest_response.response_text == "Final recommendation"
+    assert latest is not None
+    assert latest.latest_response_summary == "Recommendation"
+
+
+def test_access_seam_denies_when_disabled() -> None:
+    repo = _FakeRepo(allow_access=False)
+    service = SpecialistCaseAssemblyService(repository=repo)
+
+    with pytest.raises(SpecialistCaseAccessError):
+        asyncio.run(service.open_case(user_id="u1", lab_report_id=repo.report_id, notes_from_user=None))

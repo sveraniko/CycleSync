@@ -6,7 +6,9 @@ from app.application.expert_cases.schemas import (
     ProtocolCaseContextView,
     PulsePlanCaseContextView,
     SpecialistCaseAccessDecision,
+    SpecialistCaseDetailView,
     SpecialistCaseListItemView,
+    SpecialistCaseResponseView,
     SpecialistCaseSnapshotView,
     SpecialistCaseView,
     TriageRunCaseView,
@@ -74,6 +76,35 @@ class SpecialistCasesRepository:
         raise NotImplementedError
 
     async def get_latest_user_case(self, *, user_id: str) -> SpecialistCaseListItemView | None:
+        raise NotImplementedError
+
+    async def get_user_case_detail(self, *, user_id: str, case_id: UUID) -> SpecialistCaseDetailView | None:
+        raise NotImplementedError
+
+    async def list_awaiting_cases(self, *, limit: int = 20) -> list[SpecialistCaseListItemView]:
+        raise NotImplementedError
+
+    async def get_case_detail(self, *, case_id: UUID) -> SpecialistCaseDetailView | None:
+        raise NotImplementedError
+
+    async def assign_case_to_specialist(self, *, case_id: UUID, specialist_id: str, case_status: str) -> SpecialistCaseView:
+        raise NotImplementedError
+
+    async def create_case_response(
+        self,
+        *,
+        case_id: UUID,
+        responded_by: str,
+        response_text: str,
+        response_summary: str | None,
+        is_final: bool,
+    ) -> SpecialistCaseResponseView:
+        raise NotImplementedError
+
+    async def set_case_answered(self, *, case_id: UUID, latest_response_id: UUID, answered_at_iso: str) -> SpecialistCaseView:
+        raise NotImplementedError
+
+    async def set_case_closed(self, *, case_id: UUID, closed_at_iso: str) -> SpecialistCaseView:
         raise NotImplementedError
 
     async def enqueue_event(self, *, event_type: str, aggregate_type: str, aggregate_id: UUID, payload: dict) -> None:

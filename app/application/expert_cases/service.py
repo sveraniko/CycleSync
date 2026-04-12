@@ -4,8 +4,10 @@ from uuid import UUID
 from app.application.expert_cases.repository import SpecialistCasesRepository
 from app.application.expert_cases.schemas import (
     ALLOWED_CASE_STATUSES,
+    SpecialistCaseDetailView,
     SpecialistCaseListItemView,
     SpecialistCaseOpenedResult,
+    SpecialistCaseResponseView,
     SpecialistCaseStatus,
 )
 
@@ -203,6 +205,96 @@ class SpecialistCaseAssemblyService:
 
     async def get_latest_user_case(self, *, user_id: str) -> SpecialistCaseListItemView | None:
         return await self.repository.get_latest_user_case(user_id=user_id)
+
+    async def get_user_case_detail(self, *, user_id: str, case_id: UUID) -> SpecialistCaseDetailView | None:
+        return await self.repository.get_user_case_detail(user_id=user_id, case_id=case_id)
+
+    async def list_awaiting_cases(self, *, limit: int = 20) -> list[SpecialistCaseListItemView]:
+        return await self.repository.list_awaiting_cases(limit=limit)
+
+    async def get_case_detail(self, *, case_id: UUID) -> SpecialistCaseDetailView | None:
+        return await self.repository.get_case_detail(case_id=case_id)
+
+    async def take_case_in_review(self, *, case_id: UUID, specialist_id: str) -> SpecialistCaseDetailView:
+        detail = await self.repository.get_case_detail(case_id=case_id)
+        if detail is None:
+            raise SpecialistCaseError("specialist_case_not_found")
+        if detail.case.case_status != SpecialistCaseStatus.AWAITING_SPECIALIST:
+            raise SpecialistCaseError(f"invalid_status_transition:{detail.case.case_status}->in_review")
+
+        case = await self.repository.assign_case_to_specialist(
+            case_id=case_id,
+            specialist_id=specialist_id,
+            case_status=SpecialistCaseStatus.IN_REVIEW,
+        )
+        await self.repository.enqueue_event(
+            event_type="specialist_case_taken_in_review",
+            aggregate_type="specialist_case",
+            aggregate_id=case.case_id,
+            payload={"specialist_id": specialist_id},
+        )
+        return SpecialistCaseDetailView(case=case, latest_response=detail.latest_response)
+
+    async def submit_specialist_response(
+        self,
+        *,
+        case_id: UUID,
+        specialist_id: str,
+        response_text: str,
+        response_summary: str | None = None,
+        is_final: bool = True,
+    ) -> SpecialistCaseResponseView:
+        detail = await self.repository.get_case_detail(case_id=case_id)
+        if detail is None:
+            raise SpecialistCaseError("specialist_case_not_found")
+        if detail.case.case_status != SpecialistCaseStatus.IN_REVIEW:
+            raise SpecialistCaseError(f"invalid_status_transition:{detail.case.case_status}->answered")
+
+        text = response_text.strip()
+        if not text:
+            raise SpecialistCaseError("empty_specialist_response")
+        summary = (response_summary or "").strip() or None
+
+        created = await self.repository.create_case_response(
+            case_id=case_id,
+            responded_by=specialist_id,
+            response_text=text,
+            response_summary=summary,
+            is_final=is_final,
+        )
+        await self.repository.enqueue_event(
+            event_type="specialist_case_response_created",
+            aggregate_type="specialist_case",
+            aggregate_id=case_id,
+            payload={"response_id": str(created.response_id), "responded_by": specialist_id, "is_final": is_final},
+        )
+        case = await self.repository.set_case_answered(
+            case_id=case_id,
+            latest_response_id=created.response_id,
+            answered_at_iso=datetime.now(timezone.utc).isoformat(),
+        )
+        await self.repository.enqueue_event(
+            event_type="specialist_case_answered",
+            aggregate_type="specialist_case",
+            aggregate_id=case_id,
+            payload={"response_id": str(created.response_id), "status": case.case_status},
+        )
+        return created
+
+    async def close_case(self, *, case_id: UUID) -> SpecialistCaseDetailView:
+        detail = await self.repository.get_case_detail(case_id=case_id)
+        if detail is None:
+            raise SpecialistCaseError("specialist_case_not_found")
+        if detail.case.case_status != SpecialistCaseStatus.ANSWERED:
+            raise SpecialistCaseError(f"invalid_status_transition:{detail.case.case_status}->closed")
+        case = await self.repository.set_case_closed(case_id=case_id, closed_at_iso=datetime.now(timezone.utc).isoformat())
+        await self.repository.enqueue_event(
+            event_type="specialist_case_closed",
+            aggregate_type="specialist_case",
+            aggregate_id=case_id,
+            payload={"closed_at": case.closed_at.isoformat() if case.closed_at else None},
+        )
+        return SpecialistCaseDetailView(case=case, latest_response=detail.latest_response)
 
     @staticmethod
     def validate_status(status: str) -> str:

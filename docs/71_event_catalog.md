@@ -693,7 +693,20 @@ Choose one stable vocabulary.
 
 ---
 
-## 21. Event ordering and causality
+## 21. Specialist case lifecycle events (MVP loop)
+
+For Wave 7 specialist loop, the following events are required as lifecycle truth:
+
+- `specialist_case_taken_in_review`
+- `specialist_case_response_created`
+- `specialist_case_answered`
+- `specialist_case_closed`
+
+These events should be emitted from application service transitions, not from Telegram UI handlers.
+
+---
+
+## 22. Event ordering and causality
 
 The system should preserve causal relationships where possible.
 
@@ -707,7 +720,7 @@ This does not require strict synchronous processing, but the semantic chain must
 
 ---
 
-## 22. Event catalog guardrails
+## 23. Event catalog guardrails
 
 The event catalog must avoid the following mistakes.
 
@@ -733,7 +746,7 @@ Do not use protocol events to describe reminder facts or reminder events to desc
 
 ---
 
-## 23. Recommended future dependent documents
+## 24. Recommended future dependent documents
 
 This event catalog should feed the creation of:
 
@@ -747,7 +760,7 @@ These names are recommendations and may change.
 
 ---
 
-## 24. Final statement
+## 25. Final statement
 
 CycleSync needs a stable event vocabulary because the product already spans:
 

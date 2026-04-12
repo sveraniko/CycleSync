@@ -45,7 +45,10 @@ async def run_bot() -> None:
     draft_repository = SqlAlchemyDraftRepository(infra.db_session_factory)
     reminder_repository = SqlAlchemyReminderRepository(infra.db_session_factory)
     labs_repository = SqlAlchemyLabsRepository(infra.db_session_factory)
-    specialist_cases_repository = SqlAlchemySpecialistCasesRepository(infra.db_session_factory)
+    specialist_cases_repository = SqlAlchemySpecialistCasesRepository(
+        infra.db_session_factory,
+        allow_all_access=settings.expert_case_allow_dev_access,
+    )
     labs_triage_gateway = build_labs_triage_gateway(settings)
     logger.info("labs_triage_gateway_configured", **labs_triage_gateway.diagnostics())
     readiness_service = ProtocolDraftReadinessService(repository=draft_repository)

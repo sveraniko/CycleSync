@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +29,11 @@ class SpecialistCase(SchemaTableMixin, BaseModel):
     latest_snapshot_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("expert_cases.specialist_case_snapshots.id", ondelete="SET NULL"), nullable=True
     )
+    latest_response_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("expert_cases.specialist_case_responses.id", ondelete="SET NULL"), nullable=True
+    )
+    assigned_specialist_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes_from_user: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
@@ -56,5 +61,23 @@ class SpecialistCaseSnapshot(SchemaTableMixin, BaseModel):
             "case_id",
             "snapshot_version",
         ),
+        {"schema": __schema_name__},
+    )
+
+
+class SpecialistCaseResponse(SchemaTableMixin, BaseModel):
+    __tablename__ = "specialist_case_responses"
+    __schema_name__ = "expert_cases"
+
+    case_id: Mapped[UUID] = mapped_column(
+        ForeignKey("expert_cases.specialist_cases.id", ondelete="CASCADE"), nullable=False
+    )
+    responded_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_text: Mapped[str] = mapped_column(Text, nullable=False)
+    response_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_final: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+
+    __table_args__ = (
+        Index("ix_expert_cases_case_responses_case_created", "case_id", "created_at"),
         {"schema": __schema_name__},
     )
