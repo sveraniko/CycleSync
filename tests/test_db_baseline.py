@@ -26,6 +26,7 @@ from app.domain.models import (
     ProtocolDraft,
     ProtocolDraftItem,
     ProtocolDraftSettings,
+    ProtocolInputTarget,
     PulseCalculationRun,
     PulsePlanPreview,
     PulsePlanPreviewEntry,
@@ -64,6 +65,7 @@ def test_protocol_models_bound_to_protocols_schema() -> None:
     assert ProtocolDraft.__table__.schema == "protocols"
     assert ProtocolDraftItem.__table__.schema == "protocols"
     assert ProtocolDraftSettings.__table__.schema == "protocols"
+    assert ProtocolInputTarget.__table__.schema == "protocols"
 
 
 

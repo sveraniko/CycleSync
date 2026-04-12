@@ -9,7 +9,13 @@ from aiogram.types.callback_query import CallbackQuery
 
 from app.application.protocols import DraftApplicationService
 from app.application.protocols.input_modes import LOCKED_PROTOCOL_INPUT_MODES
-from app.application.protocols.schemas import ActiveProtocolView, DraftSettingsInput, DraftView, PulsePlanPreviewView
+from app.application.protocols.schemas import (
+    ActiveProtocolView,
+    DraftSettingsInput,
+    DraftView,
+    PulsePlanPreviewView,
+    StackInputTargetInput,
+)
 
 router = Router(name="draft")
 
@@ -40,6 +46,7 @@ class CalculationInputState(StatesGroup):
     duration_weeks = State()
     max_injection_volume_ml = State()
     max_injections_per_week = State()
+    stack_product_target = State()
 
 
 @router.message(F.text.func(lambda value: (value or "").strip().lower() == "draft"))
@@ -165,6 +172,10 @@ async def on_mode_selected(callback: CallbackQuery, state: FSMContext, draft_ser
         )
         return
 
+    if selected_mode == "stack_smoothing":
+        await _start_stack_input_flow(callback.message, state, draft_service, user_id)
+        return
+
     if selected_mode == "total_target":
         settings = await draft_service.get_draft_settings(user_id)
         current = settings.weekly_target_total_mg if settings else None
@@ -177,6 +188,13 @@ async def on_mode_selected(callback: CallbackQuery, state: FSMContext, draft_ser
 
     await state.set_state(CalculationInputState.duration_weeks)
     await callback.message.answer("Режим Auto Pulse: укажите длительность протокола в неделях (duration_weeks).")
+
+
+@router.callback_query(F.data == "draft:stack:edit")
+async def on_stack_edit(callback: CallbackQuery, state: FSMContext, draft_service: DraftApplicationService) -> None:
+    user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+    await _start_stack_input_flow(callback.message, state, draft_service, user_id)
+    await callback.answer()
 
 
 @router.callback_query(F.data == "draft:calculate:run")
@@ -271,6 +289,44 @@ async def on_max_injections_input(message: Message, state: FSMContext, draft_ser
     await message.answer(_render_readiness_summary(readiness), reply_markup=build_readiness_actions())
 
 
+@router.message(CalculationInputState.stack_product_target)
+async def on_stack_target_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
+    value = _parse_decimal(message.text)
+    if value is None or value <= Decimal("0"):
+        await message.answer("Введите desired weekly mg > 0, например `125`.")
+        return
+
+    data = await state.get_data()
+    pending = list(data.get("stack_pending_product_ids", []))
+    current_product_id = data.get("stack_current_product_id")
+    if current_product_id is None:
+        await state.clear()
+        await message.answer("Не удалось продолжить stack input. Нажмите `К расчету` и выберите режим заново.")
+        return
+
+    user_id = _resolve_user_id(message.from_user.id if message.from_user else None)
+    await draft_service.save_stack_input_targets(
+        user_id,
+        [
+            StackInputTargetInput(
+                product_id=UUID(current_product_id),
+                protocol_input_mode="stack_smoothing",
+                desired_weekly_mg=value,
+            ),
+        ],
+    )
+    if pending:
+        next_product_id = pending.pop(0)
+        await state.update_data(stack_pending_product_ids=pending, stack_current_product_id=next_product_id)
+        await message.answer(_stack_target_prompt(data["stack_product_names"][next_product_id]))
+        return
+
+    await state.set_state(CalculationInputState.duration_weeks)
+    await message.answer(
+        "Stack composition сохранен. Теперь укажите длительность протокола в неделях (duration_weeks)."
+    )
+
+
 def build_draft_shortcut() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="Draft", callback_data="draft:open")]],
@@ -299,6 +355,7 @@ def build_readiness_actions() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Рассчитать preview pulse plan", callback_data="draft:calculate:run")],
+            [InlineKeyboardButton(text="Редактировать stack composition", callback_data="draft:stack:edit")],
             [InlineKeyboardButton(text="Сменить preset", callback_data="draft:calculate")],
             [InlineKeyboardButton(text="Draft", callback_data="draft:open")],
         ]
@@ -383,6 +440,8 @@ def _render_preview_summary(preview: PulsePlanPreviewView) -> str:
         lines.append("⚠️ Golden Pulse деградирован в layered_pulse (deterministic fallback).")
 
     if preview.summary_metrics:
+        per_product = preview.summary_metrics.get("per_product_weekly_target_mg") or {}
+        derived_total = sum(Decimal(str(v)) for v in per_product.values()) if per_product else None
         lines.extend(
             [
                 "\nSummary metrics:",
@@ -393,6 +452,12 @@ def _render_preview_summary(preview: PulsePlanPreviewView) -> str:
                 f"- guidance coverage score: {preview.summary_metrics.get('guidance_coverage_score')}",
             ]
         )
+        if per_product:
+            lines.append("- per-product weekly mg:")
+            for product_id, value in per_product.items():
+                lines.append(f"  • {product_id}: {value}")
+        if derived_total is not None:
+            lines.append(f"- derived total weekly mg: {derived_total}")
         warning_flags = preview.summary_metrics.get("allocation_warning_flags") or []
         if warning_flags:
             lines.append("- allocation quality warnings:")
@@ -479,3 +544,53 @@ def _parse_positive_int(value: str | None) -> int | None:
     if parsed <= 0:
         return None
     return parsed
+
+
+async def _start_stack_input_flow(
+    message: Message,
+    state: FSMContext,
+    draft_service: DraftApplicationService,
+    user_id: str,
+) -> None:
+    draft = await draft_service.list_draft(user_id)
+    existing_targets = await draft_service.get_stack_input_targets(user_id, protocol_input_mode="stack_smoothing")
+    existing_by_product = {str(target.product_id): target.desired_weekly_mg for target in existing_targets}
+    product_names = {
+        str(item.product_id): (item.selected_product_name or item.selected_brand or str(item.product_id)) for item in draft.items
+    }
+
+    ordered_ids = [str(item.product_id) for item in draft.items]
+    pending = [product_id for product_id in ordered_ids if product_id not in existing_by_product]
+    if pending:
+        current = pending.pop(0)
+        await state.set_state(CalculationInputState.stack_product_target)
+        await state.update_data(
+            stack_current_product_id=current,
+            stack_pending_product_ids=pending,
+            stack_product_names=product_names,
+        )
+        await message.answer(_render_stack_composition(existing_by_product, product_names))
+        await message.answer(_stack_target_prompt(product_names[current]))
+        return
+
+    await message.answer(_render_stack_composition(existing_by_product, product_names))
+    await state.set_state(CalculationInputState.duration_weeks)
+    await message.answer("Все продукты уже имеют desired weekly mg. Укажите duration_weeks.")
+
+
+def _stack_target_prompt(product_name: str) -> str:
+    return f"Stack smoothing: укажите desired weekly mg для '{product_name}'."
+
+
+def _render_stack_composition(existing_by_product: dict[str, Decimal], product_names: dict[str, str]) -> str:
+    lines = ["Текущий stack composition (mg/week):"]
+    total = Decimal("0")
+    for product_id, product_name in product_names.items():
+        value = existing_by_product.get(product_id)
+        if value is None:
+            lines.append(f"- {product_name}: —")
+            continue
+        lines.append(f"- {product_name}: {value}")
+        total += value
+    lines.append(f"Derived total weekly mg: {total}")
+    return "\n".join(lines)

@@ -12,6 +12,8 @@ from app.application.protocols.schemas import (
     PulsePlanPreviewPersistPayload,
     PulsePlanPreviewView,
     PulseProductProfile,
+    StackInputTargetInput,
+    StackInputTargetView,
 )
 
 
@@ -73,6 +75,14 @@ class DraftRepository:
         raise NotImplementedError
 
     async def list_pulse_product_profiles(self, draft_id: UUID) -> list[PulseProductProfile]:
+        raise NotImplementedError
+
+    async def upsert_stack_input_targets(self, draft_id: UUID, targets: list[StackInputTargetInput]) -> list[StackInputTargetView]:
+        raise NotImplementedError
+
+    async def list_stack_input_targets(
+        self, draft_id: UUID, protocol_input_mode: str | None = None
+    ) -> list[StackInputTargetView]:
         raise NotImplementedError
 
     async def has_successful_preview_for_draft(self, draft_id: UUID) -> bool:

@@ -895,6 +895,33 @@ def upgrade() -> None:
         unique=False,
         schema="protocols",
     )
+    op.create_table(
+        "protocol_input_targets",
+        sa.Column("draft_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("product_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("protocol_input_mode", sa.String(length=32), nullable=False),
+        sa.Column("desired_weekly_mg", sa.Numeric(precision=12, scale=4), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["draft_id"], ["protocols.protocol_drafts.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["product_id"], ["compound_catalog.compound_products.id"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("id", name="pk_protocols_protocol_input_targets"),
+        sa.UniqueConstraint(
+            "draft_id",
+            "product_id",
+            "protocol_input_mode",
+            name="uq_protocol_input_target_identity",
+        ),
+        schema="protocols",
+    )
+    op.create_index(
+        "ix_protocol_input_targets_draft_mode",
+        "protocol_input_targets",
+        ["draft_id", "protocol_input_mode"],
+        unique=False,
+        schema="protocols",
+    )
     # from 20260409_0006_wave2_pr2_pulse_engine_preview.py
     op.execute("CREATE SCHEMA IF NOT EXISTS pulse_engine")
     

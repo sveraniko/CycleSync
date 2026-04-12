@@ -63,6 +63,9 @@ class FakeActivationRepository:
     async def has_successful_preview_for_draft(self, draft_id):
         return False
 
+    async def list_stack_input_targets(self, draft_id, protocol_input_mode=None):
+        return []
+
     async def create_pulse_plan_preview(self, payload):
         self.preview_payloads.append(payload)
         return PulsePlanPreviewView(
@@ -124,3 +127,11 @@ def test_preview_then_activation_events_flow() -> None:
     assert "protocol_activated" in repo.events
     assert "pulse_plan_activated" in repo.events
     assert "reminder_schedule_requested" in repo.events
+
+
+def test_stack_smoothing_mode_is_carried_to_activation() -> None:
+    repo = FakeActivationRepository()
+    repo.promoted.protocol_input_mode = "stack_smoothing"
+    service = DraftApplicationService(repository=repo, pulse_engine=PulseCalculationEngine())
+    active = asyncio.run(service.confirm_latest_preview_activation("u1"))
+    assert active.protocol_input_mode == "stack_smoothing"

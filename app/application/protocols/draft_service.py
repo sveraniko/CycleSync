@@ -13,6 +13,8 @@ from app.application.protocols.schemas import (
     DraftView,
     PulsePlanPreviewPersistPayload,
     PulsePlanPreviewView,
+    StackInputTargetInput,
+    StackInputTargetView,
 )
 
 
@@ -140,6 +142,27 @@ class DraftApplicationService:
         draft = await self.get_or_create_active_draft(user_id)
         return await self.readiness_validator.validate(draft)
 
+    async def save_stack_input_targets(
+        self, user_id: str, targets: list[StackInputTargetInput]
+    ) -> list[StackInputTargetView]:
+        draft = await self.get_or_create_active_draft(user_id)
+        saved = await self.repository.upsert_stack_input_targets(draft.draft_id, targets)
+        await self.repository.enqueue_event(
+            event_type="stack_input_updated",
+            aggregate_type="protocol_draft",
+            aggregate_id=draft.draft_id,
+            payload={
+                "user_id": user_id,
+                "protocol_input_mode": "stack_smoothing",
+                "targets_count": len(saved),
+            },
+        )
+        return saved
+
+    async def get_stack_input_targets(self, user_id: str, protocol_input_mode: str = "stack_smoothing") -> list[StackInputTargetView]:
+        draft = await self.get_or_create_active_draft(user_id)
+        return await self.repository.list_stack_input_targets(draft.draft_id, protocol_input_mode=protocol_input_mode)
+
     async def generate_pulse_plan_preview(self, user_id: str) -> PulsePlanPreviewView:
         if self.pulse_engine is None:
             raise RuntimeError("pulse engine is not configured")
@@ -147,6 +170,9 @@ class DraftApplicationService:
         draft = await self.get_or_create_active_draft(user_id)
         settings = await self.repository.get_draft_settings(draft.draft_id)
         products = await self.repository.list_pulse_product_profiles(draft.draft_id)
+        stack_targets = await self.repository.list_stack_input_targets(
+            draft.draft_id, protocol_input_mode="stack_smoothing"
+        )
 
         await self.repository.enqueue_event(
             event_type="protocol_calculation_requested",
@@ -158,7 +184,7 @@ class DraftApplicationService:
             },
         )
 
-        result = self.pulse_engine.calculate(settings=settings, products=products)
+        result = self.pulse_engine.calculate(settings=settings, products=products, stack_targets=stack_targets)
         selected_mode = settings.protocol_input_mode if settings and is_valid_protocol_input_mode(settings.protocol_input_mode) else "total_target"
         had_previous_preview = await self.repository.has_successful_preview_for_draft(draft.draft_id)
         payload = PulsePlanPreviewPersistPayload(
@@ -176,6 +202,7 @@ class DraftApplicationService:
                 "max_injection_volume_ml": str(settings.max_injection_volume_ml) if settings else None,
                 "max_injections_per_week": settings.max_injections_per_week if settings else None,
                 "planned_start_date": settings.planned_start_date.isoformat() if settings and settings.planned_start_date else None,
+                "stack_input_targets_mg": {str(target.product_id): str(target.desired_weekly_mg) for target in stack_targets},
             },
             summary_metrics=result.summary_metrics,
             warning_flags=result.warning_flags,

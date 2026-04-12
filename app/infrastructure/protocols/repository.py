@@ -19,6 +19,8 @@ from app.application.protocols.schemas import (
     PulsePlanPreviewPersistPayload,
     PulsePlanPreviewView,
     PulseProductProfile,
+    StackInputTargetInput,
+    StackInputTargetView,
 )
 from app.domain.models import (
     Brand,
@@ -29,6 +31,7 @@ from app.domain.models import (
     ProtocolDraft,
     ProtocolDraftItem,
     ProtocolDraftSettings,
+    ProtocolInputTarget,
     PulseCalculationRun,
     PulsePlan,
     PulsePlanEntryRecord,
@@ -130,6 +133,12 @@ class SqlAlchemyDraftRepository:
                 settings = await self._get_settings(session, draft.id)
                 return self._to_draft_view(draft, settings)
             await session.delete(item)
+            await session.execute(
+                delete(ProtocolInputTarget).where(
+                    ProtocolInputTarget.draft_id == draft.id,
+                    ProtocolInputTarget.product_id == item.product_id,
+                )
+            )
             await session.commit()
             draft = await self._fetch_active_draft(session, user_id)
             if draft is None:
@@ -143,6 +152,7 @@ class SqlAlchemyDraftRepository:
             if draft is None:
                 return None
             await session.execute(delete(ProtocolDraftItem).where(ProtocolDraftItem.draft_id == draft.id))
+            await session.execute(delete(ProtocolInputTarget).where(ProtocolInputTarget.draft_id == draft.id))
             await session.commit()
             draft = await self._fetch_active_draft(session, user_id)
             if draft is None:
@@ -292,6 +302,47 @@ class SqlAlchemyDraftRepository:
                         )
                     )
             return list(grouped.values())
+
+    async def upsert_stack_input_targets(self, draft_id: UUID, targets: list[StackInputTargetInput]) -> list[StackInputTargetView]:
+        async with self.session_factory() as session:
+            mode = targets[0].protocol_input_mode if targets else "stack_smoothing"
+            for target in targets:
+                row = await session.scalar(
+                    select(ProtocolInputTarget).where(
+                        ProtocolInputTarget.draft_id == draft_id,
+                        ProtocolInputTarget.product_id == target.product_id,
+                        ProtocolInputTarget.protocol_input_mode == target.protocol_input_mode,
+                    )
+                )
+                if row is None:
+                    row = ProtocolInputTarget(
+                        draft_id=draft_id,
+                        product_id=target.product_id,
+                        protocol_input_mode=target.protocol_input_mode,
+                    )
+                    session.add(row)
+                    await session.flush()
+                row.desired_weekly_mg = target.desired_weekly_mg
+            await session.commit()
+            rows = await session.scalars(
+                select(ProtocolInputTarget)
+                .where(
+                    ProtocolInputTarget.draft_id == draft_id,
+                    ProtocolInputTarget.protocol_input_mode == mode,
+                )
+                .order_by(ProtocolInputTarget.created_at.asc())
+            )
+            return [self._to_stack_target_view(row) for row in rows]
+
+    async def list_stack_input_targets(
+        self, draft_id: UUID, protocol_input_mode: str | None = None
+    ) -> list[StackInputTargetView]:
+        async with self.session_factory() as session:
+            query = select(ProtocolInputTarget).where(ProtocolInputTarget.draft_id == draft_id)
+            if protocol_input_mode:
+                query = query.where(ProtocolInputTarget.protocol_input_mode == protocol_input_mode)
+            rows = await session.scalars(query.order_by(ProtocolInputTarget.created_at.asc()))
+            return [self._to_stack_target_view(row) for row in rows]
 
     async def create_pulse_plan_preview(self, payload: PulsePlanPreviewPersistPayload) -> PulsePlanPreviewView:
         async with self.session_factory() as session:
@@ -549,6 +600,18 @@ class SqlAlchemyDraftRepository:
             updated_at=draft.updated_at,
             items=[self._to_item_view(item) for item in draft.items],
             settings=self._to_settings_view(settings) if settings else None,
+        )
+
+    @staticmethod
+    def _to_stack_target_view(row: ProtocolInputTarget) -> StackInputTargetView:
+        return StackInputTargetView(
+            id=row.id,
+            draft_id=row.draft_id,
+            product_id=row.product_id,
+            protocol_input_mode=row.protocol_input_mode,
+            desired_weekly_mg=row.desired_weekly_mg,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
         )
 
     async def _supersede_preview_ready_protocols(self, session, draft_id: UUID) -> None:

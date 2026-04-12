@@ -12,6 +12,7 @@ from app.domain.models.protocols import (
     Protocol,
     ProtocolDraft,
     ProtocolDraftItem,
+    ProtocolInputTarget,
     ProtocolDraftSettings,
 )
 from app.domain.models.pulse_engine import (
@@ -67,6 +68,7 @@ __all__ = [
     "SearchQueryLog",
     "ProtocolDraft",
     "ProtocolDraftItem",
+    "ProtocolInputTarget",
     "ProtocolDraftSettings",
     "Protocol",
     "PulseCalculationRun",

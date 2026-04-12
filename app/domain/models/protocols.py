@@ -82,6 +82,33 @@ class ProtocolDraftSettings(SchemaTableMixin, BaseModel):
     )
 
 
+class ProtocolInputTarget(SchemaTableMixin, BaseModel):
+    __tablename__ = "protocol_input_targets"
+    __schema_name__ = "protocols"
+
+    draft_id: Mapped[UUID] = mapped_column(
+        ForeignKey("protocols.protocol_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    product_id: Mapped[UUID] = mapped_column(
+        ForeignKey("compound_catalog.compound_products.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    protocol_input_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    desired_weekly_mg: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "draft_id",
+            "product_id",
+            "protocol_input_mode",
+            name="uq_protocol_input_target_identity",
+        ),
+        Index("ix_protocol_input_targets_draft_mode", "draft_id", "protocol_input_mode"),
+        {"schema": __schema_name__},
+    )
+
+
 class Protocol(SchemaTableMixin, BaseModel):
     __tablename__ = "protocols"
     __schema_name__ = "protocols"
