@@ -66,6 +66,9 @@ class FakeActivationRepository:
     async def list_stack_input_targets(self, draft_id, protocol_input_mode=None):
         return []
 
+    async def list_inventory_constraints(self, draft_id, protocol_input_mode=None):
+        return []
+
     async def create_pulse_plan_preview(self, payload):
         self.preview_payloads.append(payload)
         return PulsePlanPreviewView(

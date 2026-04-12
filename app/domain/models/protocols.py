@@ -109,6 +109,34 @@ class ProtocolInputTarget(SchemaTableMixin, BaseModel):
     )
 
 
+class ProtocolInventoryConstraint(SchemaTableMixin, BaseModel):
+    __tablename__ = "protocol_inventory_constraints"
+    __schema_name__ = "protocols"
+
+    draft_id: Mapped[UUID] = mapped_column(
+        ForeignKey("protocols.protocol_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    product_id: Mapped[UUID] = mapped_column(
+        ForeignKey("compound_catalog.compound_products.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    protocol_input_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    available_count: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    count_unit: Mapped[str] = mapped_column(String(32), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "draft_id",
+            "product_id",
+            "protocol_input_mode",
+            name="uq_protocol_inventory_constraint_identity",
+        ),
+        Index("ix_protocol_inventory_constraints_draft_mode", "draft_id", "protocol_input_mode"),
+        {"schema": __schema_name__},
+    )
+
+
 class Protocol(SchemaTableMixin, BaseModel):
     __tablename__ = "protocols"
     __schema_name__ = "protocols"

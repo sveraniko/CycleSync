@@ -5,6 +5,7 @@ from math import exp
 
 from app.application.protocols.schemas import (
     DraftSettingsView,
+    InventoryConstraintView,
     PulseCalculationResult,
     PulsePlanEntry,
     PulseProductProfile,
@@ -37,6 +38,7 @@ class PulseCalculationEngine:
         settings: DraftSettingsView | None,
         products: list[PulseProductProfile],
         stack_targets: list[StackInputTargetView] | None = None,
+        inventory_constraints: list[InventoryConstraintView] | None = None,
     ) -> PulseCalculationResult:
         validation_issues: list[str] = []
         protocol_input_mode = settings.protocol_input_mode if settings else None
@@ -67,6 +69,20 @@ class PulseCalculationEngine:
                     validation_issues.append(f"stack_target_missing:{product.product_id}")
                 elif target.desired_weekly_mg <= 0:
                     validation_issues.append(f"stack_target_invalid:{product.product_id}")
+        if protocol_input_mode == "inventory_constrained":
+            inventory_map = {constraint.product_id: constraint for constraint in (inventory_constraints or [])}
+            if not inventory_constraints:
+                validation_issues.append("inventory_missing_for_some_products")
+            for product in products:
+                constraint = inventory_map.get(product.product_id)
+                if constraint is None:
+                    validation_issues.append("inventory_missing_for_some_products")
+                    continue
+                if constraint.available_count <= 0:
+                    validation_issues.append(f"inventory_available_count_invalid:{product.product_id}")
+                derived = self._derive_available_active_mg(product, constraint.count_unit, constraint.available_count)
+                if derived is None:
+                    validation_issues.append(f"inventory_metadata_insufficient:{product.product_id}")
         if protocol_input_mode in LOCKED_PROTOCOL_INPUT_MODES:
             validation_issues.append(f"{protocol_input_mode}_not_yet_available")
         if settings and (settings.max_injections_per_week is None or settings.max_injections_per_week <= 0):
@@ -108,6 +124,13 @@ class PulseCalculationEngine:
             allocation_context = self._resolve_auto_pulse_allocation(products)
         if protocol_input_mode == "stack_smoothing":
             allocation_context = self._resolve_stack_smoothing_allocation(products, stack_targets or [])
+        if protocol_input_mode == "inventory_constrained":
+            allocation_context = self._resolve_inventory_constrained_allocation(
+                products=products,
+                settings=settings,
+                inventory_constraints=inventory_constraints or [],
+            )
+            warning_flags.append("inventory_mode_best_effort")
         plans = self._build_plan_products(settings, products, strategy, allocation_context["per_product_mg"])
 
         optimization_applied = False
@@ -150,6 +173,14 @@ class PulseCalculationEngine:
             "warning_flags": warning_flags,
             "degraded_fallback": degraded_fallback,
         }
+        if protocol_input_mode == "inventory_constrained":
+            allocation_details = allocation_context.get("allocation_details") or {}
+            summary_metrics["inventory_entered_counts_by_product"] = allocation_details.get("inventory_entered_counts", {})
+            summary_metrics["inventory_derived_available_active_mg_by_product"] = allocation_details.get(
+                "derived_available_active_mg_per_product", {}
+            )
+            summary_metrics["inventory_duration_fully_covered"] = allocation_details.get("duration_fully_covered")
+            summary_metrics["inventory_feasibility_signal"] = allocation_details.get("feasibility_signal")
         warning_flags = sorted(set(warning_flags + allocation_context["quality_flags"]))
 
         status = "success"
@@ -196,6 +227,95 @@ class PulseCalculationEngine:
                 "derived_total_weekly_target_mg": float(derived_total),
             },
         }
+
+    def _resolve_inventory_constrained_allocation(
+        self,
+        *,
+        products: list[PulseProductProfile],
+        settings: DraftSettingsView,
+        inventory_constraints: list[InventoryConstraintView],
+    ) -> dict:
+        ideal = self._resolve_auto_pulse_allocation(products)
+        inventory_by_product = {str(item.product_id): item for item in inventory_constraints}
+        constrained_per_product: dict[str, Decimal] = {}
+        derived_active_by_product: dict[str, Decimal] = {}
+        quality_flags: list[str] = []
+        constrained_count = 0
+        duration_weeks = Decimal(str(settings.duration_weeks or 1))
+
+        for product in sorted(products, key=lambda p: str(p.product_id)):
+            product_id = str(product.product_id)
+            inventory = inventory_by_product[product_id]
+            available_active_mg = self._derive_available_active_mg(product, inventory.count_unit, inventory.available_count)
+            assert available_active_mg is not None
+            derived_active_by_product[product_id] = available_active_mg
+            max_weekly = (available_active_mg / duration_weeks).quantize(Decimal("0.0001"))
+            ideal_weekly = ideal["per_product_mg"][product_id]
+            constrained_weekly = min(ideal_weekly, max_weekly)
+            constrained_per_product[product_id] = constrained_weekly
+            if constrained_weekly < ideal_weekly:
+                constrained_count += 1
+
+        if constrained_count > 0:
+            quality_flags.extend(
+                [
+                    "inventory_insufficient_for_requested_duration",
+                    "inventory_forced_degraded_layout",
+                ]
+            )
+
+        coverage_ratio = Decimal("1.0000")
+        ideal_total = sum(ideal["per_product_mg"].values())
+        constrained_total = sum(constrained_per_product.values())
+        if ideal_total > 0:
+            coverage_ratio = (constrained_total / ideal_total).quantize(Decimal("0.0001"))
+
+        return {
+            "allocation_mode": "inventory_constrained_best_effort",
+            "per_product_mg": constrained_per_product,
+            "guidance_coverage_score": ideal["guidance_coverage_score"],
+            "guidance_band_fit_score": ideal["guidance_band_fit_score"],
+            "effective_half_life_mode": ideal["effective_half_life_mode"],
+            "half_life_resolution_quality": ideal["half_life_resolution_quality"],
+            "quality_flags": quality_flags,
+            "allocation_details": {
+                "mode": "inventory_constrained_best_effort",
+                "ideal_per_product_mg_week": {k: float(v) for k, v in ideal["per_product_mg"].items()},
+                "per_product_allocated_mg_week": {k: float(v) for k, v in constrained_per_product.items()},
+                "inventory_entered_counts": {
+                    pid: {
+                        "available_count": float(item.available_count),
+                        "count_unit": item.count_unit,
+                    }
+                    for pid, item in inventory_by_product.items()
+                },
+                "derived_available_active_mg_per_product": {k: float(v) for k, v in derived_active_by_product.items()},
+                "requested_duration_weeks": int(settings.duration_weeks or 0),
+                "duration_fully_covered": coverage_ratio >= Decimal("1.0000"),
+                "feasibility_signal": "constrained_best_effort" if constrained_count > 0 else "fully_covered",
+                "coverage_ratio": float(coverage_ratio),
+            },
+        }
+
+    @staticmethod
+    def _derive_available_active_mg(
+        product: PulseProductProfile, count_unit: str, available_count: Decimal
+    ) -> Decimal | None:
+        normalized = (count_unit or "").strip().lower()
+        package_kind = (product.package_kind or "").strip().lower()
+        if package_kind in {"vial", "ampoule"}:
+            if normalized not in {"vial", "vials", "ampoule", "ampoules"}:
+                return None
+            if product.concentration_mg_ml is None or product.volume_per_package_ml is None:
+                return None
+            return (available_count * product.concentration_mg_ml * product.volume_per_package_ml).quantize(Decimal("0.0001"))
+        if package_kind in {"tablet", "capsule"}:
+            if normalized not in {"tablet", "tablets", "capsule", "capsules"}:
+                return None
+            if product.unit_strength_mg is None:
+                return None
+            return (available_count * product.unit_strength_mg).quantize(Decimal("0.0001"))
+        return None
 
     def _resolve_auto_pulse_allocation(self, products: list[PulseProductProfile]) -> dict:
         sorted_products = sorted(products, key=lambda p: str(p.product_id))

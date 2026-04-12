@@ -109,6 +109,30 @@ class PulseProductProfile:
     concentration_mg_ml: Decimal | None
     max_injection_volume_ml: Decimal | None
     ingredients: list[PulseIngredientProfile]
+    package_kind: str | None = None
+    units_per_package: Decimal | None = None
+    volume_per_package_ml: Decimal | None = None
+    unit_strength_mg: Decimal | None = None
+
+
+@dataclass(slots=True)
+class InventoryConstraintInput:
+    product_id: UUID
+    protocol_input_mode: str
+    available_count: Decimal
+    count_unit: str
+
+
+@dataclass(slots=True)
+class InventoryConstraintView:
+    id: UUID
+    draft_id: UUID
+    product_id: UUID
+    protocol_input_mode: str
+    available_count: Decimal
+    count_unit: str
+    created_at: datetime
+    updated_at: datetime
 
 
 @dataclass(slots=True)

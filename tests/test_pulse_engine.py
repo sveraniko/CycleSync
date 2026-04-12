@@ -3,7 +3,13 @@ from decimal import Decimal
 from uuid import uuid4
 
 from app.application.protocols.pulse_engine import PulseCalculationEngine
-from app.application.protocols.schemas import DraftSettingsView, PulseIngredientProfile, PulseProductProfile, StackInputTargetView
+from app.application.protocols.schemas import (
+    DraftSettingsView,
+    InventoryConstraintView,
+    PulseIngredientProfile,
+    PulseProductProfile,
+    StackInputTargetView,
+)
 
 
 def _settings(preset: str, max_inj: int = 4) -> DraftSettingsView:
@@ -307,3 +313,90 @@ def test_locked_mode_returns_clean_validation_issue() -> None:
     result = PulseCalculationEngine().calculate(settings=settings, products=_products())
     assert result.status == "failed_validation"
     assert "stack_targets_missing" in result.validation_issues
+
+
+def test_inventory_constrained_derives_available_active_amount_for_injectable() -> None:
+    product = _products()[0]
+    product.package_kind = "vial"
+    product.volume_per_package_ml = Decimal("10")
+    settings = _settings("layered_pulse")
+    settings.protocol_input_mode = "inventory_constrained"
+    settings.weekly_target_total_mg = None
+    constraints = [
+        InventoryConstraintView(
+            id=uuid4(),
+            draft_id=settings.draft_id,
+            product_id=product.product_id,
+            protocol_input_mode="inventory_constrained",
+            available_count=Decimal("2"),
+            count_unit="vial",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+    ]
+    result = PulseCalculationEngine().calculate(
+        settings=settings,
+        products=[product],
+        inventory_constraints=constraints,
+    )
+    derived = ((result.summary_metrics or {}).get("inventory_derived_available_active_mg_by_product") or {})
+    assert derived[str(product.product_id)] == 5000.0
+
+
+def test_inventory_constrained_warns_when_insufficient_stock() -> None:
+    products = _products()
+    for product in products:
+        product.package_kind = "vial"
+        product.volume_per_package_ml = Decimal("1")
+    settings = _settings("layered_pulse")
+    settings.protocol_input_mode = "inventory_constrained"
+    settings.weekly_target_total_mg = None
+    constraints = [
+        InventoryConstraintView(
+            id=uuid4(),
+            draft_id=settings.draft_id,
+            product_id=product.product_id,
+            protocol_input_mode="inventory_constrained",
+            available_count=Decimal("1"),
+            count_unit="vial",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        for product in products
+    ]
+    result = PulseCalculationEngine().calculate(
+        settings=settings,
+        products=products,
+        inventory_constraints=constraints,
+    )
+    assert "inventory_forced_degraded_layout" in result.warning_flags
+    assert "inventory_insufficient_for_requested_duration" in result.warning_flags
+    assert (result.summary_metrics or {}).get("inventory_feasibility_signal") == "constrained_best_effort"
+
+
+def test_inventory_constrained_fails_when_packaging_metadata_missing() -> None:
+    product = _products()[0]
+    product.package_kind = "vial"
+    product.volume_per_package_ml = None
+    settings = _settings("layered_pulse")
+    settings.protocol_input_mode = "inventory_constrained"
+    settings.weekly_target_total_mg = None
+    constraints = [
+        InventoryConstraintView(
+            id=uuid4(),
+            draft_id=settings.draft_id,
+            product_id=product.product_id,
+            protocol_input_mode="inventory_constrained",
+            available_count=Decimal("1"),
+            count_unit="vial",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+    ]
+    result = PulseCalculationEngine().calculate(
+        settings=settings,
+        products=[product],
+        inventory_constraints=constraints,
+    )
+    assert result.status == "failed_validation"
+    assert any(code.startswith("inventory_metadata_insufficient") for code in result.validation_issues)

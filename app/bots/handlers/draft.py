@@ -8,14 +8,15 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.types.callback_query import CallbackQuery
 
 from app.application.protocols import DraftApplicationService
-from app.application.protocols.input_modes import LOCKED_PROTOCOL_INPUT_MODES
 from app.application.protocols.schemas import (
     ActiveProtocolView,
     DraftSettingsInput,
     DraftView,
+    InventoryConstraintInput,
     PulsePlanPreviewView,
     StackInputTargetInput,
 )
+from app.application.access import AccessEvaluationService
 
 router = Router(name="draft")
 
@@ -47,6 +48,7 @@ class CalculationInputState(StatesGroup):
     max_injection_volume_ml = State()
     max_injections_per_week = State()
     stack_product_target = State()
+    inventory_product_count = State()
 
 
 @router.message(F.text.func(lambda value: (value or "").strip().lower() == "draft"))
@@ -154,7 +156,12 @@ async def on_continue_to_calculation(
 
 
 @router.callback_query(F.data.startswith("draft:calc:mode:"))
-async def on_mode_selected(callback: CallbackQuery, state: FSMContext, draft_service: DraftApplicationService) -> None:
+async def on_mode_selected(
+    callback: CallbackQuery,
+    state: FSMContext,
+    draft_service: DraftApplicationService,
+    access_service: AccessEvaluationService,
+) -> None:
     selected_mode = callback.data.split(":", 3)[3]
     if selected_mode not in INPUT_MODE_LABELS:
         await callback.answer("Неизвестный input mode", show_alert=True)
@@ -164,12 +171,20 @@ async def on_mode_selected(callback: CallbackQuery, state: FSMContext, draft_ser
     await _save_settings_patch(draft_service, user_id, protocol_input_mode=selected_mode)
     await callback.answer()
 
-    if selected_mode in LOCKED_PROTOCOL_INPUT_MODES:
-        await state.clear()
-        await callback.message.answer(
-            f"{INPUT_MODE_LABELS[selected_mode]}: coming next. В этом PR режим сохранен в модели, но full math пока не включен.",
-            reply_markup=build_draft_shortcut(),
+    if selected_mode == "inventory_constrained":
+        decision = await access_service.evaluate(
+            user_id=user_id,
+            entitlement_code="inventory_constrained_access",
         )
+        if not decision.allowed:
+            await state.clear()
+            await callback.message.answer(
+                "Inventory Constrained — advanced paid mode. Доступ не активирован.\n"
+                "Причина: inventory_constrained_access required.",
+                reply_markup=build_draft_shortcut(),
+            )
+            return
+        await _start_inventory_input_flow(callback.message, state, draft_service, user_id)
         return
 
     if selected_mode == "stack_smoothing":
@@ -327,6 +342,44 @@ async def on_stack_target_input(message: Message, state: FSMContext, draft_servi
     )
 
 
+@router.message(CalculationInputState.inventory_product_count)
+async def on_inventory_count_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
+    parsed = _parse_inventory_input(message.text)
+    if parsed is None:
+        await message.answer("Введите в формате `<count> <unit>`, например `20 vial` или `120 tablet`.")
+        return
+    available_count, count_unit = parsed
+
+    data = await state.get_data()
+    pending = list(data.get("inventory_pending_product_ids", []))
+    current_product_id = data.get("inventory_current_product_id")
+    if current_product_id is None:
+        await state.clear()
+        await message.answer("Не удалось продолжить inventory input. Выберите режим заново.")
+        return
+
+    user_id = _resolve_user_id(message.from_user.id if message.from_user else None)
+    await draft_service.save_inventory_constraints(
+        user_id,
+        [
+            InventoryConstraintInput(
+                product_id=UUID(current_product_id),
+                protocol_input_mode="inventory_constrained",
+                available_count=available_count,
+                count_unit=count_unit,
+            ),
+        ],
+    )
+    if pending:
+        next_product_id = pending.pop(0)
+        await state.update_data(inventory_pending_product_ids=pending, inventory_current_product_id=next_product_id)
+        await message.answer(_inventory_prompt(data["inventory_product_names"][next_product_id]))
+        return
+
+    await state.set_state(CalculationInputState.duration_weeks)
+    await message.answer("Inventory composition сохранен. Теперь укажите длительность протокола в неделях (duration_weeks).")
+
+
 def build_draft_shortcut() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="Draft", callback_data="draft:open")]],
@@ -462,6 +515,20 @@ def _render_preview_summary(preview: PulsePlanPreviewView) -> str:
         if warning_flags:
             lines.append("- allocation quality warnings:")
             lines.extend(f"  • {flag}" for flag in warning_flags)
+        inventory_counts = (preview.summary_metrics.get("inventory_entered_counts_by_product") or {})
+        derived_active = (preview.summary_metrics.get("inventory_derived_available_active_mg_by_product") or {})
+        if inventory_counts:
+            lines.append("- inventory entered by product:")
+            for product_id, info in inventory_counts.items():
+                lines.append(f"  • {product_id}: {info.get('available_count')} {info.get('count_unit')}")
+        if derived_active:
+            lines.append("- derived available active mg:")
+            for product_id, value in derived_active.items():
+                lines.append(f"  • {product_id}: {value}")
+        if "inventory_duration_fully_covered" in preview.summary_metrics:
+            lines.append(f"- inventory duration fully covered: {preview.summary_metrics.get('inventory_duration_fully_covered')}")
+        if "inventory_feasibility_signal" in preview.summary_metrics:
+            lines.append(f"- inventory feasibility signal: {preview.summary_metrics.get('inventory_feasibility_signal')}")
 
     if preview.warning_flags:
         lines.append("\nWarnings:")
@@ -546,6 +613,21 @@ def _parse_positive_int(value: str | None) -> int | None:
     return parsed
 
 
+def _parse_inventory_input(value: str | None) -> tuple[Decimal, str] | None:
+    if not value:
+        return None
+    parts = value.strip().split()
+    if len(parts) != 2:
+        return None
+    count = _parse_decimal(parts[0])
+    if count is None or count <= Decimal("0"):
+        return None
+    unit = parts[1].strip().lower()
+    if not unit:
+        return None
+    return count, unit
+
+
 async def _start_stack_input_flow(
     message: Message,
     state: FSMContext,
@@ -578,6 +660,37 @@ async def _start_stack_input_flow(
     await message.answer("Все продукты уже имеют desired weekly mg. Укажите duration_weeks.")
 
 
+async def _start_inventory_input_flow(
+    message: Message,
+    state: FSMContext,
+    draft_service: DraftApplicationService,
+    user_id: str,
+) -> None:
+    draft = await draft_service.list_draft(user_id)
+    existing_constraints = await draft_service.get_inventory_constraints(user_id, protocol_input_mode="inventory_constrained")
+    existing_by_product = {str(item.product_id): item for item in existing_constraints}
+    product_names = {
+        str(item.product_id): (item.selected_product_name or item.selected_brand or str(item.product_id)) for item in draft.items
+    }
+    ordered_ids = [str(item.product_id) for item in draft.items]
+    pending = [product_id for product_id in ordered_ids if product_id not in existing_by_product]
+    if pending:
+        current = pending.pop(0)
+        await state.set_state(CalculationInputState.inventory_product_count)
+        await state.update_data(
+            inventory_current_product_id=current,
+            inventory_pending_product_ids=pending,
+            inventory_product_names=product_names,
+        )
+        await message.answer(_render_inventory_composition(existing_by_product, product_names))
+        await message.answer(_inventory_prompt(product_names[current]))
+        return
+
+    await message.answer(_render_inventory_composition(existing_by_product, product_names))
+    await state.set_state(CalculationInputState.duration_weeks)
+    await message.answer("Для всех продуктов inventory уже задан. Укажите duration_weeks.")
+
+
 def _stack_target_prompt(product_name: str) -> str:
     return f"Stack smoothing: укажите desired weekly mg для '{product_name}'."
 
@@ -593,4 +706,20 @@ def _render_stack_composition(existing_by_product: dict[str, Decimal], product_n
         lines.append(f"- {product_name}: {value}")
         total += value
     lines.append(f"Derived total weekly mg: {total}")
+    return "\n".join(lines)
+
+
+def _inventory_prompt(product_name: str) -> str:
+    return f"Inventory constrained: укажите остаток для '{product_name}' в формате `<count> <unit>`."
+
+
+def _render_inventory_composition(existing_by_product: dict[str, object], product_names: dict[str, str]) -> str:
+    lines = ["Текущий inventory input:"]
+    for product_id, product_name in product_names.items():
+        item = existing_by_product.get(product_id)
+        if item is None:
+            lines.append(f"- {product_name}: —")
+            continue
+        lines.append(f"- {product_name}: {item.available_count} {item.count_unit}")
+    lines.append("Режим best-effort: план будет ограничен доступным остатком.")
     return "\n".join(lines)
