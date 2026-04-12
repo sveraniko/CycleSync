@@ -17,7 +17,7 @@ from app.core.logging import configure_logging
 from app.infrastructure.bootstrap import close_infrastructure, init_infrastructure
 from app.infrastructure.protocols import SqlAlchemyDraftRepository
 from app.infrastructure.reminders import SqlAlchemyReminderRepository
-from app.infrastructure.labs import HeuristicLabsTriageGateway, SqlAlchemyLabsRepository
+from app.infrastructure.labs import SqlAlchemyLabsRepository, build_labs_triage_gateway
 from app.infrastructure.search import SqlAlchemySearchRepository
 
 
@@ -43,7 +43,8 @@ async def run_bot() -> None:
     draft_repository = SqlAlchemyDraftRepository(infra.db_session_factory)
     reminder_repository = SqlAlchemyReminderRepository(infra.db_session_factory)
     labs_repository = SqlAlchemyLabsRepository(infra.db_session_factory)
-    labs_triage_gateway = HeuristicLabsTriageGateway()
+    labs_triage_gateway = build_labs_triage_gateway(settings)
+    logger.info("labs_triage_gateway_configured", **labs_triage_gateway.diagnostics())
     readiness_service = ProtocolDraftReadinessService(repository=draft_repository)
     pulse_engine = PulseCalculationEngine()
     draft_service = DraftApplicationService(
@@ -75,6 +76,9 @@ async def run_bot() -> None:
         )
     finally:
         await bot.session.close()
+        close_gateway = getattr(labs_triage_gateway, "close", None)
+        if callable(close_gateway):
+            await close_gateway()
         await close_infrastructure(infra)
         logger.info("bot_shutdown")
 

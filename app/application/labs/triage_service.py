@@ -9,7 +9,7 @@ from app.application.labs.schemas import (
     LabTriageInputPayload,
     LabTriageResultView,
 )
-from app.application.labs.triage_gateway import LabsTriageGateway
+from app.application.labs.triage_gateway import LabsTriageGateway, LabsTriageGatewayError
 
 ALLOWED_SEVERITIES = {"info", "watch", "warning", "urgent"}
 
@@ -134,7 +134,7 @@ class LabsTriageService:
                     payload={"user_id": user_id, "triage_run_id": str(run.triage_run_id)},
                 )
             return LabTriageResultView(run=run, flags=persisted_flags)
-        except (LabsTriageParsingError, LabsTriageError) as exc:
+        except (LabsTriageParsingError, LabsTriageError, LabsTriageGatewayError) as exc:
             failed_run = await self.repository.create_lab_triage_run(
                 lab_report_id=report.report.report_id,
                 user_id=user_id,
