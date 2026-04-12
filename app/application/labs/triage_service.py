@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
+from app.application.access import AccessEvaluationService
 from app.application.labs.repository import LabsRepository
 from app.application.labs.schemas import (
     LabTriageFlagCreate,
@@ -22,6 +23,10 @@ class LabsTriageParsingError(LabsTriageError):
     pass
 
 
+class LabsTriageAccessError(LabsTriageError):
+    pass
+
+
 @dataclass(slots=True)
 class ParsedTriageOutput:
     summary: str
@@ -33,13 +38,37 @@ class ParsedTriageOutput:
 
 
 class LabsTriageService:
-    def __init__(self, repository: LabsRepository, gateway: LabsTriageGateway) -> None:
+    def __init__(
+        self,
+        repository: LabsRepository,
+        gateway: LabsTriageGateway,
+        *,
+        access_evaluator: AccessEvaluationService,
+    ) -> None:
         self.repository = repository
         self.gateway = gateway
+        self.access_evaluator = access_evaluator
 
     async def run_triage(
         self, *, user_id: str, report_id: UUID, regenerate: bool = False
     ) -> LabTriageResultView:
+        access = await self.access_evaluator.evaluate(
+            user_id=user_id,
+            entitlement_code="ai_triage_access",
+        )
+        if not access.allowed:
+            await self.repository.enqueue_event(
+                event_type="feature_access_denied",
+                aggregate_type="user",
+                aggregate_id=report_id,
+                payload={
+                    "user_id": user_id,
+                    "feature_code": "ai_triage_access",
+                    "reason_code": access.reason_code,
+                },
+            )
+            raise LabsTriageAccessError("AI triage requires access.")
+
         existing = await self.repository.get_latest_triage_result(report_id=report_id, user_id=user_id)
         if existing is not None and not regenerate:
             return existing

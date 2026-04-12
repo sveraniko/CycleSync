@@ -1,6 +1,7 @@
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from app.application.access import AccessEvaluationService
 from app.application.reminders.repository import ReminderRepository
 from app.application.reminders.schemas import (
     ReminderActionResult,
@@ -27,10 +28,15 @@ class ReminderDeliveryGateway:
         raise NotImplementedError
 
 
+class ReminderAccessError(ValueError):
+    pass
+
+
 class ReminderApplicationService:
     def __init__(
         self,
         repository: ReminderRepository,
+        access_evaluator: AccessEvaluationService,
         *,
         default_timezone: str = "UTC",
         default_local_time: time = time(9, 0),
@@ -38,6 +44,7 @@ class ReminderApplicationService:
         snooze_minutes: int = 30,
     ) -> None:
         self.repository = repository
+        self.access_evaluator = access_evaluator
         self.default_timezone = default_timezone
         self.default_local_time = default_local_time
         self.awaiting_action_ttl_minutes = awaiting_action_ttl_minutes
@@ -108,6 +115,28 @@ class ReminderApplicationService:
         failed = 0
 
         for reminder in due:
+            access = await self.access_evaluator.evaluate(
+                user_id=reminder.user_id,
+                entitlement_code="reminders_access",
+                now_utc=now,
+            )
+            if not access.allowed:
+                await self.repository.mark_delivery_failed(
+                    reminder_id=reminder.reminder_id,
+                    error=f"missing_reminders_access:{access.reason_code}",
+                )
+                await self.repository.enqueue_event(
+                    event_type="feature_access_denied",
+                    aggregate_type="protocol_reminder",
+                    aggregate_id=reminder.reminder_id,
+                    payload={
+                        "user_id": reminder.user_id,
+                        "feature_code": "reminders_access",
+                        "reason_code": access.reason_code,
+                    },
+                )
+                failed += 1
+                continue
             try:
                 text = self._render_reminder_text(reminder)
                 sent_ref = await delivery_gateway.send_reminder(
@@ -230,6 +259,23 @@ class ReminderApplicationService:
         preferred_reminder_time_local: time | None,
         timezone_name: str | None,
     ) -> ReminderSettingsView:
+        if reminders_enabled:
+            access = await self.access_evaluator.evaluate(
+                user_id=user_id,
+                entitlement_code="reminders_access",
+            )
+            if not access.allowed:
+                await self.repository.enqueue_event(
+                    event_type="feature_access_denied",
+                    aggregate_type="user_notification_settings",
+                    aggregate_id=settings_user_uuid(user_id),
+                    payload={
+                        "user_id": user_id,
+                        "feature_code": "reminders_access",
+                        "reason_code": access.reason_code,
+                    },
+                )
+                raise ReminderAccessError("Reminders are disabled because reminder access is missing.")
         settings = await self.repository.upsert_reminder_settings(
             user_id=user_id,
             reminders_enabled=reminders_enabled,
@@ -282,6 +328,10 @@ class ReminderApplicationService:
 
         entries = await self.repository.list_pulse_plan_entries(request.pulse_plan_id)
         settings = await self.get_reminder_settings(user_id)
+        access = await self.access_evaluator.evaluate(
+            user_id=user_id,
+            entitlement_code="reminders_access",
+        )
 
         entry_ids = [entry.entry_id for entry in entries]
         existing_entry_ids = await self.repository.list_existing_materialized_entry_ids(
@@ -291,7 +341,8 @@ class ReminderApplicationService:
         tz_name = settings.timezone_name or self.default_timezone
         local_tz = ZoneInfo(tz_name)
         local_time = settings.preferred_reminder_time_local or self.default_local_time
-        status = "scheduled" if settings.reminders_enabled else "suppressed"
+        access_enabled = settings.reminders_enabled and access.allowed
+        status = "scheduled" if access_enabled else "suppressed"
 
         created_count = 0
         existing_count = 0
@@ -324,7 +375,7 @@ class ReminderApplicationService:
                 scheduled_local_time=local_time,
                 timezone_name=tz_name,
                 status=status,
-                is_enabled=settings.reminders_enabled,
+                is_enabled=access_enabled,
                 injection_event_key=entry.injection_event_key,
                 day_offset=entry.day_offset,
                 payload_json={
@@ -336,8 +387,18 @@ class ReminderApplicationService:
                 },
             )
             created_count += 1
-            if not settings.reminders_enabled:
+            if not access_enabled:
                 suppressed_count += 1
+                await self.repository.enqueue_event(
+                    event_type="feature_access_denied",
+                    aggregate_type="reminder_schedule_request",
+                    aggregate_id=request.request_id,
+                    payload={
+                        "user_id": user_id,
+                        "feature_code": "reminders_access",
+                        "reason_code": "entitlement_absent" if not access.allowed else "reminders_disabled_by_user",
+                    },
+                )
 
         return ReminderMaterializationResult(
             request_id=request.request_id,

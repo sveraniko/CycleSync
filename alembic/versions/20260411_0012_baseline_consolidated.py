@@ -32,6 +32,7 @@ SCHEMAS: tuple[str, ...] = (
     "analytics_raw",
     "analytics_views",
     "ops",
+    "access",
 )
 
 
@@ -39,6 +40,70 @@ def upgrade() -> None:
     # from 20260409_0001_baseline_schemas_and_ops.py
     for schema in SCHEMAS:
         op.execute(sa.text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+
+    op.create_table(
+        "entitlements",
+        sa.Column("code", sa.String(length=64), nullable=False),
+        sa.Column("display_name", sa.String(length=255), nullable=False),
+        sa.Column("description", sa.Text(), nullable=True),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.PrimaryKeyConstraint("id", name="pk_access_entitlements"),
+        sa.UniqueConstraint("code", name="uq_access_entitlements_code"),
+        schema="access",
+    )
+
+    op.create_table(
+        "entitlement_grants",
+        sa.Column("user_id", sa.String(length=128), nullable=False),
+        sa.Column("entitlement_code", sa.String(length=64), nullable=False),
+        sa.Column("grant_status", sa.String(length=24), nullable=False),
+        sa.Column("granted_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("granted_by_source", sa.String(length=24), nullable=False),
+        sa.Column("source_ref", sa.String(length=255), nullable=True),
+        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("notes", sa.Text(), nullable=True),
+        sa.Column("revoked_reason", sa.String(length=255), nullable=True),
+        sa.Column("replaced_by_grant_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["entitlement_code"], ["access.entitlements.code"], ondelete="RESTRICT", name="fk_access_grants_entitlement_code"),
+        sa.PrimaryKeyConstraint("id", name="pk_access_entitlement_grants"),
+        schema="access",
+    )
+    op.create_index(
+        "ix_access_entitlement_grants_user_entitlement_status",
+        "entitlement_grants",
+        ["user_id", "entitlement_code", "grant_status"],
+        unique=False,
+        schema="access",
+    )
+    op.create_index(
+        "ix_access_entitlement_grants_entitlement_status_expires",
+        "entitlement_grants",
+        ["entitlement_code", "grant_status", "expires_at"],
+        unique=False,
+        schema="access",
+    )
+    op.execute(
+        sa.text(
+            """
+            INSERT INTO access.entitlements (id, code, display_name, description, is_active)
+            VALUES
+            (gen_random_uuid(), 'bot_access', 'Bot access', 'Core bot shell access', true),
+            (gen_random_uuid(), 'calculation_access', 'Calculation access', 'Pulse calculation execution access', true),
+            (gen_random_uuid(), 'active_protocol_access', 'Active protocol access', 'Protocol activation and active lifecycle access', true),
+            (gen_random_uuid(), 'reminders_access', 'Reminders access', 'Reminder enablement, materialization and dispatch access', true),
+            (gen_random_uuid(), 'adherence_access', 'Adherence access', 'Adherence analytics and actions access', true),
+            (gen_random_uuid(), 'ai_triage_access', 'AI triage access', 'Labs AI triage runtime access', true),
+            (gen_random_uuid(), 'expert_case_access', 'Expert case access', 'Specialist consultation case access', true)
+            """
+        )
+    )
     
     op.create_table(
         "outbox_events",

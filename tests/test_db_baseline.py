@@ -1,6 +1,8 @@
 from app.domain.db import NAMING_CONVENTION
 from app.domain.db.base import Base
 from app.domain.models import (
+    Entitlement,
+    EntitlementGrant,
     LabTriageFlag,
     LabTriageRun,
     Brand,
@@ -76,3 +78,8 @@ def test_expert_cases_models_bound_to_expert_cases_schema() -> None:
     assert SpecialistCase.__table__.schema == "expert_cases"
     assert SpecialistCaseSnapshot.__table__.schema == "expert_cases"
     assert SpecialistCaseResponse.__table__.schema == "expert_cases"
+
+
+def test_access_models_bound_to_access_schema() -> None:
+    assert Entitlement.__table__.schema == "access"
+    assert EntitlementGrant.__table__.schema == "access"
