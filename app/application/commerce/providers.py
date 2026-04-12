@@ -81,3 +81,71 @@ class PaymentProviderRegistry:
                 "implementation": provider.diagnostics() if provider else None,
             }
         return summary
+
+
+class StarsPaymentProvider(PaymentProviderGateway):
+    provider_code = "stars"
+
+    def __init__(self, *, bot_username: str) -> None:
+        self.bot_username = bot_username.strip().lstrip("@")
+
+    async def initialize_checkout(self, *, checkout: CheckoutStateView, now_utc: datetime) -> ProviderInitResult:
+        session_id = f"stars_{checkout.checkout.checkout_id.hex[:12]}_{int(now_utc.timestamp())}"
+        action_url = f"https://t.me/{self.bot_username}?start=stars_checkout_{checkout.checkout.checkout_id}"
+        return ProviderInitResult(
+            provider_reference=action_url,
+            session_status="initiated",
+            session_payload={
+                "provider": self.provider_code,
+                "session_id": session_id,
+                "checkout_id": str(checkout.checkout.checkout_id),
+                "currency": "XTR",
+                "amount": checkout.checkout.total_amount,
+                "action_url": action_url,
+                "instruction": "Open payment link in Telegram and complete Stars purchase.",
+            },
+        )
+
+    async def confirm_payment(
+        self,
+        *,
+        checkout: CheckoutStateView,
+        now_utc: datetime,
+        metadata: dict | None = None,
+    ) -> ProviderSettleResult:
+        payload = metadata or {}
+        outcome = str(payload.get("outcome", "succeeded")).lower()
+        reference = payload.get("provider_reference")
+        if reference is None:
+            reference = f"stars_confirm_{checkout.checkout.checkout_id.hex[:12]}_{int(now_utc.timestamp())}"
+        if outcome == "succeeded":
+            return ProviderSettleResult(
+                provider_reference=str(reference),
+                status="succeeded",
+                reason_code="telegram_stars_paid",
+            )
+        if outcome in {"cancelled", "expired", "failed", "pending"}:
+            error_code = payload.get("error_code")
+            if outcome == "failed" and not error_code:
+                error_code = "telegram_stars_failed"
+            return ProviderSettleResult(
+                provider_reference=str(reference),
+                status=outcome,
+                reason_code=payload.get("reason_code"),
+                error_code=error_code,
+                error_message=payload.get("error_message"),
+            )
+        return ProviderSettleResult(
+            provider_reference=str(reference),
+            status="failed",
+            error_code="invalid_provider_outcome",
+            error_message=f"unsupported_outcome:{outcome}",
+        )
+
+    def diagnostics(self) -> dict[str, object]:
+        return {
+            "provider_code": self.provider_code,
+            "kind": "telegram_stars",
+            "supports_live_money": True,
+            "bot_username_configured": bool(self.bot_username),
+        }

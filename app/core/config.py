@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     commerce_mode: str = Field(default="disabled")
     commerce_default_currency: str = Field(default="USD")
     commerce_declared_providers: str = Field(default="manual_card,liqpay,fondy,novapay,mono,coinbase_commerce,nowpayments,bitpay,paypal,stars,free")
+    commerce_stars_bot_username: str = Field(default="")
 
 
 @lru_cache(maxsize=1)

@@ -4,7 +4,7 @@ from uuid import UUID
 
 COMMERCE_MODES = {"disabled", "test", "live"}
 CHECKOUT_STATUSES = {"created", "awaiting_payment", "completed", "failed", "blocked"}
-PAYMENT_ATTEMPT_STATUSES = {"started", "succeeded", "failed"}
+PAYMENT_ATTEMPT_STATUSES = {"started", "initiated", "pending", "succeeded", "failed", "cancelled", "expired"}
 FREE_REASON_CODES = {"dev_mode", "gift_coupon", "manual_free_checkout", "ops_test"}
 COUPON_STATUSES = {"active", "disabled", "expired", "exhausted"}
 COUPON_DISCOUNT_TYPES = {"percent", "fixed"}
@@ -185,3 +185,6 @@ class CheckoutDiagnostics:
     exhausted_coupons: int
     coupon_redemptions: int
     coupon_free_settlements: int
+    provider_attempts: dict[str, int]
+    provider_succeeded: dict[str, int]
+    provider_failed: dict[str, int]

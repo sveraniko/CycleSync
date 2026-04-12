@@ -357,6 +357,20 @@ class SqlAlchemyCommerceRepository(CommerceRepository):
                     CouponRedemption.final_total_after_discount == 0,
                 )
             )
+            attempt_rows = await session.execute(
+                select(PaymentAttempt.provider_code, func.count())
+                .group_by(PaymentAttempt.provider_code)
+            )
+            succeeded_rows = await session.execute(
+                select(PaymentAttempt.provider_code, func.count())
+                .where(PaymentAttempt.attempt_status == "succeeded")
+                .group_by(PaymentAttempt.provider_code)
+            )
+            failed_rows = await session.execute(
+                select(PaymentAttempt.provider_code, func.count())
+                .where(PaymentAttempt.attempt_status.in_(["failed", "cancelled", "expired"]))
+                .group_by(PaymentAttempt.provider_code)
+            )
             return CheckoutDiagnostics(
                 commerce_mode=commerce_mode,
                 provider_summary=provider_summary,
@@ -368,6 +382,9 @@ class SqlAlchemyCommerceRepository(CommerceRepository):
                 exhausted_coupons=int(exhausted_coupons or 0),
                 coupon_redemptions=int(coupon_redemptions or 0),
                 coupon_free_settlements=int(coupon_free_settlements or 0),
+                provider_attempts={row[0]: int(row[1]) for row in attempt_rows},
+                provider_succeeded={row[0]: int(row[1]) for row in succeeded_rows},
+                provider_failed={row[0]: int(row[1]) for row in failed_rows},
             )
 
     async def enqueue_event(self, *, event_type: str, aggregate_type: str, aggregate_id: UUID, payload: dict) -> None:
