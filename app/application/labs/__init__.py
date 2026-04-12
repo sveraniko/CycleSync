@@ -17,6 +17,7 @@ from app.application.labs.schemas import (
 )
 from app.application.labs.service import LabsApplicationService, LabsValidationError
 from app.application.labs.triage_service import (
+    LabsTriageAccessError,
     LabsTriageError,
     LabsTriageParsingError,
     LabsTriageService,
@@ -43,6 +44,7 @@ __all__ = [
     "LabsApplicationService",
     "LabsValidationError",
     "LabsTriageService",
+    "LabsTriageAccessError",
     "LabsTriageError",
     "LabsTriageParsingError",
     "parse_triage_output",

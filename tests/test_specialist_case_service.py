@@ -309,9 +309,37 @@ class _FakeRepo:
         self.events.append(kwargs["event_type"])
 
 
+class _AllowAccess:
+    async def evaluate(self, **kwargs):
+        from app.application.access.schemas import EntitlementDecision
+
+        return EntitlementDecision(
+            allowed=True,
+            reason_code="entitlement_active",
+            entitlement_code=kwargs["entitlement_code"],
+            grant_source="test",
+            expires_at=None,
+            grant_id=None,
+        )
+
+
+class _DenyAccess:
+    async def evaluate(self, **kwargs):
+        from app.application.access.schemas import EntitlementDecision
+
+        return EntitlementDecision(
+            allowed=False,
+            reason_code="entitlement_absent",
+            entitlement_code=kwargs["entitlement_code"],
+            grant_source=None,
+            expires_at=None,
+            grant_id=None,
+        )
+
+
 def test_case_assembly_snapshot_contains_protocol_labs_triage_and_adherence() -> None:
     repo = _FakeRepo()
-    service = SpecialistCaseAssemblyService(repository=repo)
+    service = SpecialistCaseAssemblyService(repository=repo, access_evaluator=_AllowAccess())
 
     opened = asyncio.run(
         service.open_case(
@@ -332,7 +360,7 @@ def test_case_assembly_snapshot_contains_protocol_labs_triage_and_adherence() ->
 
 def test_case_status_initialization_and_latest_snapshot_reference() -> None:
     repo = _FakeRepo()
-    service = SpecialistCaseAssemblyService(repository=repo)
+    service = SpecialistCaseAssemblyService(repository=repo, access_evaluator=_AllowAccess())
 
     opened = asyncio.run(service.open_case(user_id="u1", lab_report_id=repo.report_id, notes_from_user=None))
 
@@ -343,7 +371,7 @@ def test_case_status_initialization_and_latest_snapshot_reference() -> None:
 
 def test_case_opening_flow_emits_expected_events() -> None:
     repo = _FakeRepo()
-    service = SpecialistCaseAssemblyService(repository=repo)
+    service = SpecialistCaseAssemblyService(repository=repo, access_evaluator=_AllowAccess())
 
     asyncio.run(service.open_case(user_id="u1", lab_report_id=repo.report_id, notes_from_user="q"))
 
@@ -355,7 +383,7 @@ def test_case_opening_flow_emits_expected_events() -> None:
 
 def test_case_taken_into_review_transition() -> None:
     repo = _FakeRepo()
-    service = SpecialistCaseAssemblyService(repository=repo)
+    service = SpecialistCaseAssemblyService(repository=repo, access_evaluator=_AllowAccess())
     opened = asyncio.run(service.open_case(user_id="u1", lab_report_id=repo.report_id, notes_from_user=None))
 
     detail = asyncio.run(service.take_case_in_review(case_id=opened.case.case_id, specialist_id="spec-1"))
@@ -367,7 +395,7 @@ def test_case_taken_into_review_transition() -> None:
 
 def test_specialist_response_persisted_and_case_answered() -> None:
     repo = _FakeRepo()
-    service = SpecialistCaseAssemblyService(repository=repo)
+    service = SpecialistCaseAssemblyService(repository=repo, access_evaluator=_AllowAccess())
     opened = asyncio.run(service.open_case(user_id="u1", lab_report_id=repo.report_id, notes_from_user=None))
     asyncio.run(service.take_case_in_review(case_id=opened.case.case_id, specialist_id="spec-1"))
 
@@ -390,7 +418,7 @@ def test_specialist_response_persisted_and_case_answered() -> None:
 
 def test_user_can_read_answered_case_and_latest_response() -> None:
     repo = _FakeRepo()
-    service = SpecialistCaseAssemblyService(repository=repo)
+    service = SpecialistCaseAssemblyService(repository=repo, access_evaluator=_AllowAccess())
     opened = asyncio.run(service.open_case(user_id="u1", lab_report_id=repo.report_id, notes_from_user=None))
     asyncio.run(service.take_case_in_review(case_id=opened.case.case_id, specialist_id="spec-1"))
     asyncio.run(
@@ -413,9 +441,10 @@ def test_user_can_read_answered_case_and_latest_response() -> None:
     assert latest.latest_response_summary == "Recommendation"
 
 
-def test_access_seam_denies_when_disabled() -> None:
+def test_access_gate_denies_without_entitlement() -> None:
     repo = _FakeRepo(allow_access=False)
-    service = SpecialistCaseAssemblyService(repository=repo)
+    service = SpecialistCaseAssemblyService(repository=repo, access_evaluator=_DenyAccess())
 
     with pytest.raises(SpecialistCaseAccessError):
         asyncio.run(service.open_case(user_id="u1", lab_report_id=repo.report_id, notes_from_user=None))
+    assert "feature_access_denied" in repo.events

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
+from app.application.access import AccessEvaluationService
 from app.application.expert_cases.repository import SpecialistCasesRepository
 from app.application.expert_cases.schemas import (
     ALLOWED_CASE_STATUSES,
@@ -21,8 +22,9 @@ class SpecialistCaseAccessError(SpecialistCaseError):
 
 
 class SpecialistCaseAssemblyService:
-    def __init__(self, repository: SpecialistCasesRepository) -> None:
+    def __init__(self, repository: SpecialistCasesRepository, *, access_evaluator: AccessEvaluationService) -> None:
         self.repository = repository
+        self.access_evaluator = access_evaluator
 
     async def open_case(
         self,
@@ -33,8 +35,21 @@ class SpecialistCaseAssemblyService:
         notes_from_user: str | None = None,
         opened_reason_code: str = "user_consult_specialist",
     ) -> SpecialistCaseOpenedResult:
-        access = await self.repository.check_case_access(user_id=user_id)
+        access = await self.access_evaluator.evaluate(
+            user_id=user_id,
+            entitlement_code="expert_case_access",
+        )
         if not access.allowed:
+            await self.repository.enqueue_event(
+                event_type="feature_access_denied",
+                aggregate_type="lab_report",
+                aggregate_id=lab_report_id,
+                payload={
+                    "user_id": user_id,
+                    "feature_code": "expert_case_access",
+                    "reason_code": access.reason_code,
+                },
+            )
             raise SpecialistCaseAccessError(access.reason_code)
 
         report = await self.repository.get_lab_report_case_view(report_id=lab_report_id, user_id=user_id)

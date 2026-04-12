@@ -12,6 +12,7 @@ from app.application.expert_cases import SpecialistCaseAccessError, SpecialistCa
 from app.application.labs import (
     LabEntryInput,
     LabsApplicationService,
+    LabsTriageAccessError,
     LabsTriageError,
     LabsTriageService,
     LabsValidationError,
@@ -254,6 +255,10 @@ async def on_run_triage(
             user_id=_resolve_user_id(callback.from_user.id if callback.from_user else None),
             report_id=UUID(report_id_raw),
         )
+    except LabsTriageAccessError as exc:
+        await callback.message.answer(str(exc))
+        await callback.answer()
+        return
     except LabsTriageError as exc:
         await callback.message.answer(f"Triage не выполнен: {exc}")
         await callback.answer()
@@ -279,6 +284,10 @@ async def on_regenerate_triage(
             report_id=UUID(report_id_raw),
             regenerate=True,
         )
+    except LabsTriageAccessError as exc:
+        await callback.message.answer(str(exc))
+        await callback.answer()
+        return
     except LabsTriageError as exc:
         await callback.message.answer(f"Regenerate не выполнен: {exc}")
         await callback.answer()
@@ -346,7 +355,7 @@ async def on_specialist_note(
             notes_from_user=note,
         )
     except SpecialistCaseAccessError:
-        await message.answer("Consult specialist сейчас недоступен по access policy.")
+        await message.answer("Specialist consultation access is not active.")
         await state.set_state(None)
         return
     except SpecialistCaseError as exc:

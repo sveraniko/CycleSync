@@ -30,9 +30,8 @@ from app.domain.models.reminders import ProtocolAdherenceSummary
 
 
 class SqlAlchemySpecialistCasesRepository(SpecialistCasesRepository):
-    def __init__(self, session_factory: async_sessionmaker, *, allow_all_access: bool = True):
+    def __init__(self, session_factory: async_sessionmaker):
         self.session_factory = session_factory
-        self.allow_all_access = allow_all_access
 
     async def get_lab_report_case_view(self, *, report_id: UUID, user_id: str) -> LabReportCaseView | None:
         async with self.session_factory() as session:
@@ -161,9 +160,6 @@ class SqlAlchemySpecialistCasesRepository(SpecialistCasesRepository):
 
     async def check_case_access(self, *, user_id: str) -> SpecialistCaseAccessDecision:
         _ = user_id
-        if self.allow_all_access:
-            return SpecialistCaseAccessDecision(allowed=True, reason_code="allow_dev_mode")
-        # TODO(W7/PR2): wire real entitlement table lookup for `expert_case_access`.
         return SpecialistCaseAccessDecision(allowed=False, reason_code="missing_expert_case_access_entitlement")
 
     async def create_case(self, *, user_id: str, protocol_id: UUID | None, lab_report_id: UUID | None, triage_run_id: UUID | None, case_status: str, opened_reason_code: str, opened_at_iso: str, notes_from_user: str | None) -> SpecialistCaseView:

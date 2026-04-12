@@ -8,6 +8,7 @@ from app.application.protocols import (
     ProtocolDraftReadinessService,
     PulseCalculationEngine,
 )
+from app.application.access import AccessEvaluationService
 from app.application.reminders import ReminderApplicationService
 from app.application.labs import LabsApplicationService, LabsTriageService
 from app.application.expert_cases import SpecialistCaseAssemblyService
@@ -17,6 +18,7 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.infrastructure.bootstrap import close_infrastructure, init_infrastructure
 from app.infrastructure.protocols import SqlAlchemyDraftRepository
+from app.infrastructure.access import SqlAlchemyAccessRepository
 from app.infrastructure.reminders import SqlAlchemyReminderRepository
 from app.infrastructure.labs import SqlAlchemyLabsRepository, build_labs_triage_gateway
 from app.infrastructure.expert_cases import SqlAlchemySpecialistCasesRepository
@@ -45,10 +47,9 @@ async def run_bot() -> None:
     draft_repository = SqlAlchemyDraftRepository(infra.db_session_factory)
     reminder_repository = SqlAlchemyReminderRepository(infra.db_session_factory)
     labs_repository = SqlAlchemyLabsRepository(infra.db_session_factory)
-    specialist_cases_repository = SqlAlchemySpecialistCasesRepository(
-        infra.db_session_factory,
-        allow_all_access=settings.expert_case_allow_dev_access,
-    )
+    specialist_cases_repository = SqlAlchemySpecialistCasesRepository(infra.db_session_factory)
+    access_repository = SqlAlchemyAccessRepository(infra.db_session_factory)
+    access_service = AccessEvaluationService(repository=access_repository)
     labs_triage_gateway = build_labs_triage_gateway(settings)
     logger.info("labs_triage_gateway_configured", **labs_triage_gateway.diagnostics())
     readiness_service = ProtocolDraftReadinessService(repository=draft_repository)
@@ -61,11 +62,19 @@ async def run_bot() -> None:
 
     reminder_service = ReminderApplicationService(
         repository=reminder_repository,
+        access_evaluator=access_service,
         default_timezone=settings.timezone_default,
     )
     labs_service = LabsApplicationService(repository=labs_repository)
-    labs_triage_service = LabsTriageService(repository=labs_repository, gateway=labs_triage_gateway)
-    specialist_case_service = SpecialistCaseAssemblyService(repository=specialist_cases_repository)
+    labs_triage_service = LabsTriageService(
+        repository=labs_repository,
+        gateway=labs_triage_gateway,
+        access_evaluator=access_service,
+    )
+    specialist_case_service = SpecialistCaseAssemblyService(
+        repository=specialist_cases_repository,
+        access_evaluator=access_service,
+    )
 
     bot = Bot(token=settings.bot_token)
     dispatcher = Dispatcher()

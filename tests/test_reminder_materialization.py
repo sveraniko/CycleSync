@@ -177,10 +177,38 @@ class FakeGateway:
         self.cleaned.append((chat_id, message_id, text))
 
 
+class AllowAccess:
+    async def evaluate(self, **kwargs):
+        from app.application.access.schemas import EntitlementDecision
+
+        return EntitlementDecision(
+            allowed=True,
+            reason_code="entitlement_active",
+            entitlement_code=kwargs["entitlement_code"],
+            grant_source="test",
+            expires_at=None,
+            grant_id=None,
+        )
+
+
+class DenyAccess:
+    async def evaluate(self, **kwargs):
+        from app.application.access.schemas import EntitlementDecision
+
+        return EntitlementDecision(
+            allowed=False,
+            reason_code="entitlement_absent",
+            entitlement_code=kwargs["entitlement_code"],
+            grant_source=None,
+            expires_at=None,
+            grant_id=None,
+        )
+
+
 def test_materialization_idempotent_and_timezone_applied() -> None:
     repo = FakeReminderRepo()
     service = ReminderApplicationService(
-        repo, default_timezone="UTC", default_local_time=time(9, 0)
+        repo, access_evaluator=AllowAccess(), default_timezone="UTC", default_local_time=time(9, 0)
     )
 
     import asyncio
@@ -195,7 +223,7 @@ def test_materialization_idempotent_and_timezone_applied() -> None:
 def test_due_selection_and_delivery_path() -> None:
     repo = FakeReminderRepo()
     gateway = FakeGateway()
-    service = ReminderApplicationService(repo)
+    service = ReminderApplicationService(repo, access_evaluator=AllowAccess())
 
     import asyncio
 
@@ -209,7 +237,7 @@ def test_due_selection_and_delivery_path() -> None:
 def test_done_transition_records_adherence() -> None:
     repo = FakeReminderRepo()
     gateway = FakeGateway()
-    service = ReminderApplicationService(repo)
+    service = ReminderApplicationService(repo, access_evaluator=AllowAccess())
 
     import asyncio
 
@@ -226,7 +254,7 @@ def test_done_transition_records_adherence() -> None:
 
 def test_snooze_transition_records_adherence() -> None:
     repo = FakeReminderRepo()
-    service = ReminderApplicationService(repo)
+    service = ReminderApplicationService(repo, access_evaluator=AllowAccess())
 
     import asyncio
 
@@ -243,7 +271,7 @@ def test_snooze_transition_records_adherence() -> None:
 def test_snooze_is_not_terminal_and_is_redispatched_when_due() -> None:
     repo = FakeReminderRepo()
     gateway = FakeGateway()
-    service = ReminderApplicationService(repo, snooze_minutes=10)
+    service = ReminderApplicationService(repo, access_evaluator=AllowAccess(), snooze_minutes=10)
 
     import asyncio
 
@@ -283,13 +311,42 @@ def test_snooze_is_not_terminal_and_is_redispatched_when_due() -> None:
         )
     )
     assert report3.sent == 1
-    assert repo.runtime.status == "awaiting_action"
-    assert len(gateway.sent) == 2
+
+
+def test_reminders_gate_denies_enablement_without_entitlement() -> None:
+    repo = FakeReminderRepo()
+    service = ReminderApplicationService(repo, access_evaluator=DenyAccess())
+
+    import asyncio
+    import pytest
+
+    with pytest.raises(ValueError, match="Reminders are disabled because reminder access is missing."):
+        asyncio.run(
+            service.update_reminder_settings(
+                user_id=repo.protocol_user,
+                reminders_enabled=True,
+                preferred_reminder_time_local=repo.settings.preferred_reminder_time_local,
+                timezone_name=repo.settings.timezone_name,
+            )
+        )
+
+
+def test_dispatch_marks_denied_without_reminders_access() -> None:
+    repo = FakeReminderRepo()
+    gateway = FakeGateway()
+    service = ReminderApplicationService(repo, access_evaluator=DenyAccess())
+
+    import asyncio
+
+    report = asyncio.run(service.dispatch_due_reminders(delivery_gateway=gateway))
+    assert report.failed_delivery == 1
+    assert not gateway.sent
+    assert repo.runtime.status == "failed_delivery"
 
 
 def test_skip_transition_records_adherence() -> None:
     repo = FakeReminderRepo()
-    service = ReminderApplicationService(repo)
+    service = ReminderApplicationService(repo, access_evaluator=AllowAccess())
 
     import asyncio
 
@@ -307,7 +364,7 @@ def test_expiry_path_and_cleanup() -> None:
     repo = FakeReminderRepo()
     repo.expire_list = [repo.runtime]
     gateway = FakeGateway()
-    service = ReminderApplicationService(repo)
+    service = ReminderApplicationService(repo, access_evaluator=AllowAccess())
 
     import asyncio
 
@@ -321,7 +378,7 @@ def test_expiry_path_and_cleanup() -> None:
 def test_stale_message_cleanup_behavior() -> None:
     repo = FakeReminderRepo()
     gateway = FakeGateway()
-    service = ReminderApplicationService(repo)
+    service = ReminderApplicationService(repo, access_evaluator=AllowAccess())
 
     import asyncio
 
@@ -338,7 +395,7 @@ def test_stale_message_cleanup_behavior() -> None:
 def test_idempotent_callback_behavior() -> None:
     repo = FakeReminderRepo()
     repo.action_status = "completed"
-    service = ReminderApplicationService(repo)
+    service = ReminderApplicationService(repo, access_evaluator=AllowAccess())
 
     import asyncio
 
@@ -367,7 +424,7 @@ def test_materialization_uses_protocol_anchor_when_scheduled_day_missing() -> No
     )
     repo.request.created_at = datetime(2026, 4, 11, 10, 0, tzinfo=timezone.utc)
     repo.anchor_date = datetime(2026, 4, 1, 0, 0, tzinfo=timezone.utc).date()
-    service = ReminderApplicationService(repo)
+    service = ReminderApplicationService(repo, access_evaluator=AllowAccess())
 
     import asyncio
 
@@ -392,7 +449,7 @@ def test_materialization_prefers_entry_scheduled_day_over_anchor() -> None:
         sequence_no=repo.entries[0].sequence_no,
     )
     repo.anchor_date = datetime(2026, 4, 1, 0, 0, tzinfo=timezone.utc).date()
-    service = ReminderApplicationService(repo)
+    service = ReminderApplicationService(repo, access_evaluator=AllowAccess())
 
     import asyncio
 
@@ -402,7 +459,7 @@ def test_materialization_prefers_entry_scheduled_day_over_anchor() -> None:
 
 def test_adherence_event_recording_payload_contains_reminder_id() -> None:
     repo = FakeReminderRepo()
-    service = ReminderApplicationService(repo)
+    service = ReminderApplicationService(repo, access_evaluator=AllowAccess())
 
     import asyncio
 

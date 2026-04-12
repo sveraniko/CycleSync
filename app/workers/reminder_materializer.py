@@ -1,7 +1,9 @@
 from datetime import time
 
+from app.application.access import AccessEvaluationService
 from app.application.reminders import ReminderApplicationService
 from app.core.config import get_settings
+from app.infrastructure.access import SqlAlchemyAccessRepository
 from app.infrastructure.bootstrap import close_infrastructure, init_infrastructure
 from app.infrastructure.reminders import SqlAlchemyReminderRepository
 
@@ -16,8 +18,12 @@ async def run_reminder_materializer(limit: int = 100) -> list:
         meilisearch_index=settings.meilisearch_index,
     )
     try:
+        access_service = AccessEvaluationService(
+            repository=SqlAlchemyAccessRepository(infra.db_session_factory)
+        )
         service = ReminderApplicationService(
             repository=SqlAlchemyReminderRepository(infra.db_session_factory),
+            access_evaluator=access_service,
             default_timezone=settings.timezone_default,
             default_local_time=time(hour=9, minute=0),
         )

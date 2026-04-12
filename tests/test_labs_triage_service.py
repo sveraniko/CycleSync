@@ -15,6 +15,7 @@ from app.application.labs.schemas import (
     ProtocolTriageContextView,
 )
 from app.application.labs.triage_service import (
+    LabsTriageAccessError,
     LabsTriageParsingError,
     LabsTriageService,
     parse_triage_output,
@@ -135,6 +136,34 @@ class _FakeRepo:
         self.events.append(kwargs["event_type"])
 
 
+class _AllowAccess:
+    async def evaluate(self, **kwargs):
+        from app.application.access.schemas import EntitlementDecision
+
+        return EntitlementDecision(
+            allowed=True,
+            reason_code="entitlement_active",
+            entitlement_code=kwargs["entitlement_code"],
+            grant_source="test",
+            expires_at=None,
+            grant_id=None,
+        )
+
+
+class _DenyAccess:
+    async def evaluate(self, **kwargs):
+        from app.application.access.schemas import EntitlementDecision
+
+        return EntitlementDecision(
+            allowed=False,
+            reason_code="entitlement_absent",
+            entitlement_code=kwargs["entitlement_code"],
+            grant_source=None,
+            expires_at=None,
+            grant_id=None,
+        )
+
+
 def test_parse_triage_output_contract() -> None:
     marker_id = uuid4()
     parsed = parse_triage_output(
@@ -191,7 +220,7 @@ def test_triage_persistence_protocol_context_and_regenerate() -> None:
             "prompt_version": "w6",
         },
     )
-    service = LabsTriageService(repository=repo, gateway=gateway)
+    service = LabsTriageService(repository=repo, gateway=gateway, access_evaluator=_AllowAccess())
 
     first = asyncio.run(service.run_triage(user_id="u1", report_id=repo.report.report_id))
     second = asyncio.run(
@@ -204,3 +233,16 @@ def test_triage_persistence_protocol_context_and_regenerate() -> None:
     assert "lab_triage_completed" in repo.events
     assert "lab_triage_regenerated" in repo.events
     assert gateway.payloads[0].protocol_context is not None
+
+
+def test_triage_gate_denies_without_entitlement() -> None:
+    repo = _FakeRepo()
+    gateway = _FakeGateway(payloads=[], raw={})
+    service = LabsTriageService(repository=repo, gateway=gateway, access_evaluator=_DenyAccess())
+
+    try:
+        asyncio.run(service.run_triage(user_id="u1", report_id=repo.report.report_id))
+        assert False, "expected access denial"
+    except LabsTriageAccessError as exc:
+        assert str(exc) == "AI triage requires access."
+    assert "feature_access_denied" in repo.events

@@ -6,7 +6,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.types.callback_query import CallbackQuery
 
-from app.application.reminders import ReminderApplicationService
+from app.application.reminders import ReminderAccessError, ReminderApplicationService
 
 router = Router(name="settings")
 
@@ -33,12 +33,17 @@ async def on_reminders_on(
 ) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     current = await reminder_service.get_reminder_settings(user_id)
-    updated = await reminder_service.update_reminder_settings(
-        user_id=user_id,
-        reminders_enabled=True,
-        preferred_reminder_time_local=current.preferred_reminder_time_local,
-        timezone_name=current.timezone_name,
-    )
+    try:
+        updated = await reminder_service.update_reminder_settings(
+            user_id=user_id,
+            reminders_enabled=True,
+            preferred_reminder_time_local=current.preferred_reminder_time_local,
+            timezone_name=current.timezone_name,
+        )
+    except ReminderAccessError as exc:
+        await callback.message.answer(str(exc))
+        await callback.answer()
+        return
     await callback.message.answer("Reminders включены.")
     await callback.message.answer(
         _render_settings(updated),

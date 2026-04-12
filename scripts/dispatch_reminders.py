@@ -3,8 +3,10 @@ import json
 
 from aiogram import Bot
 
+from app.application.access import AccessEvaluationService
 from app.application.reminders import ReminderApplicationService
 from app.core.config import get_settings
+from app.infrastructure.access import SqlAlchemyAccessRepository
 from app.infrastructure.bootstrap import close_infrastructure, init_infrastructure
 from app.infrastructure.reminders import (
     SqlAlchemyReminderRepository,
@@ -28,8 +30,12 @@ async def main() -> None:
 
     try:
         repo = SqlAlchemyReminderRepository(infra.db_session_factory)
+        access_service = AccessEvaluationService(
+            repository=SqlAlchemyAccessRepository(infra.db_session_factory)
+        )
         service = ReminderApplicationService(
             repository=repo,
+            access_evaluator=access_service,
             default_timezone=settings.timezone_default,
         )
         gateway = TelegramReminderDeliveryGateway(bot)
