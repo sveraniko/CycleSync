@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from app.application.protocols.pulse_engine import PulseCalculationEngine
+from app.application.protocols.input_modes import is_valid_protocol_input_mode
 from app.application.protocols.repository import DraftRepository
 from app.application.protocols.schemas import (
     ActiveProtocolView,
@@ -107,7 +108,15 @@ class DraftApplicationService:
 
     async def save_draft_settings(self, user_id: str, settings: DraftSettingsInput) -> DraftSettingsView:
         draft = await self.get_or_create_active_draft(user_id)
+        previous = await self.repository.get_draft_settings(draft_id=draft.draft_id)
         saved = await self.repository.upsert_draft_settings(draft_id=draft.draft_id, settings=settings)
+        if saved.protocol_input_mode and saved.protocol_input_mode != (previous.protocol_input_mode if previous else None):
+            await self.repository.enqueue_event(
+                event_type="protocol_input_mode_selected",
+                aggregate_type="protocol_draft",
+                aggregate_id=draft.draft_id,
+                payload={"user_id": user_id, "protocol_input_mode": saved.protocol_input_mode},
+            )
         await self.repository.enqueue_event(
             event_type="draft_settings_updated",
             aggregate_type="protocol_draft",
@@ -116,6 +125,7 @@ class DraftApplicationService:
                 "user_id": user_id,
                 "preset_code": saved.preset_code,
                 "duration_weeks": saved.duration_weeks,
+                "protocol_input_mode": saved.protocol_input_mode,
             },
         )
         return saved
@@ -139,21 +149,27 @@ class DraftApplicationService:
         products = await self.repository.list_pulse_product_profiles(draft.draft_id)
 
         await self.repository.enqueue_event(
-            event_type="pulse_calculation_started",
+            event_type="protocol_calculation_requested",
             aggregate_type="protocol_draft",
             aggregate_id=draft.draft_id,
-            payload={"user_id": user_id},
+            payload={
+                "user_id": user_id,
+                "protocol_input_mode": settings.protocol_input_mode if settings else None,
+            },
         )
 
         result = self.pulse_engine.calculate(settings=settings, products=products)
+        selected_mode = settings.protocol_input_mode if settings and is_valid_protocol_input_mode(settings.protocol_input_mode) else "total_target"
         had_previous_preview = await self.repository.has_successful_preview_for_draft(draft.draft_id)
         payload = PulsePlanPreviewPersistPayload(
             draft_id=draft.draft_id,
+            protocol_input_mode=selected_mode,
             preset_requested=result.preset_requested,
             preset_applied=result.preset_applied,
             status=result.status,
             degraded_fallback=result.degraded_fallback,
             settings_snapshot={
+                "protocol_input_mode": settings.protocol_input_mode if settings else None,
                 "weekly_target_total_mg": str(settings.weekly_target_total_mg) if settings else None,
                 "duration_weeks": settings.duration_weeks if settings else None,
                 "preset_code": settings.preset_code if settings else None,
@@ -186,10 +202,16 @@ class DraftApplicationService:
         else:
             preview_event_type = "pulse_plan_preview_regenerated" if had_previous_preview else "pulse_plan_preview_generated"
             await self.repository.enqueue_event(
-                event_type=preview_event_type,
+                event_type="protocol_calculation_preview_generated",
                 aggregate_type="pulse_plan_preview",
                 aggregate_id=preview.preview_id,
-                payload={"user_id": user_id, "draft_id": str(draft.draft_id), "status": preview.status},
+                payload={
+                    "user_id": user_id,
+                    "draft_id": str(draft.draft_id),
+                    "status": preview.status,
+                    "protocol_input_mode": preview.protocol_input_mode,
+                    "preview_event_type": preview_event_type,
+                },
             )
 
         return preview

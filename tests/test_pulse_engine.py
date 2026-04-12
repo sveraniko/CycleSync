@@ -9,6 +9,7 @@ from app.application.protocols.schemas import DraftSettingsView, PulseIngredient
 def _settings(preset: str, max_inj: int = 4) -> DraftSettingsView:
     return DraftSettingsView(
         draft_id=uuid4(),
+        protocol_input_mode="total_target",
         weekly_target_total_mg=Decimal("300"),
         duration_weeks=4,
         preset_code=preset,
@@ -246,3 +247,21 @@ def test_failed_validation_status() -> None:
     result = PulseCalculationEngine().calculate(settings=None, products=[])
     assert result.status == "failed_validation"
     assert result.error_message == "validation_failed"
+
+
+def test_auto_pulse_mode_does_not_require_total_target() -> None:
+    settings = _settings("layered_pulse")
+    settings.protocol_input_mode = "auto_pulse"
+    settings.weekly_target_total_mg = None
+    result = PulseCalculationEngine().calculate(settings=settings, products=_products())
+    assert result.status in {"success", "success_with_warnings", "degraded_fallback"}
+    assert result.protocol_input_mode == "auto_pulse"
+    assert result.allocation_mode == "auto_pulse_guidance_driven"
+
+
+def test_locked_mode_returns_clean_validation_issue() -> None:
+    settings = _settings("layered_pulse")
+    settings.protocol_input_mode = "stack_smoothing"
+    result = PulseCalculationEngine().calculate(settings=settings, products=_products())
+    assert result.status == "failed_validation"
+    assert "stack_smoothing_not_yet_available" in result.validation_issues

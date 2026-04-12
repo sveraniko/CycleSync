@@ -8,6 +8,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.types.callback_query import CallbackQuery
 
 from app.application.protocols import DraftApplicationService
+from app.application.protocols.input_modes import LOCKED_PROTOCOL_INPUT_MODES
 from app.application.protocols.schemas import ActiveProtocolView, DraftSettingsInput, DraftView, PulsePlanPreviewView
 
 router = Router(name="draft")
@@ -25,8 +26,16 @@ STATUS_LABELS = {
     "failed_validation": "❌ failed_validation",
 }
 
+INPUT_MODE_LABELS = {
+    "auto_pulse": "Auto Pulse",
+    "total_target": "Total Target",
+    "stack_smoothing": "Stack Smoothing",
+    "inventory_constrained": "Inventory Constrained",
+}
+
 
 class CalculationInputState(StatesGroup):
+    mode = State()
     weekly_target_total_mg = State()
     duration_weeks = State()
     max_injection_volume_ml = State()
@@ -129,13 +138,45 @@ async def on_continue_to_calculation(
         return
 
     settings = await draft_service.get_draft_settings(user_id)
-    current = settings.weekly_target_total_mg if settings else None
-    await state.set_state(CalculationInputState.weekly_target_total_mg)
-    await callback.message.answer(
-        "Подготовка к расчету: укажите общий weekly target (mg)."
-        + (f" Сейчас: {current}." if current is not None else ""),
-    )
+    current_mode = settings.protocol_input_mode if settings else None
+    await state.set_state(CalculationInputState.mode)
+    await callback.message.answer("Выберите режим постановки задачи (protocol input mode).", reply_markup=build_input_mode_actions())
+    if current_mode:
+        await callback.message.answer(f"Текущий режим: {INPUT_MODE_LABELS.get(current_mode, current_mode)}.")
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("draft:calc:mode:"))
+async def on_mode_selected(callback: CallbackQuery, state: FSMContext, draft_service: DraftApplicationService) -> None:
+    selected_mode = callback.data.split(":", 3)[3]
+    if selected_mode not in INPUT_MODE_LABELS:
+        await callback.answer("Неизвестный input mode", show_alert=True)
+        return
+
+    user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+    await _save_settings_patch(draft_service, user_id, protocol_input_mode=selected_mode)
+    await callback.answer()
+
+    if selected_mode in LOCKED_PROTOCOL_INPUT_MODES:
+        await state.clear()
+        await callback.message.answer(
+            f"{INPUT_MODE_LABELS[selected_mode]}: coming next. В этом PR режим сохранен в модели, но full math пока не включен.",
+            reply_markup=build_draft_shortcut(),
+        )
+        return
+
+    if selected_mode == "total_target":
+        settings = await draft_service.get_draft_settings(user_id)
+        current = settings.weekly_target_total_mg if settings else None
+        await state.set_state(CalculationInputState.weekly_target_total_mg)
+        await callback.message.answer(
+            "Режим Total Target: укажите общий weekly target (mg)."
+            + (f" Сейчас: {current}." if current is not None else ""),
+        )
+        return
+
+    await state.set_state(CalculationInputState.duration_weeks)
+    await callback.message.answer("Режим Auto Pulse: укажите длительность протокола в неделях (duration_weeks).")
 
 
 @router.callback_query(F.data == "draft:calculate:run")
@@ -236,6 +277,15 @@ def build_draft_shortcut() -> InlineKeyboardMarkup:
     )
 
 
+def build_input_mode_actions() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=INPUT_MODE_LABELS[mode], callback_data=f"draft:calc:mode:{mode}")]
+            for mode in ("auto_pulse", "total_target", "stack_smoothing", "inventory_constrained")
+        ]
+    )
+
+
 def build_preset_actions() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -295,6 +345,7 @@ def _render_draft_summary(draft: DraftView) -> str:
         lines.extend(
             [
                 "\nПараметры подготовки:",
+                f"- protocol input mode: {INPUT_MODE_LABELS.get(draft.settings.protocol_input_mode or '', '—')}",
                 f"- target mg/week: {draft.settings.weekly_target_total_mg or '—'}",
                 f"- duration weeks: {draft.settings.duration_weeks or '—'}",
                 f"- preset: {PRESET_LABELS.get(draft.settings.preset_code or '', '—')}",
@@ -324,6 +375,7 @@ def _render_preview_summary(preview: PulsePlanPreviewView) -> str:
     lines = [
         "Pulse Plan Preview",
         f"Статус: {STATUS_LABELS.get(preview.status, preview.status)}",
+        f"Input mode: {INPUT_MODE_LABELS.get(preview.protocol_input_mode, preview.protocol_input_mode)}",
         f"Preset: {PRESET_LABELS.get(preview.preset_applied, preview.preset_applied)}",
     ]
 
@@ -371,6 +423,7 @@ def _render_active_protocol_summary(active: ActiveProtocolView) -> str:
         f"- status: {active.status}",
         "",
         "Коротко по active truth:",
+        f"- protocol_input_mode: {INPUT_MODE_LABELS.get(active.protocol_input_mode or '', active.protocol_input_mode or '—')}",
         f"- preset: {active.settings_snapshot.get('preset_code')}",
         f"- duration_weeks: {active.settings_snapshot.get('duration_weeks')}",
         f"- weekly_target_total_mg: {active.settings_snapshot.get('weekly_target_total_mg')}",
@@ -383,6 +436,7 @@ def _render_active_protocol_summary(active: ActiveProtocolView) -> str:
 async def _save_settings_patch(draft_service: DraftApplicationService, user_id: str, **patch) -> None:
     current = await draft_service.get_draft_settings(user_id)
     payload = DraftSettingsInput(
+        protocol_input_mode=patch.get("protocol_input_mode", current.protocol_input_mode if current else None),
         weekly_target_total_mg=patch.get(
             "weekly_target_total_mg", current.weekly_target_total_mg if current else None
         ),

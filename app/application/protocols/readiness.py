@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from app.application.protocols.draft_service import DraftReadinessValidator
+from app.application.protocols.input_modes import LOCKED_PROTOCOL_INPUT_MODES
 from app.application.protocols.repository import DraftRepository
 from app.application.protocols.schemas import DraftReadinessIssue, DraftReadinessResult, DraftView
 
@@ -27,7 +28,18 @@ class ProtocolDraftReadinessService(DraftReadinessValidator):
                 )
             )
         else:
-            if settings.weekly_target_total_mg is None or settings.weekly_target_total_mg <= Decimal("0"):
+            selected_mode = settings.protocol_input_mode or "total_target"
+            if selected_mode in LOCKED_PROTOCOL_INPUT_MODES:
+                issues.append(
+                    DraftReadinessIssue(
+                        code=f"settings.{selected_mode}.not_available",
+                        severity="error",
+                        message=f"Режим {selected_mode} пока недоступен в полном расчете.",
+                    )
+                )
+            if selected_mode == "total_target" and (
+                settings.weekly_target_total_mg is None or settings.weekly_target_total_mg <= Decimal("0")
+            ):
                 issues.append(
                     DraftReadinessIssue(
                         code="settings.weekly_target_required",

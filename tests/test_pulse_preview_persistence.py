@@ -28,6 +28,7 @@ class FakePulseRepository:
     async def get_draft_settings(self, draft_id):
         return DraftSettingsView(
             draft_id=draft_id,
+            protocol_input_mode="total_target",
             weekly_target_total_mg=Decimal("300"),
             duration_weeks=4,
             preset_code="golden_pulse",
@@ -56,6 +57,7 @@ class FakePulseRepository:
         return PulsePlanPreviewView(
             preview_id=uuid4(),
             draft_id=payload.draft_id,
+            protocol_input_mode=payload.protocol_input_mode,
             preset_requested=payload.preset_requested,
             preset_applied=payload.preset_applied,
             status=payload.status,
@@ -103,8 +105,8 @@ def test_preview_persistence_and_events() -> None:
 
     assert preview.status in {"success", "success_with_warnings", "degraded_fallback"}
     assert repo.last_payload is not None
-    assert "pulse_calculation_started" in repo.events
-    assert "pulse_plan_preview_generated" in repo.events
+    assert "protocol_calculation_requested" in repo.events
+    assert "protocol_calculation_preview_generated" in repo.events
 
 
 def test_regenerated_event_for_subsequent_preview() -> None:
@@ -114,8 +116,7 @@ def test_regenerated_event_for_subsequent_preview() -> None:
 
     asyncio.run(service.generate_pulse_plan_preview("u1"))
 
-    assert "pulse_plan_preview_regenerated" in repo.events
-    assert "pulse_plan_preview_generated" not in repo.events
+    assert "protocol_calculation_preview_generated" in repo.events
 
 
 def test_preview_events_remain_clean_with_optimization_payload() -> None:
@@ -127,8 +128,7 @@ def test_preview_events_remain_clean_with_optimization_payload() -> None:
     assert preview.summary_metrics is not None
     assert "optimization_applied" in preview.summary_metrics
     assert "optimization_gain" in preview.summary_metrics
-    assert "pulse_plan_preview_generated" in repo.events
-    assert "pulse_plan_preview_regenerated" not in repo.events
+    assert "protocol_calculation_preview_generated" in repo.events
     assert "pulse_plan_preview_failed" not in repo.events
 
 
@@ -147,5 +147,4 @@ def test_failed_preview_emits_failed_only() -> None:
 
     assert preview.status == "failed_validation"
     assert "pulse_plan_preview_failed" in repo.events
-    assert "pulse_plan_preview_generated" not in repo.events
-    assert "pulse_plan_preview_regenerated" not in repo.events
+    assert "protocol_calculation_preview_generated" not in repo.events

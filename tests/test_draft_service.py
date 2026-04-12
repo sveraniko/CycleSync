@@ -77,6 +77,7 @@ class FakeDraftRepository:
         now = datetime.now(timezone.utc)
         self.settings = DraftSettingsView(
             draft_id=draft_id,
+            protocol_input_mode=settings.protocol_input_mode,
             weekly_target_total_mg=settings.weekly_target_total_mg,
             duration_weeks=settings.duration_weeks,
             preset_code=settings.preset_code,
@@ -172,6 +173,7 @@ def test_draft_settings_persistence_and_readiness() -> None:
         service.save_draft_settings(
             "u1",
             DraftSettingsInput(
+                protocol_input_mode="total_target",
                 weekly_target_total_mg=Decimal("350"),
                 duration_weeks=12,
                 preset_code="unified_rhythm",
@@ -184,6 +186,7 @@ def test_draft_settings_persistence_and_readiness() -> None:
     loaded = asyncio.run(service.get_draft_settings("u1"))
     assert loaded is not None
     assert loaded.preset_code == "unified_rhythm"
+    assert loaded.protocol_input_mode == "total_target"
 
     readiness_result = asyncio.run(service.get_draft_readiness("u1"))
     assert readiness_result.ready is True

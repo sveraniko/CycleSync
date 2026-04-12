@@ -67,6 +67,7 @@ class ProtocolDraftSettings(SchemaTableMixin, BaseModel):
         ForeignKey("protocols.protocol_drafts.id", ondelete="CASCADE"),
         nullable=False,
     )
+    protocol_input_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
     weekly_target_total_mg: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     duration_weeks: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     preset_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -95,6 +96,7 @@ class Protocol(SchemaTableMixin, BaseModel):
         nullable=True,
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="preview_ready")
+    protocol_input_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
     activated_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cancelled_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     superseded_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
