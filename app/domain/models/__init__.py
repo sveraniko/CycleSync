@@ -37,6 +37,7 @@ from app.domain.models.labs import (
     LabReport,
     LabReportEntry,
 )
+from app.domain.models.ai_triage import LabTriageFlag, LabTriageRun
 
 __all__ = [
     "OutboxEvent",
@@ -71,4 +72,6 @@ __all__ = [
     "LabPanelMarker",
     "LabReport",
     "LabReportEntry",
+    "LabTriageRun",
+    "LabTriageFlag",
 ]

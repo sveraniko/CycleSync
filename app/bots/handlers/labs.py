@@ -8,7 +8,13 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.types.callback_query import CallbackQuery
 
-from app.application.labs import LabEntryInput, LabsApplicationService, LabsValidationError
+from app.application.labs import (
+    LabEntryInput,
+    LabsApplicationService,
+    LabsTriageError,
+    LabsTriageService,
+    LabsValidationError,
+)
 
 router = Router(name="labs")
 
@@ -229,6 +235,77 @@ async def on_finish_report(callback: CallbackQuery, state: FSMContext, labs_serv
     await callback.answer()
 
 
+@router.callback_query(F.data == "labs:triage:run")
+async def on_run_triage(
+    callback: CallbackQuery, state: FSMContext, labs_triage_service: LabsTriageService
+) -> None:
+    data = await state.get_data()
+    report_id_raw = data.get("report_id")
+    if not report_id_raw:
+        await callback.message.answer("Нет активного report для triage.")
+        await callback.answer()
+        return
+    await callback.message.answer("Запускаю AI pre-triage…")
+    try:
+        triage = await labs_triage_service.run_triage(
+            user_id=_resolve_user_id(callback.from_user.id if callback.from_user else None),
+            report_id=UUID(report_id_raw),
+        )
+    except LabsTriageError as exc:
+        await callback.message.answer(f"Triage не выполнен: {exc}")
+        await callback.answer()
+        return
+    await callback.message.answer(_format_triage_result(triage))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "labs:triage:regenerate")
+async def on_regenerate_triage(
+    callback: CallbackQuery, state: FSMContext, labs_triage_service: LabsTriageService
+) -> None:
+    data = await state.get_data()
+    report_id_raw = data.get("report_id")
+    if not report_id_raw:
+        await callback.message.answer("Нет активного report для regenerate.")
+        await callback.answer()
+        return
+    await callback.message.answer("Перегенерирую triage…")
+    try:
+        triage = await labs_triage_service.run_triage(
+            user_id=_resolve_user_id(callback.from_user.id if callback.from_user else None),
+            report_id=UUID(report_id_raw),
+            regenerate=True,
+        )
+    except LabsTriageError as exc:
+        await callback.message.answer(f"Regenerate не выполнен: {exc}")
+        await callback.answer()
+        return
+    await callback.message.answer(_format_triage_result(triage))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "labs:triage:latest")
+async def on_latest_triage(
+    callback: CallbackQuery, state: FSMContext, labs_triage_service: LabsTriageService
+) -> None:
+    data = await state.get_data()
+    report_id_raw = data.get("report_id")
+    if not report_id_raw:
+        await callback.message.answer("Нет активного report.")
+        await callback.answer()
+        return
+    triage = await labs_triage_service.get_latest_triage(
+        user_id=_resolve_user_id(callback.from_user.id if callback.from_user else None),
+        report_id=UUID(report_id_raw),
+    )
+    if triage is None:
+        await callback.message.answer("Для этого report triage пока не запускался.")
+        await callback.answer()
+        return
+    await callback.message.answer(_format_triage_result(triage))
+    await callback.answer()
+
+
 async def _ask_next_marker(message: Message, state: FSMContext, labs_service: LabsApplicationService) -> None:
     data = await state.get_data()
     queue = data.get("panel_queue", [])
@@ -279,6 +356,9 @@ def build_report_entry_actions() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="Liver", callback_data="labs:panel:liver")],
             [InlineKeyboardButton(text="Metabolic", callback_data="labs:panel:metabolic")],
             [InlineKeyboardButton(text="GH-related", callback_data="labs:panel:gh_related")],
+            [InlineKeyboardButton(text="Run AI triage", callback_data="labs:triage:run")],
+            [InlineKeyboardButton(text="Latest triage", callback_data="labs:triage:latest")],
+            [InlineKeyboardButton(text="Regenerate triage", callback_data="labs:triage:regenerate")],
             [InlineKeyboardButton(text="Finish report", callback_data="labs:finish")],
         ]
     )
@@ -318,3 +398,20 @@ def _parse_decimal(raw: str | None) -> Decimal | None:
         return Decimal(token)
     except InvalidOperation:
         return None
+
+
+def _format_triage_result(result) -> str:
+    lines = [
+        "AI pre-triage result:",
+        f"Status: {result.run.triage_status}",
+        f"Urgent: {'YES' if result.run.urgent_flag else 'no'}",
+        f"Summary: {result.run.summary_text or '—'}",
+        "Flags:",
+    ]
+    if not result.flags:
+        lines.append("- none")
+    for flag in result.flags[:10]:
+        lines.append(f"- [{flag.severity}] {flag.title} ({flag.flag_code})")
+    if len(result.flags) > 10:
+        lines.append(f"... and {len(result.flags) - 10} more")
+    return "\n".join(lines)

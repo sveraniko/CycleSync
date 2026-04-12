@@ -7,12 +7,18 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.application.labs.repository import LabsRepository
 from app.application.labs.schemas import (
+    LabTriageFlagCreate,
+    LabTriageFlagView,
+    LabTriageResultView,
+    LabTriageRunView,
+    ProtocolTriageContextView,
     LabMarkerView,
     LabPanelView,
     LabReportDetailsView,
     LabReportEntryView,
     LabReportView,
 )
+from app.domain.models.ai_triage import LabTriageFlag, LabTriageRun
 from app.domain.models.labs import (
     LabMarker,
     LabPanel,
@@ -21,6 +27,8 @@ from app.domain.models.labs import (
     LabReportEntry,
 )
 from app.domain.models.ops import OutboxEvent
+from app.domain.models.protocols import Protocol
+from app.domain.models.reminders import ProtocolAdherenceSummary
 
 
 class SqlAlchemyLabsRepository(LabsRepository):
@@ -156,6 +164,118 @@ class SqlAlchemyLabsRepository(LabsRepository):
             entries = [self._to_entry_view(entry, marker) for entry, marker in rows.all()]
             return LabReportDetailsView(report=self._to_report_view(report), entries=entries)
 
+    async def get_active_protocol_context(
+        self, *, protocol_id: UUID, user_id: str
+    ) -> ProtocolTriageContextView | None:
+        async with self.session_factory() as session:
+            protocol = await session.scalar(
+                select(Protocol).where(
+                    Protocol.id == protocol_id,
+                    Protocol.user_id == user_id,
+                    Protocol.status == "active",
+                )
+            )
+            if protocol is None:
+                return None
+            adherence = await session.scalar(
+                select(ProtocolAdherenceSummary).where(
+                    ProtocolAdherenceSummary.protocol_id == protocol.id
+                )
+            )
+            summary = protocol.summary_snapshot_json or {}
+            settings = protocol.settings_snapshot_json or {}
+            return ProtocolTriageContextView(
+                protocol_id=protocol.id,
+                status=protocol.status,
+                activated_at=protocol.activated_at,
+                selected_products=list(summary.get("products", []))
+                if isinstance(summary.get("products"), list)
+                else [],
+                pulse_plan_context={
+                    "weekly_target_total_mg": settings.get("weekly_target_total_mg"),
+                    "duration_weeks": settings.get("duration_weeks"),
+                },
+                adherence_integrity_state=adherence.integrity_state if adherence else None,
+                adherence_integrity_detail=adherence.integrity_detail_json if adherence else None,
+            )
+
+    async def create_lab_triage_run(
+        self,
+        *,
+        lab_report_id: UUID,
+        user_id: str,
+        protocol_id: UUID | None,
+        triage_status: str,
+        summary_text: str | None,
+        urgent_flag: bool,
+        model_name: str,
+        prompt_version: str,
+        raw_result_json: dict | None,
+        completed_at: datetime | None,
+    ) -> LabTriageRunView:
+        async with self.session_factory() as session:
+            row = LabTriageRun(
+                lab_report_id=lab_report_id,
+                user_id=user_id,
+                protocol_id=protocol_id,
+                triage_status=triage_status,
+                summary_text=summary_text,
+                urgent_flag=urgent_flag,
+                model_name=model_name,
+                prompt_version=prompt_version,
+                raw_result_json=raw_result_json,
+                completed_at=completed_at,
+            )
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            return self._to_triage_run_view(row)
+
+    async def create_lab_triage_flags(
+        self, *, triage_run_id: UUID, flags: list[LabTriageFlagCreate]
+    ) -> list[LabTriageFlagView]:
+        async with self.session_factory() as session:
+            rows: list[LabTriageFlag] = []
+            for flag in flags:
+                row = LabTriageFlag(
+                    triage_run_id=triage_run_id,
+                    marker_id=flag.marker_id,
+                    severity=flag.severity,
+                    flag_code=flag.flag_code,
+                    title=flag.title,
+                    explanation=flag.explanation,
+                    suggested_followup=flag.suggested_followup,
+                )
+                rows.append(row)
+                session.add(row)
+            await session.commit()
+            for row in rows:
+                await session.refresh(row)
+            return [self._to_triage_flag_view(row) for row in rows]
+
+    async def get_latest_triage_result(
+        self, *, report_id: UUID, user_id: str
+    ) -> LabTriageResultView | None:
+        async with self.session_factory() as session:
+            run = await session.scalar(
+                select(LabTriageRun)
+                .where(LabTriageRun.lab_report_id == report_id, LabTriageRun.user_id == user_id)
+                .order_by(LabTriageRun.created_at.desc())
+            )
+            if run is None:
+                return None
+            flags = list(
+                await session.scalars(
+                    select(LabTriageFlag)
+                    .where(LabTriageFlag.triage_run_id == run.id)
+                    .order_by(LabTriageFlag.created_at.asc())
+                )
+            )
+            return LabTriageResultView(
+                run=self._to_triage_run_view(run),
+                flags=[self._to_triage_flag_view(flag) for flag in flags],
+            )
+
     async def enqueue_event(self, *, event_type: str, aggregate_type: str, aggregate_id: UUID, payload: dict) -> None:
         async with self.session_factory() as session:
             session.add(
@@ -208,4 +328,35 @@ class SqlAlchemyLabsRepository(LabsRepository):
             reference_min=row.reference_min,
             reference_max=row.reference_max,
             entered_at=row.entered_at,
+        )
+
+    @staticmethod
+    def _to_triage_run_view(row: LabTriageRun) -> LabTriageRunView:
+        return LabTriageRunView(
+            triage_run_id=row.id,
+            lab_report_id=row.lab_report_id,
+            user_id=row.user_id,
+            protocol_id=row.protocol_id,
+            triage_status=row.triage_status,
+            summary_text=row.summary_text,
+            urgent_flag=row.urgent_flag,
+            model_name=row.model_name,
+            prompt_version=row.prompt_version,
+            raw_result_json=row.raw_result_json,
+            created_at=row.created_at,
+            completed_at=row.completed_at,
+        )
+
+    @staticmethod
+    def _to_triage_flag_view(row: LabTriageFlag) -> LabTriageFlagView:
+        return LabTriageFlagView(
+            flag_id=row.id,
+            triage_run_id=row.triage_run_id,
+            marker_id=row.marker_id,
+            severity=row.severity,
+            flag_code=row.flag_code,
+            title=row.title,
+            explanation=row.explanation,
+            suggested_followup=row.suggested_followup,
+            created_at=row.created_at,
         )

@@ -24,3 +24,6 @@ def test_report_entry_actions_contains_required_panels() -> None:
     callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
     for code in ["male_hormones", "hematology", "lipids", "liver", "metabolic", "gh_related"]:
         assert f"labs:panel:{code}" in callbacks
+    assert "labs:triage:run" in callbacks
+    assert "labs:triage:latest" in callbacks
+    assert "labs:triage:regenerate" in callbacks
