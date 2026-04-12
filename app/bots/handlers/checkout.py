@@ -1,4 +1,5 @@
 from uuid import UUID
+
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -22,6 +23,35 @@ async def checkout_demo(message: Message, checkout_service: CheckoutService) -> 
     await message.answer(_render_checkout(checkout), reply_markup=build_checkout_actions(checkout.checkout.checkout_id))
 
 
+@router.message(Command("apply_coupon"))
+async def apply_coupon(message: Message, checkout_service: CheckoutService) -> None:
+    parts = (message.text or "").split()
+    if len(parts) < 3:
+        await message.answer("Usage: /apply_coupon <checkout_id> <coupon_code>")
+        return
+    try:
+        checkout_id = UUID(parts[1])
+    except ValueError:
+        await message.answer("Invalid checkout_id format.")
+        return
+    coupon_code = parts[2]
+    user_id = f"tg:{message.from_user.id}" if message.from_user else "tg:unknown"
+    result = await checkout_service.apply_coupon_to_checkout(checkout_id=checkout_id, user_id=user_id, coupon_code=coupon_code)
+    if result.status in {"applied", "already_applied"}:
+        discount = result.redemption.discount_amount if result.redemption else result.checkout.checkout.discount_amount
+        suffix = " (already applied)" if result.status == "already_applied" else ""
+        await message.answer(
+            f"Coupon {coupon_code.upper()} accepted{suffix}. Discount={discount} {result.checkout.checkout.currency}. "
+            f"New total={result.checkout.checkout.total_amount} {result.checkout.checkout.currency}.",
+            reply_markup=build_checkout_actions(result.checkout.checkout.checkout_id),
+        )
+        return
+    await message.answer(
+        f"Coupon rejected: {result.reason_code}. Total remains {result.checkout.checkout.total_amount} {result.checkout.checkout.currency}.",
+        reply_markup=build_checkout_actions(result.checkout.checkout.checkout_id),
+    )
+
+
 @router.callback_query(F.data.startswith("checkout:free:"))
 async def settle_free(callback: CallbackQuery, checkout_service: CheckoutService) -> None:
     checkout_id = UUID(callback.data.split(":")[-1])
@@ -35,11 +65,31 @@ async def settle_free(callback: CallbackQuery, checkout_service: CheckoutService
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith("checkout:gift:"))
+async def settle_gift_coupon(callback: CallbackQuery, checkout_service: CheckoutService) -> None:
+    checkout_id = UUID(callback.data.split(":")[-1])
+    try:
+        state = await checkout_service.settle_free_checkout(checkout_id=checkout_id, reason_code="gift_coupon")
+    except CommerceError as exc:
+        await callback.message.answer(f"Gift settlement failed: {exc}")
+        await callback.answer()
+        return
+    await callback.message.answer(_render_checkout(state))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("checkout:coupon:ask:"))
+async def coupon_prompt(callback: CallbackQuery) -> None:
+    checkout_id = callback.data.split(":")[-1]
+    await callback.message.answer(f"Apply coupon with command:\n/apply_coupon {checkout_id} YOUR_CODE")
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("checkout:status:"))
 async def show_status(callback: CallbackQuery, checkout_service: CheckoutService) -> None:
     checkout_id = UUID(callback.data.split(":")[-1])
     state = await checkout_service.get_checkout(checkout_id=checkout_id)
-    await callback.message.answer(_render_checkout(state))
+    await callback.message.answer(_render_checkout(state), reply_markup=build_checkout_actions(checkout_id))
     await callback.answer()
 
 
@@ -47,6 +97,8 @@ def build_checkout_actions(checkout_id) -> InlineKeyboardMarkup:
     checkout_id = str(checkout_id)
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [InlineKeyboardButton(text="Apply coupon", callback_data=f"checkout:coupon:ask:{checkout_id}")],
+            [InlineKeyboardButton(text="Complete gift checkout", callback_data=f"checkout:gift:{checkout_id}")],
             [InlineKeyboardButton(text="Settle free (test)", callback_data=f"checkout:free:{checkout_id}")],
             [InlineKeyboardButton(text="Refresh checkout status", callback_data=f"checkout:status:{checkout_id}")],
         ]
@@ -59,6 +111,8 @@ def _render_checkout(state) -> str:
         "Checkout\n"
         f"id={state.checkout.checkout_id}\n"
         f"status={state.checkout.checkout_status}\n"
+        f"subtotal={state.checkout.subtotal_amount} {state.checkout.currency}\n"
+        f"discount={state.checkout.discount_amount} {state.checkout.currency}\n"
         f"total={state.checkout.total_amount} {state.checkout.currency}\n"
         f"mode={state.checkout.settlement_mode}\n"
         + "\n".join(item_lines)

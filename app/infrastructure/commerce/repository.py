@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.application.commerce.repository import CommerceRepository
@@ -12,10 +12,13 @@ from app.application.commerce.schemas import (
     CheckoutItemView,
     CheckoutStateView,
     CheckoutView,
+    CouponCreate,
+    CouponRedemptionView,
+    CouponView,
     PaymentAttemptView,
     ProviderSessionView,
 )
-from app.domain.models.billing import Checkout, CheckoutItem, PaymentAttempt, PaymentProviderSession
+from app.domain.models.billing import Checkout, CheckoutItem, Coupon, CouponRedemption, PaymentAttempt, PaymentProviderSession
 from app.domain.models.ops import OutboxEvent
 
 
@@ -65,7 +68,7 @@ class SqlAlchemyCommerceRepository(CommerceRepository):
             checkout = await session.scalar(select(Checkout).where(Checkout.id == checkout_id))
             if checkout is not None:
                 checkout.subtotal_amount = subtotal
-                checkout.total_amount = subtotal - checkout.discount_amount
+                checkout.total_amount = max(subtotal - checkout.discount_amount, 0)
                 checkout.updated_at = now_utc
                 session.add(checkout)
             await session.commit()
@@ -99,6 +102,141 @@ class SqlAlchemyCommerceRepository(CommerceRepository):
             await session.commit()
             await session.refresh(row)
             return self._to_checkout_view(row)
+
+    async def update_checkout_amounts(self, *, checkout_id: UUID, discount_amount: int, total_amount: int, now_utc: datetime) -> CheckoutView | None:
+        async with self.session_factory() as session:
+            row = await session.scalar(select(Checkout).where(Checkout.id == checkout_id))
+            if row is None:
+                return None
+            row.discount_amount = discount_amount
+            row.total_amount = total_amount
+            row.updated_at = now_utc
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            return self._to_checkout_view(row)
+
+    async def create_coupon(self, request: CouponCreate, *, now_utc: datetime) -> CouponView:
+        async with self.session_factory() as session:
+            row = Coupon(
+                code=request.code,
+                status="active",
+                discount_type=request.discount_type,
+                discount_value=request.discount_value,
+                currency=request.currency,
+                valid_from=request.valid_from,
+                valid_to=request.valid_to,
+                max_redemptions_total=request.max_redemptions_total,
+                max_redemptions_per_user=request.max_redemptions_per_user,
+                redeemed_count=0,
+                notes=request.notes,
+                grants_free_checkout=False,
+                created_at=now_utc,
+                updated_at=now_utc,
+            )
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            return self._to_coupon_view(row)
+
+    async def get_coupon_by_code(self, *, code: str) -> CouponView | None:
+        async with self.session_factory() as session:
+            row = await session.scalar(select(Coupon).where(Coupon.code == code))
+            return self._to_coupon_view(row) if row else None
+
+    async def get_coupon(self, *, coupon_id: UUID) -> CouponView | None:
+        async with self.session_factory() as session:
+            row = await session.scalar(select(Coupon).where(Coupon.id == coupon_id))
+            return self._to_coupon_view(row) if row else None
+
+    async def disable_coupon(self, *, coupon_id: UUID, now_utc: datetime) -> CouponView | None:
+        async with self.session_factory() as session:
+            row = await session.scalar(select(Coupon).where(Coupon.id == coupon_id))
+            if row is None:
+                return None
+            row.status = "disabled"
+            row.updated_at = now_utc
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            return self._to_coupon_view(row)
+
+    async def list_coupon_redemptions(self, *, coupon_id: UUID) -> tuple[CouponRedemptionView, ...]:
+        async with self.session_factory() as session:
+            rows = list(
+                await session.scalars(
+                    select(CouponRedemption)
+                    .where(CouponRedemption.coupon_id == coupon_id)
+                    .order_by(CouponRedemption.redeemed_at.desc())
+                )
+            )
+            return tuple(self._to_coupon_redemption_view(row) for row in rows)
+
+    async def count_coupon_success_redemptions(self, *, coupon_id: UUID, user_id: str | None = None) -> int:
+        async with self.session_factory() as session:
+            query = select(func.count()).select_from(CouponRedemption).where(
+                CouponRedemption.coupon_id == coupon_id,
+                CouponRedemption.result_status == "applied",
+            )
+            if user_id is not None:
+                query = query.where(CouponRedemption.user_id == user_id)
+            value = await session.scalar(query)
+            return int(value or 0)
+
+    async def get_applied_coupon_redemption(self, *, checkout_id: UUID, coupon_id: UUID) -> CouponRedemptionView | None:
+        async with self.session_factory() as session:
+            row = await session.scalar(
+                select(CouponRedemption).where(
+                    CouponRedemption.checkout_id == checkout_id,
+                    CouponRedemption.coupon_id == coupon_id,
+                    CouponRedemption.result_status == "applied",
+                )
+            )
+            return self._to_coupon_redemption_view(row) if row else None
+
+    async def create_coupon_redemption(
+        self,
+        *,
+        coupon_id: UUID,
+        checkout_id: UUID,
+        user_id: str,
+        redeemed_at: datetime,
+        result_status: str,
+        result_reason_code: str | None,
+        discount_amount: int,
+        final_total_after_discount: int,
+    ) -> CouponRedemptionView:
+        async with self.session_factory() as session:
+            row = CouponRedemption(
+                coupon_id=coupon_id,
+                checkout_id=checkout_id,
+                user_id=user_id,
+                redeemed_at=redeemed_at,
+                result_status=result_status,
+                result_reason_code=result_reason_code,
+                discount_amount=discount_amount,
+                final_total_after_discount=final_total_after_discount,
+                created_at=redeemed_at,
+                updated_at=redeemed_at,
+            )
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            return self._to_coupon_redemption_view(row)
+
+    async def increment_coupon_redemption_count(self, *, coupon_id: UUID, now_utc: datetime) -> CouponView | None:
+        async with self.session_factory() as session:
+            row = await session.scalar(select(Coupon).where(Coupon.id == coupon_id))
+            if row is None:
+                return None
+            row.redeemed_count += 1
+            if row.max_redemptions_total is not None and row.redeemed_count >= row.max_redemptions_total:
+                row.status = "exhausted"
+            row.updated_at = now_utc
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            return self._to_coupon_view(row)
 
     async def create_payment_attempt(self, *, checkout_id: UUID, provider_code: str, requested_amount: int, attempt_status: str, now_utc: datetime, provider_reference: str | None = None, error_code: str | None = None, error_message: str | None = None) -> PaymentAttemptView:
         async with self.session_factory() as session:
@@ -160,6 +298,20 @@ class SqlAlchemyCommerceRepository(CommerceRepository):
             completed = await session.scalar(select(func.count()).select_from(Checkout).where(Checkout.checkout_status == "completed"))
             failed = await session.scalar(select(func.count()).select_from(Checkout).where(Checkout.checkout_status == "failed"))
             free_settlements = await session.scalar(select(func.count()).select_from(PaymentAttempt).where(PaymentAttempt.provider_code == "free", PaymentAttempt.attempt_status == "succeeded"))
+            active_coupons = await session.scalar(select(func.count()).select_from(Coupon).where(Coupon.status == "active"))
+            exhausted_coupons = await session.scalar(select(func.count()).select_from(Coupon).where(Coupon.status == "exhausted"))
+            coupon_redemptions = await session.scalar(select(func.count()).select_from(CouponRedemption).where(CouponRedemption.result_status == "applied"))
+            coupon_free_settlements = await session.scalar(
+                select(func.count(distinct(PaymentAttempt.checkout_id)))
+                .select_from(PaymentAttempt)
+                .join(CouponRedemption, CouponRedemption.checkout_id == PaymentAttempt.checkout_id)
+                .where(
+                    PaymentAttempt.provider_code == "free",
+                    PaymentAttempt.attempt_status == "succeeded",
+                    CouponRedemption.result_status == "applied",
+                    CouponRedemption.final_total_after_discount == 0,
+                )
+            )
             return CheckoutDiagnostics(
                 commerce_mode=commerce_mode,
                 provider_summary=provider_summary,
@@ -167,6 +319,10 @@ class SqlAlchemyCommerceRepository(CommerceRepository):
                 completed_checkouts=int(completed or 0),
                 failed_checkouts=int(failed or 0),
                 free_settlements=int(free_settlements or 0),
+                active_coupons=int(active_coupons or 0),
+                exhausted_coupons=int(exhausted_coupons or 0),
+                coupon_redemptions=int(coupon_redemptions or 0),
+                coupon_free_settlements=int(coupon_free_settlements or 0),
             )
 
     async def enqueue_event(self, *, event_type: str, aggregate_type: str, aggregate_id: UUID, payload: dict) -> None:
@@ -209,6 +365,39 @@ class SqlAlchemyCommerceRepository(CommerceRepository):
             qty=row.qty,
             unit_amount=row.unit_amount,
             line_total=row.line_total,
+        )
+
+    @staticmethod
+    def _to_coupon_view(row: Coupon) -> CouponView:
+        return CouponView(
+            coupon_id=row.id,
+            code=row.code,
+            status=row.status,
+            discount_type=row.discount_type,
+            discount_value=row.discount_value,
+            currency=row.currency,
+            valid_from=row.valid_from,
+            valid_to=row.valid_to,
+            max_redemptions_total=row.max_redemptions_total,
+            max_redemptions_per_user=row.max_redemptions_per_user,
+            redeemed_count=row.redeemed_count,
+            notes=row.notes,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
+    @staticmethod
+    def _to_coupon_redemption_view(row: CouponRedemption) -> CouponRedemptionView:
+        return CouponRedemptionView(
+            redemption_id=row.id,
+            coupon_id=row.coupon_id,
+            checkout_id=row.checkout_id,
+            user_id=row.user_id,
+            redeemed_at=row.redeemed_at,
+            result_status=row.result_status,
+            result_reason_code=row.result_reason_code,
+            discount_amount=row.discount_amount,
+            final_total_after_discount=row.final_total_after_discount,
         )
 
     @staticmethod

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -45,6 +45,57 @@ class CheckoutItem(SchemaTableMixin, BaseModel):
     line_total: Mapped[int] = mapped_column(Integer(), nullable=False)
 
     __table_args__ = ({"schema": "billing"},)
+
+
+class Coupon(SchemaTableMixin, BaseModel):
+    __tablename__ = "coupons"
+    __schema_name__ = "billing"
+
+    code: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    discount_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    discount_value: Mapped[int] = mapped_column(Integer(), nullable=False)
+    currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    max_redemptions_total: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    max_redemptions_per_user: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    redeemed_count: Mapped[int] = mapped_column(Integer(), nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    grants_free_checkout: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
+
+    __table_args__ = (
+        Index("ix_billing_coupons_status_valid_to", "status", "valid_to"),
+        {"schema": "billing"},
+    )
+
+
+class CouponRedemption(SchemaTableMixin, BaseModel):
+    __tablename__ = "coupon_redemptions"
+    __schema_name__ = "billing"
+
+    coupon_id: Mapped[PGUUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("billing.coupons.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    checkout_id: Mapped[PGUUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("billing.checkouts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    redeemed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    result_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    result_reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    discount_amount: Mapped[int] = mapped_column(Integer(), nullable=False)
+    final_total_after_discount: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_billing_coupon_redemptions_coupon_user", "coupon_id", "user_id"),
+        Index("ix_billing_coupon_redemptions_checkout", "checkout_id"),
+        {"schema": "billing"},
+    )
 
 
 class PaymentAttempt(SchemaTableMixin, BaseModel):

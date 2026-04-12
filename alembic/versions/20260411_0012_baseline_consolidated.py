@@ -204,6 +204,66 @@ def upgrade() -> None:
         schema="billing",
     )
     op.create_table(
+        "coupons",
+        sa.Column("code", sa.String(length=64), nullable=False),
+        sa.Column("status", sa.String(length=24), nullable=False),
+        sa.Column("discount_type", sa.String(length=24), nullable=False),
+        sa.Column("discount_value", sa.Integer(), nullable=False),
+        sa.Column("currency", sa.String(length=8), nullable=True),
+        sa.Column("valid_from", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("valid_to", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("max_redemptions_total", sa.Integer(), nullable=True),
+        sa.Column("max_redemptions_per_user", sa.Integer(), nullable=True),
+        sa.Column("redeemed_count", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("notes", sa.Text(), nullable=True),
+        sa.Column("grants_free_checkout", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.PrimaryKeyConstraint("id", name="pk_billing_coupons"),
+        sa.UniqueConstraint("code", name="uq_billing_coupons_code"),
+        schema="billing",
+    )
+    op.create_index(
+        "ix_billing_coupons_status_valid_to",
+        "coupons",
+        ["status", "valid_to"],
+        unique=False,
+        schema="billing",
+    )
+    op.create_table(
+        "coupon_redemptions",
+        sa.Column("coupon_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("checkout_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("user_id", sa.String(length=128), nullable=False),
+        sa.Column("redeemed_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("result_status", sa.String(length=24), nullable=False),
+        sa.Column("result_reason_code", sa.String(length=64), nullable=True),
+        sa.Column("discount_amount", sa.Integer(), nullable=False),
+        sa.Column("final_total_after_discount", sa.Integer(), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["checkout_id"], ["billing.checkouts.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["coupon_id"], ["billing.coupons.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id", name="pk_billing_coupon_redemptions"),
+        schema="billing",
+    )
+    op.create_index(
+        "ix_billing_coupon_redemptions_coupon_user",
+        "coupon_redemptions",
+        ["coupon_id", "user_id"],
+        unique=False,
+        schema="billing",
+    )
+    op.create_index(
+        "ix_billing_coupon_redemptions_checkout",
+        "coupon_redemptions",
+        ["checkout_id"],
+        unique=False,
+        schema="billing",
+    )
+    op.create_table(
         "payment_attempts",
         sa.Column("checkout_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("provider_code", sa.String(length=64), nullable=False),
