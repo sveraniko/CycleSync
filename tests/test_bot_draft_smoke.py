@@ -15,9 +15,19 @@ from app.bots.handlers.draft import (
     _render_stack_composition,
     _render_inventory_composition,
     _parse_inventory_input,
+    _render_course_estimate,
+    _render_pre_start_estimate_snapshot,
     _render_preview_summary,
 )
-from app.application.protocols.schemas import ActiveProtocolView, DraftItemView, DraftView, PulsePlanEntry, PulsePlanPreviewView
+from app.application.protocols.schemas import (
+    ActiveProtocolView,
+    CourseEstimate,
+    CourseEstimateLine,
+    DraftItemView,
+    DraftView,
+    PulsePlanEntry,
+    PulsePlanPreviewView,
+)
 
 
 def _draft_with_item() -> DraftView:
@@ -76,14 +86,15 @@ def test_build_preset_actions_contains_all_presets() -> None:
 
 def test_build_readiness_and_preview_actions() -> None:
     readiness = build_readiness_actions()
-    preview = build_preview_actions()
+    preview = build_preview_actions(uuid4())
 
     readiness_callbacks = [b.callback_data for row in readiness.inline_keyboard for b in row]
     preview_callbacks = [b.callback_data for row in preview.inline_keyboard for b in row]
     assert "draft:calculate:run" in readiness_callbacks
     assert "draft:stack:edit" in readiness_callbacks
     assert "draft:calculate:run" in preview_callbacks
-    assert "draft:activate:latest" in preview_callbacks
+    assert any(callback.startswith("draft:activate:prepare:") for callback in preview_callbacks)
+    assert any(callback.startswith("draft:estimate:preview:") for callback in preview_callbacks)
 
 
 def test_render_preview_summary_smoke() -> None:
@@ -170,3 +181,143 @@ def test_inventory_input_parser_and_render_smoke() -> None:
     text = _render_inventory_composition({pid: item}, {pid: "Sustanon"})
     assert "Sustanon" in text
     assert "20 vial" in text
+
+
+def test_pre_start_estimate_visibility_with_insufficiency_warning() -> None:
+    estimate = CourseEstimate(
+        source_type="preview",
+        protocol_id=None,
+        preview_id=uuid4(),
+        draft_id=uuid4(),
+        protocol_input_mode="inventory_constrained",
+        duration_weeks=10,
+        total_products_count=1,
+        has_inventory_comparison=True,
+        generated_at=datetime.now(timezone.utc),
+        lines=[
+            CourseEstimateLine(
+                product_id=uuid4(),
+                product_name="Test Vial",
+                required_active_mg_total=Decimal("300.0000"),
+                required_volume_ml_total=Decimal("3.0000"),
+                required_unit_count_total=None,
+                package_kind="vial",
+                package_count_required=Decimal("3.0000"),
+                package_count_required_rounded=3,
+                available_active_mg=Decimal("100.0000"),
+                available_package_count=Decimal("1.0000"),
+                inventory_sufficiency_status="insufficient",
+                shortfall_active_mg=Decimal("200.0000"),
+                shortfall_package_count=Decimal("2.0000"),
+                estimation_status="ok",
+                estimation_warnings=[],
+            )
+        ],
+    )
+    text = _render_pre_start_estimate_snapshot(estimate)
+    assert "Pre-start course estimate snapshot" in text
+    assert "insufficient for full duration" in text
+
+
+def test_course_estimate_rendering_insufficiency_and_unsupported_semantics() -> None:
+    estimate = CourseEstimate(
+        source_type="preview",
+        protocol_id=None,
+        preview_id=uuid4(),
+        draft_id=uuid4(),
+        protocol_input_mode="inventory_constrained",
+        duration_weeks=12,
+        total_products_count=2,
+        has_inventory_comparison=True,
+        generated_at=datetime.now(timezone.utc),
+        lines=[
+            CourseEstimateLine(
+                product_id=uuid4(),
+                product_name="Injectable A",
+                required_active_mg_total=Decimal("500.0000"),
+                required_volume_ml_total=Decimal("5.0000"),
+                required_unit_count_total=None,
+                package_kind="vial",
+                package_count_required=Decimal("5.0000"),
+                package_count_required_rounded=5,
+                available_active_mg=Decimal("200.0000"),
+                available_package_count=Decimal("2.0000"),
+                inventory_sufficiency_status="insufficient",
+                shortfall_active_mg=Decimal("300.0000"),
+                shortfall_package_count=Decimal("3.0000"),
+                estimation_status="ok",
+                estimation_warnings=[],
+            ),
+            CourseEstimateLine(
+                product_id=uuid4(),
+                product_name="Tablet B",
+                required_active_mg_total=Decimal("150.0000"),
+                required_volume_ml_total=None,
+                required_unit_count_total=None,
+                package_kind="tablet",
+                package_count_required=None,
+                package_count_required_rounded=None,
+                available_active_mg=None,
+                available_package_count=Decimal("10.0000"),
+                inventory_sufficiency_status="unknown",
+                shortfall_active_mg=None,
+                shortfall_package_count=None,
+                estimation_status="unsupported",
+                estimation_warnings=["package_estimation_not_supported"],
+            ),
+        ],
+    )
+    text = _render_course_estimate(estimate)
+    assert "insufficient for full duration" in text
+    assert "estimation unavailable" in text
+    assert "source: preview-based" in text
+
+
+def test_course_estimate_source_distinction_preview_vs_active_protocol() -> None:
+    base_line = CourseEstimateLine(
+        product_id=uuid4(),
+        product_name="Product X",
+        required_active_mg_total=Decimal("100.0000"),
+        required_volume_ml_total=Decimal("1.0000"),
+        required_unit_count_total=None,
+        package_kind="vial",
+        package_count_required=Decimal("1.0000"),
+        package_count_required_rounded=1,
+        available_active_mg=None,
+        available_package_count=None,
+        inventory_sufficiency_status="not_applicable",
+        shortfall_active_mg=None,
+        shortfall_package_count=None,
+        estimation_status="ok",
+        estimation_warnings=[],
+    )
+    preview_text = _render_course_estimate(
+        CourseEstimate(
+            source_type="preview",
+            protocol_id=None,
+            preview_id=uuid4(),
+            draft_id=uuid4(),
+            protocol_input_mode="total_target",
+            duration_weeks=8,
+            total_products_count=1,
+            has_inventory_comparison=False,
+            generated_at=datetime.now(timezone.utc),
+            lines=[base_line],
+        )
+    )
+    active_text = _render_course_estimate(
+        CourseEstimate(
+            source_type="active_protocol",
+            protocol_id=uuid4(),
+            preview_id=None,
+            draft_id=uuid4(),
+            protocol_input_mode="total_target",
+            duration_weeks=8,
+            total_products_count=1,
+            has_inventory_comparison=False,
+            generated_at=datetime.now(timezone.utc),
+            lines=[base_line],
+        )
+    )
+    assert "source: preview-based" in preview_text
+    assert "source: active-protocol-based" in active_text
