@@ -9,6 +9,17 @@ from app.infrastructure.redis import redis_healthcheck
 router = APIRouter(prefix="/health", tags=["health"])
 
 
+def _labs_triage_diagnostics(settings) -> dict[str, object]:
+    provider_configured = bool(settings.labs_ai_openai_api_key)
+    return {
+        "mode": settings.labs_triage_gateway_mode,
+        "provider": settings.labs_ai_provider,
+        "provider_configured": provider_configured,
+        "model_name": settings.labs_ai_model if provider_configured else None,
+        "prompt_version": settings.labs_ai_prompt_version,
+    }
+
+
 async def _load_reminder_foundation_metrics(session_factory) -> dict[str, int]:
     try:
         async with session_factory() as session:
@@ -121,6 +132,7 @@ async def diagnostics(request: Request) -> dict[str, object]:
             "ok": ready_payload["status"] == "ok",
         },
         "reminders_foundation": reminder_metrics,
+        "labs_triage": _labs_triage_diagnostics(settings),
         "catalog_source": {
             "configured": catalog_source_configured,
             "source": "google_sheets",

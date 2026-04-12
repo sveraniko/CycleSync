@@ -1,8 +1,17 @@
+from decimal import Decimal
+
 from app.application.labs.schemas import LabTriageInputPayload
 from app.application.labs.triage_gateway import LabsTriageGateway
 
 
 class HeuristicLabsTriageGateway(LabsTriageGateway):
+    def diagnostics(self) -> dict:
+        return {
+            "gateway": self.__class__.__name__,
+            "mode": "heuristic",
+            "provider_configured": False,
+        }
+
     async def run_triage(self, payload: LabTriageInputPayload) -> dict:
         flags: list[dict] = []
         urgent_flag = False
@@ -10,7 +19,7 @@ class HeuristicLabsTriageGateway(LabsTriageGateway):
         for marker in payload.markers:
             if marker.reference_max is not None and marker.numeric_value > marker.reference_max:
                 severity = "warning"
-                if marker.reference_max > 0 and marker.numeric_value >= marker.reference_max * 1.2:
+                if marker.reference_max > 0 and marker.numeric_value >= marker.reference_max * Decimal("1.2"):
                     severity = "urgent"
                     urgent_flag = True
                 flags.append(

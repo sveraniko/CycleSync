@@ -1,5 +1,5 @@
 from app.application.labs.repository import LabsRepository
-from app.application.labs.triage_gateway import LabsTriageGateway
+from app.application.labs.triage_gateway import LabsTriageGateway, LabsTriageGatewayError
 from app.application.labs.schemas import (
     LabEntryInput,
     LabMarkerView,
@@ -26,6 +26,7 @@ from app.application.labs.triage_service import (
 __all__ = [
     "LabsRepository",
     "LabsTriageGateway",
+    "LabsTriageGatewayError",
     "LabEntryInput",
     "LabMarkerView",
     "LabPanelView",
