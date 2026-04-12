@@ -200,6 +200,7 @@ class SqlAlchemyDraftRepository:
                     raise RuntimeError("failed to resolve settings row")
 
             row.weekly_target_total_mg = settings.weekly_target_total_mg
+            row.protocol_input_mode = settings.protocol_input_mode
             row.duration_weeks = settings.duration_weeks
             row.preset_code = settings.preset_code
             row.max_injection_volume_ml = settings.max_injection_volume_ml
@@ -297,6 +298,7 @@ class SqlAlchemyDraftRepository:
             await self._supersede_preview_ready_protocols(session, payload.draft_id)
             run = PulseCalculationRun(
                 draft_id=payload.draft_id,
+                protocol_input_mode=payload.protocol_input_mode,
                 preset_requested=payload.preset_requested,
                 preset_applied=payload.preset_applied,
                 status=payload.status,
@@ -315,6 +317,7 @@ class SqlAlchemyDraftRepository:
 
             preview = PulsePlanPreview(
                 draft_id=payload.draft_id,
+                protocol_input_mode=payload.protocol_input_mode,
                 calculation_run_id=run.id,
                 preset_requested=payload.preset_requested,
                 preset_applied=payload.preset_applied,
@@ -342,6 +345,7 @@ class SqlAlchemyDraftRepository:
                         draft_id=payload.draft_id,
                         source_preview_id=preview.id,
                         status="preview_ready",
+                        protocol_input_mode=payload.protocol_input_mode,
                         settings_snapshot_json=payload.settings_snapshot,
                         summary_snapshot_json=payload.summary_metrics,
                     )
@@ -366,6 +370,7 @@ class SqlAlchemyDraftRepository:
             return PulsePlanPreviewView(
                 preview_id=preview.id,
                 draft_id=payload.draft_id,
+                protocol_input_mode=payload.protocol_input_mode,
                 preset_requested=payload.preset_requested,
                 preset_applied=payload.preset_applied,
                 status=payload.status,
@@ -424,6 +429,7 @@ class SqlAlchemyDraftRepository:
 
             pulse_plan = PulsePlan(
                 protocol_id=protocol.id,
+                protocol_input_mode=preview.protocol_input_mode if preview else "total_target",
                 source_preview_id=protocol.source_preview_id,
                 status="active",
                 preset_requested=preview.preset_requested if preview else "unknown",
@@ -480,6 +486,7 @@ class SqlAlchemyDraftRepository:
                 pulse_plan_id=pulse_plan.id,
                 status=protocol.status,
                 settings_snapshot=protocol.settings_snapshot_json,
+                protocol_input_mode=protocol.protocol_input_mode,
                 summary_metrics=pulse_plan.summary_metrics_json,
                 warning_flags=pulse_plan.warning_flags_json or [],
             )
@@ -523,6 +530,7 @@ class SqlAlchemyDraftRepository:
     def _to_settings_view(row: ProtocolDraftSettings) -> DraftSettingsView:
         return DraftSettingsView(
             draft_id=row.draft_id,
+            protocol_input_mode=row.protocol_input_mode,
             weekly_target_total_mg=row.weekly_target_total_mg,
             duration_weeks=row.duration_weeks,
             preset_code=row.preset_code,

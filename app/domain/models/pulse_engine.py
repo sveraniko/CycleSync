@@ -16,6 +16,7 @@ class PulseCalculationRun(SchemaTableMixin, BaseModel):
         ForeignKey("protocols.protocol_drafts.id", ondelete="CASCADE"),
         nullable=False,
     )
+    protocol_input_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="total_target")
     preset_requested: Mapped[str] = mapped_column(String(32), nullable=False)
     preset_applied: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -44,6 +45,7 @@ class PulsePlanPreview(SchemaTableMixin, BaseModel):
         ForeignKey("protocols.protocol_drafts.id", ondelete="CASCADE"),
         nullable=False,
     )
+    protocol_input_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="total_target")
     calculation_run_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("pulse_engine.pulse_calculation_runs.id", ondelete="SET NULL"),
         nullable=True,
@@ -104,6 +106,7 @@ class PulsePlan(SchemaTableMixin, BaseModel):
         ForeignKey("protocols.protocols.id", ondelete="CASCADE"),
         nullable=False,
     )
+    protocol_input_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="total_target")
     source_preview_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("pulse_engine.pulse_plan_previews.id", ondelete="SET NULL"),
         nullable=True,

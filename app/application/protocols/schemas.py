@@ -35,6 +35,7 @@ class AddProductToDraftResult:
 
 @dataclass(slots=True)
 class DraftSettingsInput:
+    protocol_input_mode: str | None = None
     weekly_target_total_mg: Decimal | None = None
     duration_weeks: int | None = None
     preset_code: str | None = None
@@ -46,6 +47,7 @@ class DraftSettingsInput:
 @dataclass(slots=True)
 class DraftSettingsView:
     draft_id: UUID
+    protocol_input_mode: str | None
     weekly_target_total_mg: Decimal | None
     duration_weeks: int | None
     preset_code: str | None
@@ -106,6 +108,7 @@ class PulsePlanEntry:
 @dataclass(slots=True)
 class PulsePlanPreviewPersistPayload:
     draft_id: UUID
+    protocol_input_mode: str
     preset_requested: str
     preset_applied: str
     status: str
@@ -125,6 +128,7 @@ class PulsePlanPreviewPersistPayload:
 class PulsePlanPreviewView:
     preview_id: UUID
     draft_id: UUID
+    protocol_input_mode: str
     preset_requested: str
     preset_applied: str
     status: str
@@ -139,6 +143,7 @@ class PulsePlanPreviewView:
 
 @dataclass(slots=True)
 class PulseCalculationResult:
+    protocol_input_mode: str
     status: str
     preset_requested: str
     preset_applied: str
@@ -162,5 +167,6 @@ class ActiveProtocolView:
     pulse_plan_id: UUID
     status: str
     settings_snapshot: dict
+    protocol_input_mode: str | None
     summary_metrics: dict | None
     warning_flags: list[str]

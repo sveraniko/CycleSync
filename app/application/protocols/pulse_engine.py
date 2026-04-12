@@ -9,6 +9,7 @@ from app.application.protocols.schemas import (
     PulsePlanEntry,
     PulseProductProfile,
 )
+from app.application.protocols.input_modes import LOCKED_PROTOCOL_INPUT_MODES, is_valid_protocol_input_mode
 
 VALID_STATUSES = {"success", "success_with_warnings", "degraded_fallback", "failed_validation"}
 
@@ -36,6 +37,11 @@ class PulseCalculationEngine:
         products: list[PulseProductProfile],
     ) -> PulseCalculationResult:
         validation_issues: list[str] = []
+        protocol_input_mode = settings.protocol_input_mode if settings else None
+        if protocol_input_mode is None:
+            protocol_input_mode = "total_target"
+        if not is_valid_protocol_input_mode(protocol_input_mode):
+            validation_issues.append("protocol_input_mode_invalid")
         if settings is None:
             validation_issues.append("settings_missing")
         if not products:
@@ -45,8 +51,12 @@ class PulseCalculationEngine:
             validation_issues.append("preset_missing")
         if settings and (settings.duration_weeks is None or settings.duration_weeks <= 0):
             validation_issues.append("duration_invalid")
-        if settings and (settings.weekly_target_total_mg is None or settings.weekly_target_total_mg <= 0):
+        if protocol_input_mode == "total_target" and settings and (
+            settings.weekly_target_total_mg is None or settings.weekly_target_total_mg <= 0
+        ):
             validation_issues.append("weekly_target_invalid")
+        if protocol_input_mode in LOCKED_PROTOCOL_INPUT_MODES:
+            validation_issues.append(f"{protocol_input_mode}_not_yet_available")
         if settings and (settings.max_injections_per_week is None or settings.max_injections_per_week <= 0):
             validation_issues.append("max_injections_invalid")
         if settings and (settings.max_injection_volume_ml is None or settings.max_injection_volume_ml <= 0):
@@ -55,6 +65,7 @@ class PulseCalculationEngine:
         if validation_issues:
             return PulseCalculationResult(
                 status="failed_validation",
+                protocol_input_mode=protocol_input_mode,
                 preset_requested=settings.preset_code if settings and settings.preset_code else "unified_rhythm",
                 preset_applied=settings.preset_code if settings and settings.preset_code else "unified_rhythm",
                 degraded_fallback=False,
@@ -81,6 +92,8 @@ class PulseCalculationEngine:
             warning_flags.append("golden_pulse_fallback_to_layered")
 
         allocation_context = self._resolve_allocation(products, settings.weekly_target_total_mg or Decimal("0"))
+        if protocol_input_mode == "auto_pulse":
+            allocation_context = self._resolve_auto_pulse_allocation(products)
         plans = self._build_plan_products(settings, products, strategy, allocation_context["per_product_mg"])
 
         optimization_applied = False
@@ -133,6 +146,7 @@ class PulseCalculationEngine:
 
         return PulseCalculationResult(
             status=status,
+            protocol_input_mode=protocol_input_mode,
             preset_requested=preset_requested,
             preset_applied=strategy,
             degraded_fallback=degraded_fallback,
@@ -145,6 +159,66 @@ class PulseCalculationEngine:
             entries=entries,
             validation_issues=[],
         )
+
+    def _resolve_auto_pulse_allocation(self, products: list[PulseProductProfile]) -> dict:
+        sorted_products = sorted(products, key=lambda p: str(p.product_id))
+        guidance_values: dict[str, Decimal] = {}
+        for product in sorted_products:
+            product_key = str(product.product_id)
+            typical_total = sum(
+                (i.dose_guidance_typical_mg_week or Decimal("0"))
+                for i in product.ingredients
+                if i.dose_guidance_typical_mg_week and i.dose_guidance_typical_mg_week > 0
+            )
+            if typical_total > 0:
+                guidance_values[product_key] = typical_total
+                continue
+            range_mid_total = sum(
+                ((i.dose_guidance_min_mg_week or Decimal("0")) + (i.dose_guidance_max_mg_week or Decimal("0"))) / Decimal("2")
+                for i in product.ingredients
+                if i.dose_guidance_min_mg_week
+                and i.dose_guidance_max_mg_week
+                and i.dose_guidance_min_mg_week > 0
+                and i.dose_guidance_max_mg_week > 0
+            )
+            if range_mid_total > 0:
+                guidance_values[product_key] = range_mid_total
+
+        median_guidance = Decimal("100")
+        if guidance_values:
+            sorted_values = sorted(guidance_values.values())
+            median_guidance = sorted_values[len(sorted_values) // 2]
+
+        per_product_mg: dict[str, Decimal] = {}
+        fallback_count = 0
+        for product in sorted_products:
+            key = str(product.product_id)
+            if key in guidance_values:
+                per_product_mg[key] = guidance_values[key].quantize(Decimal("0.0001"))
+            else:
+                fallback_count += 1
+                per_product_mg[key] = median_guidance.quantize(Decimal("0.0001"))
+
+        quality_flags: list[str] = []
+        if fallback_count > 0:
+            quality_flags.append("auto_pulse_missing_guidance_for_some_products")
+        total_target = sum(per_product_mg.values())
+        guidance_coverage_score = Decimal(str((len(guidance_values) / max(len(sorted_products), 1)) * 100)).quantize(Decimal("0.01"))
+        return {
+            "allocation_mode": "auto_pulse_guidance_driven",
+            "per_product_mg": per_product_mg,
+            "guidance_coverage_score": guidance_coverage_score,
+            "guidance_band_fit_score": Decimal("100.00"),
+            "effective_half_life_mode": "amount_weighted",
+            "half_life_resolution_quality": Decimal("1.00"),
+            "quality_flags": quality_flags,
+            "allocation_details": {
+                "mode": "auto_pulse_guidance_driven",
+                "per_product_allocated_mg_week": {k: float(v) for k, v in per_product_mg.items()},
+                "auto_generated_total_weekly_target_mg": float(total_target),
+                "fallback_products_count": fallback_count,
+            },
+        }
 
     def _build_plan_products(
         self,

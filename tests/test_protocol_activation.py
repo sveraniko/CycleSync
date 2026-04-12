@@ -28,6 +28,7 @@ class FakeActivationRepository:
             pulse_plan_id=uuid4(),
             status="active",
             settings_snapshot={"preset_code": "layered_pulse", "duration_weeks": 8, "weekly_target_total_mg": "250"},
+            protocol_input_mode="total_target",
             summary_metrics={"flatness_stability_score": 82.3},
             warning_flags=[],
         )
@@ -38,6 +39,7 @@ class FakeActivationRepository:
     async def get_draft_settings(self, draft_id):
         return DraftSettingsView(
             draft_id=draft_id,
+            protocol_input_mode="total_target",
             weekly_target_total_mg=Decimal("250"),
             duration_weeks=8,
             preset_code="layered_pulse",
@@ -66,6 +68,7 @@ class FakeActivationRepository:
         return PulsePlanPreviewView(
             preview_id=uuid4(),
             draft_id=payload.draft_id,
+            protocol_input_mode=payload.protocol_input_mode,
             preset_requested=payload.preset_requested,
             preset_applied=payload.preset_applied,
             status=payload.status,
@@ -117,7 +120,7 @@ def test_preview_then_activation_events_flow() -> None:
 
     assert active.status == "active"
     assert repo.preview_payloads
-    assert "pulse_plan_preview_generated" in repo.events
+    assert "protocol_calculation_preview_generated" in repo.events
     assert "protocol_activated" in repo.events
     assert "pulse_plan_activated" in repo.events
     assert "reminder_schedule_requested" in repo.events

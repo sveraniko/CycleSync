@@ -873,6 +873,7 @@ def upgrade() -> None:
     op.create_table(
         "protocol_draft_settings",
         sa.Column("draft_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("protocol_input_mode", sa.String(length=32), nullable=True),
         sa.Column("weekly_target_total_mg", sa.Numeric(precision=12, scale=4), nullable=True),
         sa.Column("duration_weeks", sa.SmallInteger(), nullable=True),
         sa.Column("preset_code", sa.String(length=32), nullable=True),
@@ -900,6 +901,7 @@ def upgrade() -> None:
     op.create_table(
         "pulse_calculation_runs",
         sa.Column("draft_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("protocol_input_mode", sa.String(length=32), nullable=False, server_default="total_target"),
         sa.Column("preset_requested", sa.String(length=32), nullable=False),
         sa.Column("preset_applied", sa.String(length=32), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
@@ -933,6 +935,7 @@ def upgrade() -> None:
     op.create_table(
         "pulse_plan_previews",
         sa.Column("draft_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("protocol_input_mode", sa.String(length=32), nullable=False, server_default="total_target"),
         sa.Column("calculation_run_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("preset_requested", sa.String(length=32), nullable=False),
         sa.Column("preset_applied", sa.String(length=32), nullable=False),
@@ -1016,6 +1019,7 @@ def upgrade() -> None:
         sa.Column("draft_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("source_preview_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("status", sa.String(length=32), nullable=False, server_default="preview_ready"),
+        sa.Column("protocol_input_mode", sa.String(length=32), nullable=True),
         sa.Column("activated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("cancelled_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("superseded_at", sa.DateTime(timezone=True), nullable=True),
@@ -1050,6 +1054,7 @@ def upgrade() -> None:
     op.create_table(
         "pulse_plans",
         sa.Column("protocol_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("protocol_input_mode", sa.String(length=32), nullable=False, server_default="total_target"),
         sa.Column("source_preview_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("status", sa.String(length=32), nullable=False, server_default="active"),
         sa.Column("preset_requested", sa.String(length=32), nullable=False),

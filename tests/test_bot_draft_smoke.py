@@ -3,9 +3,11 @@ from decimal import Decimal
 from uuid import uuid4
 
 from app.bots.handlers.draft import (
+    INPUT_MODE_LABELS,
     PRESET_LABELS,
     build_draft_actions,
     build_draft_shortcut,
+    build_input_mode_actions,
     build_preset_actions,
     build_preview_actions,
     build_readiness_actions,
@@ -84,6 +86,7 @@ def test_render_preview_summary_smoke() -> None:
     preview = PulsePlanPreviewView(
         preview_id=uuid4(),
         draft_id=uuid4(),
+        protocol_input_mode="auto_pulse",
         preset_requested="golden_pulse",
         preset_applied="layered_pulse",
         status="degraded_fallback",
@@ -127,9 +130,21 @@ def test_render_active_protocol_summary_smoke() -> None:
         pulse_plan_id=uuid4(),
         status="active",
         settings_snapshot={"preset_code": "layered_pulse", "duration_weeks": 8, "weekly_target_total_mg": "250"},
+        protocol_input_mode="total_target",
         summary_metrics={"flatness_stability_score": 88.2},
         warning_flags=[],
     )
     text = _render_active_protocol_summary(active)
     assert "Protocol activated" in text
     assert "Wave 3" in text
+
+
+def test_build_input_mode_actions_smoke() -> None:
+    keyboard = build_input_mode_actions()
+    callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
+    labels = [button.text for row in keyboard.inline_keyboard for button in row]
+    assert "draft:calc:mode:auto_pulse" in callbacks
+    assert "draft:calc:mode:total_target" in callbacks
+    assert "draft:calc:mode:stack_smoothing" in callbacks
+    assert "draft:calc:mode:inventory_constrained" in callbacks
+    assert set(labels) == set(INPUT_MODE_LABELS.values())

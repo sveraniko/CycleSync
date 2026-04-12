@@ -74,6 +74,7 @@ def test_readiness_reports_conflicting_constraints() -> None:
     now = datetime.now(timezone.utc)
     settings = DraftSettingsView(
         draft_id=draft.draft_id,
+        protocol_input_mode="total_target",
         weekly_target_total_mg=Decimal("250"),
         duration_weeks=10,
         preset_code="layered_pulse",
@@ -101,3 +102,69 @@ def test_readiness_reports_conflicting_constraints() -> None:
 
     warnings = [issue for issue in result.issues if issue.severity == "warning"]
     assert any(issue.code == "constraints.max_injections_too_high" for issue in warnings)
+
+
+def test_total_target_mode_requires_weekly_target() -> None:
+    draft = _draft_with_one_item()
+    settings = DraftSettingsView(
+        draft_id=draft.draft_id,
+        protocol_input_mode="total_target",
+        weekly_target_total_mg=None,
+        duration_weeks=8,
+        preset_code="layered_pulse",
+        max_injection_volume_ml=Decimal("2.0"),
+        max_injections_per_week=3,
+        planned_start_date=None,
+        updated_at=datetime.now(timezone.utc),
+    )
+    repo = FakeReadinessRepository(settings=settings, products=[])
+    result = asyncio.run(ProtocolDraftReadinessService(repository=repo).validate(draft))
+    assert any(issue.code == "settings.weekly_target_required" for issue in result.issues)
+
+
+def test_auto_pulse_mode_allows_missing_weekly_target() -> None:
+    draft = _draft_with_one_item()
+    settings = DraftSettingsView(
+        draft_id=draft.draft_id,
+        protocol_input_mode="auto_pulse",
+        weekly_target_total_mg=None,
+        duration_weeks=8,
+        preset_code="layered_pulse",
+        max_injection_volume_ml=Decimal("2.0"),
+        max_injections_per_week=3,
+        planned_start_date=None,
+        updated_at=datetime.now(timezone.utc),
+    )
+    repo = FakeReadinessRepository(
+        settings=settings,
+        products=[
+            DraftCalculationProductInfo(
+                product_id=uuid4(),
+                product_name="OK Product",
+                is_automatable=True,
+                max_injection_volume_ml=Decimal("2.0"),
+                ingredient_names=["Ingredient"],
+                has_half_life=True,
+            )
+        ],
+    )
+    result = asyncio.run(ProtocolDraftReadinessService(repository=repo).validate(draft))
+    assert all(issue.code != "settings.weekly_target_required" for issue in result.issues)
+
+
+def test_inventory_constrained_mode_reports_not_available() -> None:
+    draft = _draft_with_one_item()
+    settings = DraftSettingsView(
+        draft_id=draft.draft_id,
+        protocol_input_mode="inventory_constrained",
+        weekly_target_total_mg=None,
+        duration_weeks=8,
+        preset_code="layered_pulse",
+        max_injection_volume_ml=Decimal("2.0"),
+        max_injections_per_week=3,
+        planned_start_date=None,
+        updated_at=datetime.now(timezone.utc),
+    )
+    repo = FakeReadinessRepository(settings=settings, products=[])
+    result = asyncio.run(ProtocolDraftReadinessService(repository=repo).validate(draft))
+    assert any(issue.code == "settings.inventory_constrained.not_available" for issue in result.issues)
