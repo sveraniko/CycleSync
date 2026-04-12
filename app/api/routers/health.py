@@ -136,6 +136,82 @@ async def _load_commerce_diagnostics(session_factory, settings) -> dict[str, obj
     }
 
 
+async def _load_operational_reliability_metrics(session_factory) -> dict[str, object]:
+    try:
+        async with session_factory() as session:
+            job_rows = await session.execute(
+                text(
+                    """
+                    SELECT job_name, status, count(*)
+                    FROM ops.job_runs
+                    GROUP BY job_name, status
+                    """
+                )
+            )
+            outbox_rows = await session.execute(
+                text(
+                    """
+                    SELECT status, count(*)
+                    FROM ops.outbox_events
+                    GROUP BY status
+                    """
+                )
+            )
+            oldest_pending = await session.scalar(
+                text(
+                    """
+                    SELECT min(created_at)
+                    FROM ops.outbox_events
+                    WHERE status IN ('pending', 'failed_retryable')
+                    """
+                )
+            )
+    except Exception:
+        return {
+            "job_counts": {},
+            "job_failed_counts_by_type": {},
+            "retry_scheduled_count": 0,
+            "dead_letter_count": 0,
+            "outbox_counts": {},
+            "outbox_pending_count": 0,
+            "outbox_retry_count": 0,
+            "outbox_dead_letter_count": 0,
+            "outbox_pending_lag_seconds": 0,
+            "reminder_dispatch_failures": 0,
+            "triage_failures": 0,
+            "fulfillment_failures": 0,
+        }
+
+    job_counts: dict[str, int] = {f"{row[0]}::{row[1]}": int(row[2]) for row in job_rows}
+    outbox_counts: dict[str, int] = {row[0]: int(row[1]) for row in outbox_rows}
+    failed_by_type: dict[str, int] = {}
+    for key, count in job_counts.items():
+        job_name, status = key.split("::", 1)
+        if status in {"failed", "dead_letter"}:
+            failed_by_type[job_name] = failed_by_type.get(job_name, 0) + count
+    lag_seconds = 0
+    if oldest_pending is not None:
+        lag_seconds = max(0, int((datetime.now(timezone.utc) - oldest_pending).total_seconds()))
+    return {
+        "job_counts": job_counts,
+        "job_failed_counts_by_type": failed_by_type,
+        "retry_scheduled_count": sum(
+            count for key, count in job_counts.items() if key.endswith("::retry_scheduled")
+        ),
+        "dead_letter_count": sum(
+            count for key, count in job_counts.items() if key.endswith("::dead_letter")
+        ),
+        "outbox_counts": outbox_counts,
+        "outbox_pending_count": int(outbox_counts.get("pending", 0)),
+        "outbox_retry_count": int(outbox_counts.get("failed_retryable", 0)),
+        "outbox_dead_letter_count": int(outbox_counts.get("dead_lettered", 0)),
+        "outbox_pending_lag_seconds": lag_seconds,
+        "reminder_dispatch_failures": int(failed_by_type.get("reminder_dispatch", 0)),
+        "triage_failures": int(failed_by_type.get("lab_triage_execution", 0)),
+        "fulfillment_failures": int(failed_by_type.get("checkout_fulfillment", 0)),
+    }
+
+
 @router.get("/live")
 async def live() -> dict[str, str]:
     return {"status": "ok"}
@@ -174,6 +250,9 @@ async def diagnostics(request: Request) -> dict[str, object]:
         request.app.state.infra.db_session_factory
     )
     commerce_metrics = await _load_commerce_diagnostics(request.app.state.infra.db_session_factory, settings)
+    operational_reliability = await _load_operational_reliability_metrics(
+        request.app.state.infra.db_session_factory
+    )
     return {
         "app_name": settings.app_name,
         "env": settings.app_env,
@@ -185,6 +264,7 @@ async def diagnostics(request: Request) -> dict[str, object]:
             "ok": ready_payload["status"] == "ok",
         },
         "reminders_foundation": reminder_metrics,
+        "operational_reliability": operational_reliability,
         "labs_triage": _labs_triage_diagnostics(settings),
         "commerce": commerce_metrics,
         "catalog_source": {

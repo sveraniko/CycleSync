@@ -434,8 +434,10 @@ def upgrade() -> None:
         sa.Column("payload_json", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("status", sa.String(), nullable=False, server_default=sa.text("'pending'")),
         sa.Column("retry_count", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("max_attempts", sa.Integer(), nullable=False, server_default=sa.text("6")),
         sa.Column("next_attempt_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("dead_lettered_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("correlation_id", sa.String(), nullable=True),
         sa.Column("causation_id", sa.String(), nullable=True),
         sa.Column("last_error", sa.Text(), nullable=True),
@@ -452,6 +454,13 @@ def upgrade() -> None:
         unique=False,
         schema="ops",
     )
+    op.create_index(
+        "ix_ops_outbox_events_status_created",
+        "outbox_events",
+        ["status", "created_at"],
+        unique=False,
+        schema="ops",
+    )
     
     op.create_table(
         "job_runs",
@@ -460,10 +469,32 @@ def upgrade() -> None:
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("details_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("attempt_count", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("max_attempts", sa.Integer(), nullable=False, server_default=sa.text("4")),
+        sa.Column("next_attempt_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("last_error", sa.Text(), nullable=True),
+        sa.Column("dead_lettered_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("replayable", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column("replayed_from_job_run_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["replayed_from_job_run_id"], ["ops.job_runs.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id", name="pk_ops_job_runs"),
+        schema="ops",
+    )
+    op.create_index(
+        "ix_ops_job_runs_job_status",
+        "job_runs",
+        ["job_name", "status"],
+        unique=False,
+        schema="ops",
+    )
+    op.create_index(
+        "ix_ops_job_runs_status_next_attempt",
+        "job_runs",
+        ["status", "next_attempt_at"],
+        unique=False,
         schema="ops",
     )
     
