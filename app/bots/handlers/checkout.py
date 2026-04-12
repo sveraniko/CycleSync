@@ -110,11 +110,61 @@ def build_checkout_actions(checkout_id) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Apply coupon", callback_data=f"checkout:coupon:ask:{checkout_id}")],
+            [InlineKeyboardButton(text="Pay with Stars", callback_data=f"checkout:provider:init:stars:{checkout_id}")],
+            [InlineKeyboardButton(text="Confirm Stars paid", callback_data=f"checkout:provider:confirm:stars:{checkout_id}")],
+            [InlineKeyboardButton(text="Fail Stars payment", callback_data=f"checkout:provider:fail:stars:{checkout_id}")],
             [InlineKeyboardButton(text="Complete gift checkout", callback_data=f"checkout:gift:{checkout_id}")],
             [InlineKeyboardButton(text="Settle free (test)", callback_data=f"checkout:free:{checkout_id}")],
             [InlineKeyboardButton(text="Refresh checkout status", callback_data=f"checkout:status:{checkout_id}")],
         ]
     )
+
+
+@router.callback_query(F.data.startswith("checkout:provider:init:"))
+async def init_provider_checkout(callback: CallbackQuery, checkout_service: CheckoutService) -> None:
+    _, _, _, provider_code, checkout_id_text = callback.data.split(":")
+    checkout_id = UUID(checkout_id_text)
+    try:
+        state = await checkout_service.initiate_payment(checkout_id=checkout_id, provider_code=provider_code)
+    except CommerceError as exc:
+        await callback.message.answer(f"Provider init failed: {exc}")
+        await callback.answer()
+        return
+    await callback.message.answer(_render_checkout(state), reply_markup=build_checkout_actions(checkout_id))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("checkout:provider:confirm:"))
+async def confirm_provider_checkout(callback: CallbackQuery, checkout_service: CheckoutService) -> None:
+    _, _, _, provider_code, checkout_id_text = callback.data.split(":")
+    checkout_id = UUID(checkout_id_text)
+    try:
+        state = await checkout_service.confirm_provider_payment(checkout_id=checkout_id, provider_code=provider_code, outcome="succeeded")
+    except CommerceError as exc:
+        await callback.message.answer(f"Provider confirmation failed: {exc}")
+        await callback.answer()
+        return
+    await callback.message.answer(_render_checkout(state), reply_markup=build_checkout_actions(checkout_id))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("checkout:provider:fail:"))
+async def fail_provider_checkout(callback: CallbackQuery, checkout_service: CheckoutService) -> None:
+    _, _, _, provider_code, checkout_id_text = callback.data.split(":")
+    checkout_id = UUID(checkout_id_text)
+    try:
+        state = await checkout_service.confirm_provider_payment(
+            checkout_id=checkout_id,
+            provider_code=provider_code,
+            outcome="failed",
+            metadata={"error_code": "telegram_stars_failed", "error_message": "Payment cancelled in Telegram"},
+        )
+    except CommerceError as exc:
+        await callback.message.answer(f"Provider failure update failed: {exc}")
+        await callback.answer()
+        return
+    await callback.message.answer(_render_checkout(state), reply_markup=build_checkout_actions(checkout_id))
+    await callback.answer()
 
 
 def _render_checkout(state) -> str:
@@ -129,6 +179,14 @@ def _render_checkout(state) -> str:
         f"mode={state.checkout.settlement_mode}\n"
         + "\n".join(item_lines)
     )
+    if state.attempts:
+        last_attempt = state.attempts[-1]
+        base += (
+            "\n\nPayment attempt\n"
+            f"provider={last_attempt.provider_code}\n"
+            f"attempt_status={last_attempt.attempt_status}\n"
+            f"provider_reference={last_attempt.provider_reference}\n"
+        )
     fulfillment = getattr(state, "fulfillment", None)
     if fulfillment is None:
         return base

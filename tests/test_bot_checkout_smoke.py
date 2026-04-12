@@ -19,6 +19,7 @@ class _State:
             },
         )
         self.items = (type("Item", (), {"title": "Specialist consult access", "qty": 1, "unit_amount": 1500, "line_total": 1500}),)
+        self.attempts = ()
 
 
 def test_checkout_actions_smoke() -> None:
@@ -26,6 +27,9 @@ def test_checkout_actions_smoke() -> None:
     keyboard = build_checkout_actions(cid)
     callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
     assert f"checkout:coupon:ask:{cid}" in callbacks
+    assert f"checkout:provider:init:stars:{cid}" in callbacks
+    assert f"checkout:provider:confirm:stars:{cid}" in callbacks
+    assert f"checkout:provider:fail:stars:{cid}" in callbacks
     assert f"checkout:gift:{cid}" in callbacks
     assert f"checkout:free:{cid}" in callbacks
     assert f"checkout:status:{cid}" in callbacks
@@ -57,3 +61,13 @@ def test_checkout_render_fulfillment_confirmation_smoke() -> None:
     text = _render_checkout(state)
     assert "Fulfillment" in text
     assert "Unlocked" in text
+
+
+def test_checkout_render_shows_attempt_status() -> None:
+    state = _State()
+    state.attempts = (
+        type("Attempt", (), {"provider_code": "stars", "attempt_status": "pending", "provider_reference": "https://t.me/cyclesync_bot"}),
+    )
+    text = _render_checkout(state)
+    assert "Payment attempt" in text
+    assert "provider=stars" in text

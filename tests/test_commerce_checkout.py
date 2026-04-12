@@ -6,7 +6,7 @@ import pytest
 
 from app.application.access import AccessEvaluationService
 from app.application.commerce.fulfillment import CheckoutFulfillmentService
-from app.application.commerce.providers import FreePaymentProvider, PaymentProviderRegistry
+from app.application.commerce.providers import FreePaymentProvider, PaymentProviderRegistry, StarsPaymentProvider
 from app.application.commerce.schemas import CheckoutCreate, CheckoutItemCreate, CouponCreate
 from app.application.commerce.service import CheckoutService, CommerceError
 
@@ -273,6 +273,16 @@ class FakeCommerceRepository:
         exhausted_coupons = sum(1 for c in self.coupons.values() if c.status == "exhausted")
         coupon_redemptions = sum(1 for r in self.redemptions if r.result_status == "applied")
         coupon_free_settlements = 0
+        provider_attempts = {}
+        provider_succeeded = {}
+        provider_failed = {}
+        for rows in self.attempts.values():
+            for row in rows:
+                provider_attempts[row.provider_code] = provider_attempts.get(row.provider_code, 0) + 1
+                if row.attempt_status == "succeeded":
+                    provider_succeeded[row.provider_code] = provider_succeeded.get(row.provider_code, 0) + 1
+                if row.attempt_status in {"failed", "cancelled", "expired"}:
+                    provider_failed[row.provider_code] = provider_failed.get(row.provider_code, 0) + 1
         return type("Diagnostics", (), {
             "commerce_mode": commerce_mode,
             "provider_summary": provider_summary,
@@ -284,6 +294,9 @@ class FakeCommerceRepository:
             "exhausted_coupons": exhausted_coupons,
             "coupon_redemptions": coupon_redemptions,
             "coupon_free_settlements": coupon_free_settlements,
+            "provider_attempts": provider_attempts,
+            "provider_succeeded": provider_succeeded,
+            "provider_failed": provider_failed,
         })
 
     async def enqueue_event(self, *, event_type, aggregate_type, aggregate_id, payload):
@@ -295,6 +308,18 @@ def _service(repo: FakeCommerceRepository, mode: str = "test") -> tuple[Checkout
     access_service = AccessEvaluationService(access_repo)
     fulfillment_service = CheckoutFulfillmentService(repository=repo, access_service=access_service)
     checkout_service = CheckoutService(repo, PaymentProviderRegistry({"free": FreePaymentProvider()}, ("manual_card", "free")), mode, fulfillment_service=fulfillment_service)
+    return checkout_service, access_repo
+
+
+def _service_with_stars(repo: FakeCommerceRepository, mode: str = "live") -> tuple[CheckoutService, FakeAccessRepository]:
+    access_repo = FakeAccessRepository()
+    access_service = AccessEvaluationService(access_repo)
+    fulfillment_service = CheckoutFulfillmentService(repository=repo, access_service=access_service)
+    registry = PaymentProviderRegistry(
+        {"free": FreePaymentProvider(), "stars": StarsPaymentProvider(bot_username="cyclesync_bot")},
+        ("stars", "free"),
+    )
+    checkout_service = CheckoutService(repo, registry, mode, fulfillment_service=fulfillment_service)
     return checkout_service, access_repo
 
 
@@ -388,3 +413,55 @@ def test_expired_coupon_denial() -> None:
     result = asyncio.run(service.apply_coupon_to_checkout(checkout_id=checkout.checkout.checkout_id, user_id="tg:1", coupon_code="OLD", now_utc=now))
     assert result.status == "denied"
     assert result.reason_code == "coupon_expired"
+
+
+def test_stars_provider_init_happy_path_creates_session_and_pending_attempt() -> None:
+    repo = FakeCommerceRepository()
+    service, _ = _service_with_stars(repo)
+    checkout = _create_checkout(repo, service)
+    state = asyncio.run(service.initiate_payment(checkout_id=checkout.checkout.checkout_id, provider_code="stars"))
+    assert state.checkout.checkout_status == "awaiting_payment"
+    assert state.attempts[-1].attempt_status == "pending"
+    assert "t.me/cyclesync_bot" in (state.attempts[-1].provider_reference or "")
+    assert "payment_provider_session_created" in repo.events
+
+
+def test_stars_success_flows_to_checkout_completion_and_fulfillment() -> None:
+    repo = FakeCommerceRepository()
+    service, _ = _service_with_stars(repo)
+    checkout = _create_checkout(repo, service, user_id="tg:stars")
+    asyncio.run(service.initiate_payment(checkout_id=checkout.checkout.checkout_id, provider_code="stars"))
+    completed = asyncio.run(
+        service.confirm_provider_payment(checkout_id=checkout.checkout.checkout_id, provider_code="stars", outcome="succeeded")
+    )
+    assert completed.checkout.checkout_status == "completed"
+    assert completed.fulfillment is not None
+    assert completed.fulfillment.fulfillment_status == "succeeded"
+
+
+def test_stars_failure_marks_checkout_failed() -> None:
+    repo = FakeCommerceRepository()
+    service, _ = _service_with_stars(repo)
+    checkout = _create_checkout(repo, service)
+    asyncio.run(service.initiate_payment(checkout_id=checkout.checkout.checkout_id, provider_code="stars"))
+    failed = asyncio.run(
+        service.confirm_provider_payment(
+            checkout_id=checkout.checkout.checkout_id,
+            provider_code="stars",
+            outcome="failed",
+            metadata={"error_code": "declined"},
+        )
+    )
+    assert failed.checkout.checkout_status == "failed"
+    assert failed.attempts[-1].attempt_status == "failed"
+
+
+def test_diagnostics_include_provider_counts() -> None:
+    repo = FakeCommerceRepository()
+    service, _ = _service_with_stars(repo)
+    checkout = _create_checkout(repo, service)
+    asyncio.run(service.initiate_payment(checkout_id=checkout.checkout.checkout_id, provider_code="stars"))
+    asyncio.run(service.confirm_provider_payment(checkout_id=checkout.checkout.checkout_id, provider_code="stars", outcome="failed"))
+    diagnostics = asyncio.run(service.diagnostics())
+    assert diagnostics.provider_attempts.get("stars") == 1
+    assert diagnostics.provider_failed.get("stars") == 1

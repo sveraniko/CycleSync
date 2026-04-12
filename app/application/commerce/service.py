@@ -296,7 +296,7 @@ class CheckoutService:
             checkout_id=checkout_id,
             provider_code=provider_code,
             requested_amount=state.checkout.total_amount,
-            attempt_status="started",
+            attempt_status="initiated",
             now_utc=now,
         )
         await self.repository.enqueue_event(
@@ -314,7 +314,108 @@ class CheckoutService:
             session_payload=init_data.session_payload,
             now_utc=now,
         )
+        await self.repository.update_payment_attempt(
+            attempt_id=attempt.attempt_id,
+            attempt_status="pending",
+            now_utc=now,
+            provider_reference=init_data.provider_reference,
+        )
+        await self.repository.enqueue_event(
+            event_type="payment_provider_session_created",
+            aggregate_type="checkout",
+            aggregate_id=checkout_id,
+            payload={
+                "attempt_id": str(attempt.attempt_id),
+                "provider_code": provider_code,
+                "session_status": init_data.session_status,
+            },
+        )
         await self.repository.mark_checkout_status(checkout_id=checkout_id, checkout_status="awaiting_payment", now_utc=now)
+        return await self.get_checkout(checkout_id=checkout_id)
+
+    async def confirm_provider_payment(
+        self,
+        *,
+        checkout_id: UUID,
+        provider_code: str,
+        outcome: str = "succeeded",
+        metadata: dict | None = None,
+        now_utc: datetime | None = None,
+    ) -> CheckoutStateView:
+        now = now_utc or datetime.now(timezone.utc)
+        state = await self.get_checkout(checkout_id=checkout_id)
+        provider = self.provider_registry.get(provider_code)
+        if provider is None:
+            raise CommerceError(f"provider_not_available:{provider_code}")
+
+        target_attempt = None
+        for attempt in reversed(state.attempts):
+            if attempt.provider_code == provider_code and attempt.attempt_status in {"initiated", "pending", "started"}:
+                target_attempt = attempt
+                break
+        if target_attempt is None:
+            raise CommerceError("payment_attempt_not_found")
+
+        settled = await provider.confirm_payment(
+            checkout=state,
+            now_utc=now,
+            metadata={"outcome": outcome, **(metadata or {})},
+        )
+        if settled.status == "succeeded":
+            await self.repository.update_payment_attempt(
+                attempt_id=target_attempt.attempt_id,
+                attempt_status="succeeded",
+                now_utc=now,
+                provider_reference=settled.provider_reference,
+            )
+            await self.repository.mark_checkout_status(
+                checkout_id=checkout_id,
+                checkout_status="completed",
+                now_utc=now,
+                completed_at=now,
+            )
+            await self.repository.enqueue_event(
+                event_type="payment_attempt_succeeded",
+                aggregate_type="checkout",
+                aggregate_id=checkout_id,
+                payload={"attempt_id": str(target_attempt.attempt_id), "provider_code": provider_code},
+            )
+            await self.repository.enqueue_event(
+                event_type="checkout_completed",
+                aggregate_type="checkout",
+                aggregate_id=checkout_id,
+                payload={"provider_code": provider_code},
+            )
+            if self.fulfillment_service is not None:
+                await self.fulfillment_service.fulfill_checkout(checkout_id=checkout_id, now_utc=now)
+            return await self.get_checkout(checkout_id=checkout_id)
+
+        mapped_status = "failed"
+        if settled.status in {"cancelled", "expired"}:
+            mapped_status = settled.status
+        elif settled.status in {"pending", "initiated"}:
+            mapped_status = "pending"
+        await self.repository.update_payment_attempt(
+            attempt_id=target_attempt.attempt_id,
+            attempt_status=mapped_status,
+            now_utc=now,
+            provider_reference=settled.provider_reference,
+            error_code=settled.error_code,
+            error_message=settled.error_message,
+        )
+        if mapped_status in {"failed", "cancelled", "expired"}:
+            await self.repository.mark_checkout_status(checkout_id=checkout_id, checkout_status="failed", now_utc=now)
+            await self.repository.enqueue_event(
+                event_type="payment_attempt_failed",
+                aggregate_type="checkout",
+                aggregate_id=checkout_id,
+                payload={
+                    "attempt_id": str(target_attempt.attempt_id),
+                    "provider_code": provider_code,
+                    "attempt_status": mapped_status,
+                    "error_code": settled.error_code,
+                },
+            )
         return await self.get_checkout(checkout_id=checkout_id)
 
     async def settle_free_checkout(self, *, checkout_id, reason_code: str, now_utc: datetime | None = None) -> CheckoutStateView:

@@ -88,8 +88,12 @@ async def _load_reminder_foundation_metrics(session_factory) -> dict[str, int]:
 
 async def _load_commerce_diagnostics(session_factory, settings) -> dict[str, object]:
     declared = [item.strip() for item in settings.commerce_declared_providers.split(",") if item.strip()]
+    stars_enabled = bool(settings.commerce_stars_bot_username)
     provider_summary = {
-        code: {"enabled": code == "free", "kind": "internal" if code == "free" else "stub"}
+        code: {
+            "enabled": (code == "free") or (code == "stars" and stars_enabled),
+            "kind": "internal" if code == "free" else ("telegram_stars" if code == "stars" and stars_enabled else "stub"),
+        }
         for code in declared
     }
     try:
@@ -106,8 +110,18 @@ async def _load_commerce_diagnostics(session_factory, settings) -> dict[str, obj
             free_settlements = await session.scalar(
                 text("SELECT count(*) FROM billing.payment_attempts WHERE provider_code='free' AND attempt_status='succeeded'")
             )
+            provider_attempt_rows = await session.execute(
+                text("SELECT provider_code, count(*) FROM billing.payment_attempts GROUP BY provider_code")
+            )
+            provider_succeeded_rows = await session.execute(
+                text("SELECT provider_code, count(*) FROM billing.payment_attempts WHERE attempt_status='succeeded' GROUP BY provider_code")
+            )
+            provider_failed_rows = await session.execute(
+                text("SELECT provider_code, count(*) FROM billing.payment_attempts WHERE attempt_status IN ('failed','cancelled','expired') GROUP BY provider_code")
+            )
     except Exception:
         pending = completed = failed = free_settlements = 0
+        provider_attempt_rows = provider_succeeded_rows = provider_failed_rows = []
 
     return {
         "mode": settings.commerce_mode,
@@ -116,6 +130,9 @@ async def _load_commerce_diagnostics(session_factory, settings) -> dict[str, obj
         "completed_checkouts": int(completed or 0),
         "failed_checkouts": int(failed or 0),
         "free_settlements": int(free_settlements or 0),
+        "provider_attempts": {row[0]: int(row[1]) for row in provider_attempt_rows},
+        "provider_succeeded": {row[0]: int(row[1]) for row in provider_succeeded_rows},
+        "provider_failed": {row[0]: int(row[1]) for row in provider_failed_rows},
     }
 
 

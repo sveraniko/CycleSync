@@ -28,3 +28,6 @@ def test_diagnostics_shape() -> None:
     assert "commerce" in payload
     assert "mode" in payload["commerce"]
     assert "provider_registry" in payload["commerce"]
+    assert "provider_attempts" in payload["commerce"]
+    assert "provider_succeeded" in payload["commerce"]
+    assert "provider_failed" in payload["commerce"]

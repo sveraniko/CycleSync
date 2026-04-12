@@ -13,7 +13,7 @@ from app.application.reminders import ReminderApplicationService
 from app.application.labs import LabsApplicationService, LabsTriageService
 from app.application.expert_cases import SpecialistCaseAssemblyService
 from app.application.search import SearchApplicationService
-from app.application.commerce import CheckoutFulfillmentService, CheckoutService, FreePaymentProvider, PaymentProviderRegistry
+from app.application.commerce import CheckoutFulfillmentService, CheckoutService, FreePaymentProvider, PaymentProviderRegistry, StarsPaymentProvider
 from app.bots.router import get_root_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
@@ -79,10 +79,10 @@ async def run_bot() -> None:
         access_evaluator=access_service,
     )
     declared_providers = tuple(code.strip() for code in settings.commerce_declared_providers.split(",") if code.strip())
-    provider_registry = PaymentProviderRegistry(
-        providers={"free": FreePaymentProvider()},
-        declared_providers=declared_providers,
-    )
+    providers = {"free": FreePaymentProvider()}
+    if settings.commerce_stars_bot_username:
+        providers["stars"] = StarsPaymentProvider(bot_username=settings.commerce_stars_bot_username)
+    provider_registry = PaymentProviderRegistry(providers=providers, declared_providers=declared_providers)
     commerce_repository = SqlAlchemyCommerceRepository(infra.db_session_factory)
     checkout_fulfillment_service = CheckoutFulfillmentService(repository=commerce_repository, access_service=access_service)
     checkout_service = CheckoutService(
