@@ -1218,6 +1218,57 @@ def upgrade() -> None:
     )
     op.create_index("ix_ai_triage_flags_run_severity", "lab_triage_flags", ["triage_run_id", "severity"], unique=False, schema="ai_triage")
 
+    # from 20260412_0015_wave7_pr1_specialist_case_assembly.py
+    op.create_table(
+        "specialist_cases",
+        sa.Column("user_id", sa.String(length=64), nullable=False),
+        sa.Column("protocol_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("lab_report_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("triage_run_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("case_status", sa.String(length=32), nullable=False, server_default=sa.text("'opened'")),
+        sa.Column("opened_reason_code", sa.String(length=64), nullable=False),
+        sa.Column("opened_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("latest_snapshot_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("notes_from_user", sa.Text(), nullable=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["protocol_id"], ["protocols.protocols.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["lab_report_id"], ["labs.lab_reports.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["triage_run_id"], ["ai_triage.lab_triage_runs.id"], ondelete="SET NULL"),
+        sa.PrimaryKeyConstraint("id", name="pk_expert_cases_specialist_cases"),
+        schema="expert_cases",
+    )
+    op.create_index("ix_expert_cases_specialist_cases_user_opened", "specialist_cases", ["user_id", "opened_at"], unique=False, schema="expert_cases")
+    op.create_index("ix_expert_cases_specialist_cases_status_opened", "specialist_cases", ["case_status", "opened_at"], unique=False, schema="expert_cases")
+    op.create_index("ix_expert_cases_specialist_cases_report_opened", "specialist_cases", ["lab_report_id", "opened_at"], unique=False, schema="expert_cases")
+
+    op.create_table(
+        "specialist_case_snapshots",
+        sa.Column("case_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("snapshot_version", sa.Integer(), nullable=False),
+        sa.Column("payload_json", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["case_id"], ["expert_cases.specialist_cases.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id", name="pk_expert_cases_specialist_case_snapshots"),
+        sa.UniqueConstraint("case_id", "snapshot_version", name="uq_specialist_case_snapshot_version"),
+        schema="expert_cases",
+    )
+    op.create_index("ix_expert_cases_case_snapshots_case_version", "specialist_case_snapshots", ["case_id", "snapshot_version"], unique=False, schema="expert_cases")
+    op.create_foreign_key(
+        "fk_expert_cases_specialist_cases_latest_snapshot",
+        source_table="specialist_cases",
+        referent_table="specialist_case_snapshots",
+        local_cols=["latest_snapshot_id"],
+        remote_cols=["id"],
+        source_schema="expert_cases",
+        referent_schema="expert_cases",
+        ondelete="SET NULL",
+    )
+
     op.execute(sa.text("""
         INSERT INTO labs.markers (id, marker_code, display_name, category_code, default_unit, accepted_units, notes, is_active)
         VALUES

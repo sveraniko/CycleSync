@@ -20,6 +20,8 @@ from app.domain.models import (
     LabReportEntry,
     LabPanel,
     LabPanelMarker,
+    SpecialistCase,
+    SpecialistCaseSnapshot,
 )
 
 
@@ -67,3 +69,8 @@ def test_labs_models_bound_to_labs_schema() -> None:
 def test_ai_triage_models_bound_to_ai_triage_schema() -> None:
     assert LabTriageRun.__table__.schema == "ai_triage"
     assert LabTriageFlag.__table__.schema == "ai_triage"
+
+
+def test_expert_cases_models_bound_to_expert_cases_schema() -> None:
+    assert SpecialistCase.__table__.schema == "expert_cases"
+    assert SpecialistCaseSnapshot.__table__.schema == "expert_cases"

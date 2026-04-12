@@ -8,6 +8,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.types.callback_query import CallbackQuery
 
+from app.application.expert_cases import SpecialistCaseAccessError, SpecialistCaseAssemblyService, SpecialistCaseError
 from app.application.labs import (
     LabEntryInput,
     LabsApplicationService,
@@ -26,6 +27,7 @@ class LabsEntryState(StatesGroup):
     marker_unit = State()
     reference_min = State()
     reference_max = State()
+    specialist_note = State()
 
 
 @router.message(F.text.func(lambda value: (value or "").strip().lower() == "labs"))
@@ -306,6 +308,95 @@ async def on_latest_triage(
     await callback.answer()
 
 
+@router.callback_query(F.data == "labs:case:consult")
+async def on_consult_specialist(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    report_id_raw = data.get("report_id")
+    if not report_id_raw:
+        await callback.message.answer("Нет активного report для консультации.")
+        await callback.answer()
+        return
+    await state.set_state(LabsEntryState.specialist_note)
+    await callback.message.answer("Введите короткий вопрос для специалиста (или '-' чтобы пропустить).")
+    await callback.answer()
+
+
+@router.message(LabsEntryState.specialist_note)
+async def on_specialist_note(
+    message: Message,
+    state: FSMContext,
+    specialist_case_service: SpecialistCaseAssemblyService,
+) -> None:
+    data = await state.get_data()
+    report_id_raw = data.get("report_id")
+    if not report_id_raw:
+        await message.answer("Нет активного report для консультации.")
+        await state.set_state(None)
+        return
+
+    note = (message.text or "").strip()
+    if note == "-":
+        note = ""
+
+    try:
+        opened = await specialist_case_service.open_case(
+            user_id=_resolve_user_id(message.from_user.id if message.from_user else None),
+            lab_report_id=UUID(report_id_raw),
+            notes_from_user=note,
+        )
+    except SpecialistCaseAccessError:
+        await message.answer("Consult specialist сейчас недоступен по access policy.")
+        await state.set_state(None)
+        return
+    except SpecialistCaseError as exc:
+        await message.answer(f"Не удалось открыть specialist case: {exc}")
+        await state.set_state(None)
+        return
+
+    await state.set_state(None)
+    await message.answer(
+        "Specialist case создан\n"
+        f"id={opened.case.case_id}\n"
+        f"status={opened.case.case_status}\n"
+        f"snapshot=v{opened.snapshot.snapshot_version}"
+    )
+
+
+@router.callback_query(F.data == "labs:case:list")
+async def on_list_specialist_cases(callback: CallbackQuery, specialist_case_service: SpecialistCaseAssemblyService) -> None:
+    user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+    items = await specialist_case_service.list_user_cases(user_id=user_id, limit=10)
+    if not items:
+        await callback.message.answer("Specialist cases пока нет.")
+        await callback.answer()
+        return
+    lines = ["Your specialist cases:"]
+    for idx, item in enumerate(items, start=1):
+        lines.append(
+            f"{idx}. id={item.case_id} | status={item.case_status} | report_date={item.lab_report_date or '—'}"
+        )
+    await callback.message.answer("\n".join(lines), reply_markup=build_case_actions())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "labs:case:latest")
+async def on_latest_specialist_case(callback: CallbackQuery, specialist_case_service: SpecialistCaseAssemblyService) -> None:
+    user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+    item = await specialist_case_service.get_latest_user_case(user_id=user_id)
+    if item is None:
+        await callback.message.answer("Specialist case пока нет.")
+        await callback.answer()
+        return
+    await callback.message.answer(
+        "Latest specialist case:\n"
+        f"id={item.case_id}\n"
+        f"status={item.case_status}\n"
+        f"opened_at={item.opened_at.isoformat()}\n"
+        f"report_date={item.lab_report_date or '—'}"
+    )
+    await callback.answer()
+
+
 async def _ask_next_marker(message: Message, state: FSMContext, labs_service: LabsApplicationService) -> None:
     data = await state.get_data()
     queue = data.get("panel_queue", [])
@@ -343,6 +434,7 @@ def build_labs_root_actions() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="New report", callback_data="labs:new")],
             [InlineKeyboardButton(text="History", callback_data="labs:history")],
+            [InlineKeyboardButton(text="My specialist cases", callback_data="labs:case:list")],
         ]
     )
 
@@ -359,6 +451,7 @@ def build_report_entry_actions() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="Run AI triage", callback_data="labs:triage:run")],
             [InlineKeyboardButton(text="Latest triage", callback_data="labs:triage:latest")],
             [InlineKeyboardButton(text="Regenerate triage", callback_data="labs:triage:regenerate")],
+            [InlineKeyboardButton(text="Consult specialist", callback_data="labs:case:consult")],
             [InlineKeyboardButton(text="Finish report", callback_data="labs:finish")],
         ]
     )
@@ -370,6 +463,12 @@ def build_panel_marker_actions() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="Skip marker", callback_data="labs:panel:skip")],
             [InlineKeyboardButton(text="Finish panel", callback_data="labs:panel:finish")],
         ]
+    )
+
+
+def build_case_actions() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="Open latest case", callback_data="labs:case:latest")]]
     )
 
 
