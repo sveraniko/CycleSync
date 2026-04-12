@@ -13,6 +13,7 @@ from app.application.reminders import ReminderApplicationService
 from app.application.labs import LabsApplicationService, LabsTriageService
 from app.application.expert_cases import SpecialistCaseAssemblyService
 from app.application.search import SearchApplicationService
+from app.application.commerce import CheckoutService, FreePaymentProvider, PaymentProviderRegistry
 from app.bots.router import get_root_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
@@ -23,6 +24,7 @@ from app.infrastructure.reminders import SqlAlchemyReminderRepository
 from app.infrastructure.labs import SqlAlchemyLabsRepository, build_labs_triage_gateway
 from app.infrastructure.expert_cases import SqlAlchemySpecialistCasesRepository
 from app.infrastructure.search import SqlAlchemySearchRepository
+from app.infrastructure.commerce import SqlAlchemyCommerceRepository
 
 
 async def run_bot() -> None:
@@ -76,6 +78,17 @@ async def run_bot() -> None:
         repository=specialist_cases_repository,
         access_evaluator=access_service,
     )
+    declared_providers = tuple(code.strip() for code in settings.commerce_declared_providers.split(",") if code.strip())
+    provider_registry = PaymentProviderRegistry(
+        providers={"free": FreePaymentProvider()},
+        declared_providers=declared_providers,
+    )
+    commerce_repository = SqlAlchemyCommerceRepository(infra.db_session_factory)
+    checkout_service = CheckoutService(
+        repository=commerce_repository,
+        provider_registry=provider_registry,
+        commerce_mode=settings.commerce_mode,
+    )
 
     bot = Bot(token=settings.bot_token)
     dispatcher = Dispatcher()
@@ -92,6 +105,7 @@ async def run_bot() -> None:
             labs_triage_service=labs_triage_service,
             specialist_case_service=specialist_case_service,
             access_key_service=access_key_service,
+            checkout_service=checkout_service,
         )
     finally:
         await bot.session.close()

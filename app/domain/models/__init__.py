@@ -40,6 +40,7 @@ from app.domain.models.labs import (
 from app.domain.models.ai_triage import LabTriageFlag, LabTriageRun
 from app.domain.models.expert_cases import SpecialistCase, SpecialistCaseResponse, SpecialistCaseSnapshot
 from app.domain.models.access import AccessKey, AccessKeyEntitlement, AccessKeyRedemption, Entitlement, EntitlementGrant
+from app.domain.models.billing import Checkout, CheckoutItem, PaymentAttempt, PaymentProviderSession
 
 __all__ = [
     "OutboxEvent",
@@ -84,4 +85,8 @@ __all__ = [
     "AccessKey",
     "AccessKeyEntitlement",
     "AccessKeyRedemption",
+    "Checkout",
+    "CheckoutItem",
+    "PaymentAttempt",
+    "PaymentProviderSession",
 ]

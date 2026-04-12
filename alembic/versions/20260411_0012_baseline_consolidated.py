@@ -33,6 +33,7 @@ SCHEMAS: tuple[str, ...] = (
     "analytics_views",
     "ops",
     "access",
+    "billing",
 )
 
 
@@ -156,6 +157,96 @@ def upgrade() -> None:
         unique=False,
         schema="access",
     )
+    op.create_table(
+        "checkouts",
+        sa.Column("user_id", sa.String(length=128), nullable=False),
+        sa.Column("checkout_status", sa.String(length=24), nullable=False),
+        sa.Column("currency", sa.String(length=8), nullable=False),
+        sa.Column("subtotal_amount", sa.Integer(), nullable=False),
+        sa.Column("discount_amount", sa.Integer(), nullable=False),
+        sa.Column("total_amount", sa.Integer(), nullable=False),
+        sa.Column("settlement_mode", sa.String(length=24), nullable=False),
+        sa.Column("source_context", sa.String(length=64), nullable=True),
+        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.PrimaryKeyConstraint("id", name="pk_billing_checkouts"),
+        schema="billing",
+    )
+    op.create_index(
+        "ix_billing_checkouts_user_status",
+        "checkouts",
+        ["user_id", "checkout_status"],
+        unique=False,
+        schema="billing",
+    )
+    op.create_index(
+        "ix_billing_checkouts_created_at",
+        "checkouts",
+        ["created_at"],
+        unique=False,
+        schema="billing",
+    )
+    op.create_table(
+        "checkout_items",
+        sa.Column("checkout_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("item_code", sa.String(length=64), nullable=False),
+        sa.Column("title", sa.String(length=255), nullable=False),
+        sa.Column("qty", sa.Integer(), nullable=False),
+        sa.Column("unit_amount", sa.Integer(), nullable=False),
+        sa.Column("line_total", sa.Integer(), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["checkout_id"], ["billing.checkouts.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id", name="pk_billing_checkout_items"),
+        schema="billing",
+    )
+    op.create_table(
+        "payment_attempts",
+        sa.Column("checkout_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("provider_code", sa.String(length=64), nullable=False),
+        sa.Column("attempt_status", sa.String(length=24), nullable=False),
+        sa.Column("requested_amount", sa.Integer(), nullable=False),
+        sa.Column("provider_reference", sa.String(length=255), nullable=True),
+        sa.Column("error_code", sa.String(length=64), nullable=True),
+        sa.Column("error_message", sa.Text(), nullable=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["checkout_id"], ["billing.checkouts.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id", name="pk_billing_payment_attempts"),
+        schema="billing",
+    )
+    op.create_index(
+        "ix_billing_payment_attempts_checkout",
+        "payment_attempts",
+        ["checkout_id"],
+        unique=False,
+        schema="billing",
+    )
+    op.create_table(
+        "payment_provider_sessions",
+        sa.Column("checkout_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("provider_code", sa.String(length=64), nullable=False),
+        sa.Column("session_payload_json", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("session_status", sa.String(length=24), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["checkout_id"], ["billing.checkouts.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id", name="pk_billing_payment_provider_sessions"),
+        schema="billing",
+    )
+    op.create_index(
+        "ix_billing_provider_sessions_checkout",
+        "payment_provider_sessions",
+        ["checkout_id"],
+        unique=False,
+        schema="billing",
+    )
+
     op.execute(
         sa.text(
             """
