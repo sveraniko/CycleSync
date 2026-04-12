@@ -84,6 +84,41 @@ async def _load_reminder_foundation_metrics(session_factory) -> dict[str, int]:
         }
 
 
+
+
+async def _load_commerce_diagnostics(session_factory, settings) -> dict[str, object]:
+    declared = [item.strip() for item in settings.commerce_declared_providers.split(",") if item.strip()]
+    provider_summary = {
+        code: {"enabled": code == "free", "kind": "internal" if code == "free" else "stub"}
+        for code in declared
+    }
+    try:
+        async with session_factory() as session:
+            pending = await session.scalar(
+                text("SELECT count(*) FROM billing.checkouts WHERE checkout_status IN ('created', 'awaiting_payment')")
+            )
+            completed = await session.scalar(
+                text("SELECT count(*) FROM billing.checkouts WHERE checkout_status = 'completed'")
+            )
+            failed = await session.scalar(
+                text("SELECT count(*) FROM billing.checkouts WHERE checkout_status = 'failed'")
+            )
+            free_settlements = await session.scalar(
+                text("SELECT count(*) FROM billing.payment_attempts WHERE provider_code='free' AND attempt_status='succeeded'")
+            )
+    except Exception:
+        pending = completed = failed = free_settlements = 0
+
+    return {
+        "mode": settings.commerce_mode,
+        "provider_registry": provider_summary,
+        "pending_checkouts": int(pending or 0),
+        "completed_checkouts": int(completed or 0),
+        "failed_checkouts": int(failed or 0),
+        "free_settlements": int(free_settlements or 0),
+    }
+
+
 @router.get("/live")
 async def live() -> dict[str, str]:
     return {"status": "ok"}
@@ -121,6 +156,7 @@ async def diagnostics(request: Request) -> dict[str, object]:
     reminder_metrics = await _load_reminder_foundation_metrics(
         request.app.state.infra.db_session_factory
     )
+    commerce_metrics = await _load_commerce_diagnostics(request.app.state.infra.db_session_factory, settings)
     return {
         "app_name": settings.app_name,
         "env": settings.app_env,
@@ -133,6 +169,7 @@ async def diagnostics(request: Request) -> dict[str, object]:
         },
         "reminders_foundation": reminder_metrics,
         "labs_triage": _labs_triage_diagnostics(settings),
+        "commerce": commerce_metrics,
         "catalog_source": {
             "configured": catalog_source_configured,
             "source": "google_sheets",

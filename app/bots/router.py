@@ -7,6 +7,7 @@ from app.bots.handlers.start import router as start_router
 from app.bots.handlers.reminder_actions import router as reminder_actions_router
 from app.bots.handlers.labs import router as labs_router
 from app.bots.handlers.access_keys import router as access_keys_router
+from app.bots.handlers.checkout import router as checkout_router
 
 
 def get_root_router() -> Router:
@@ -18,4 +19,5 @@ def get_root_router() -> Router:
     root_router.include_router(reminder_actions_router)
     root_router.include_router(labs_router)
     root_router.include_router(access_keys_router)
+    root_router.include_router(checkout_router)
     return root_router

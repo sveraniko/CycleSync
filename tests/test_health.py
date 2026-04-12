@@ -25,3 +25,6 @@ def test_diagnostics_shape() -> None:
     assert "provider_configured" in payload["labs_triage"]
     assert "catalog_source" in payload
     assert "reminders_foundation" in payload
+    assert "commerce" in payload
+    assert "mode" in payload["commerce"]
+    assert "provider_registry" in payload["commerce"]

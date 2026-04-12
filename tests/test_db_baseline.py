@@ -6,6 +6,10 @@ from app.domain.models import (
     AccessKey,
     AccessKeyEntitlement,
     AccessKeyRedemption,
+    Checkout,
+    CheckoutItem,
+    PaymentAttempt,
+    PaymentProviderSession,
     LabTriageFlag,
     LabTriageRun,
     Brand,
@@ -89,3 +93,10 @@ def test_access_models_bound_to_access_schema() -> None:
     assert AccessKey.__table__.schema == "access"
     assert AccessKeyEntitlement.__table__.schema == "access"
     assert AccessKeyRedemption.__table__.schema == "access"
+
+
+def test_billing_models_bound_to_billing_schema() -> None:
+    assert Checkout.__table__.schema == "billing"
+    assert CheckoutItem.__table__.schema == "billing"
+    assert PaymentAttempt.__table__.schema == "billing"
+    assert PaymentProviderSession.__table__.schema == "billing"

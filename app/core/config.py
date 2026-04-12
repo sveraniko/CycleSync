@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     labs_ai_prompt_version: str = Field(default="w6_pr3_v1")
     expert_case_allow_dev_access: bool = Field(default=True)
 
+    commerce_mode: str = Field(default="disabled")
+    commerce_default_currency: str = Field(default="USD")
+    commerce_declared_providers: str = Field(default="manual_card,liqpay,fondy,novapay,mono,coinbase_commerce,nowpayments,bitpay,paypal,stars,free")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
