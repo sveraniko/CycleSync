@@ -3,6 +3,11 @@ from decimal import Decimal
 from uuid import UUID
 
 from app.application.labs.schemas import (
+    LabTriageFlagCreate,
+    LabTriageFlagView,
+    LabTriageResultView,
+    LabTriageRunView,
+    ProtocolTriageContextView,
     LabMarkerView,
     LabPanelView,
     LabReportDetailsView,
@@ -56,6 +61,37 @@ class LabsRepository:
         raise NotImplementedError
 
     async def get_lab_report_details(self, report_id: UUID, user_id: str) -> LabReportDetailsView | None:
+        raise NotImplementedError
+
+    async def get_active_protocol_context(
+        self, *, protocol_id: UUID, user_id: str
+    ) -> ProtocolTriageContextView | None:
+        raise NotImplementedError
+
+    async def create_lab_triage_run(
+        self,
+        *,
+        lab_report_id: UUID,
+        user_id: str,
+        protocol_id: UUID | None,
+        triage_status: str,
+        summary_text: str | None,
+        urgent_flag: bool,
+        model_name: str,
+        prompt_version: str,
+        raw_result_json: dict | None,
+        completed_at: datetime | None,
+    ) -> LabTriageRunView:
+        raise NotImplementedError
+
+    async def create_lab_triage_flags(
+        self, *, triage_run_id: UUID, flags: list[LabTriageFlagCreate]
+    ) -> list[LabTriageFlagView]:
+        raise NotImplementedError
+
+    async def get_latest_triage_result(
+        self, *, report_id: UUID, user_id: str
+    ) -> LabTriageResultView | None:
         raise NotImplementedError
 
     async def enqueue_event(

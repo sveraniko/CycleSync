@@ -1175,6 +1175,49 @@ def upgrade() -> None:
     )
     op.create_index("ix_labs_lab_report_entries_report_entered", "lab_report_entries", ["lab_report_id", "entered_at"], unique=False, schema="labs")
 
+    # from 20260412_0014_wave6_pr2_labs_ai_triage.py
+    op.create_table(
+        "lab_triage_runs",
+        sa.Column("lab_report_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("user_id", sa.String(length=64), nullable=False),
+        sa.Column("protocol_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("triage_status", sa.String(length=32), nullable=False),
+        sa.Column("summary_text", sa.Text(), nullable=True),
+        sa.Column("urgent_flag", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column("model_name", sa.String(length=128), nullable=False),
+        sa.Column("prompt_version", sa.String(length=64), nullable=False),
+        sa.Column("raw_result_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["lab_report_id"], ["labs.lab_reports.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["protocol_id"], ["protocols.protocols.id"], ondelete="SET NULL"),
+        sa.PrimaryKeyConstraint("id", name="pk_ai_triage_lab_triage_runs"),
+        schema="ai_triage",
+    )
+    op.create_index("ix_ai_triage_runs_report_created", "lab_triage_runs", ["lab_report_id", "created_at"], unique=False, schema="ai_triage")
+    op.create_index("ix_ai_triage_runs_user_created", "lab_triage_runs", ["user_id", "created_at"], unique=False, schema="ai_triage")
+
+    op.create_table(
+        "lab_triage_flags",
+        sa.Column("triage_run_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("marker_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("severity", sa.String(length=16), nullable=False),
+        sa.Column("flag_code", sa.String(length=64), nullable=False),
+        sa.Column("title", sa.String(length=128), nullable=False),
+        sa.Column("explanation", sa.Text(), nullable=False),
+        sa.Column("suggested_followup", sa.Text(), nullable=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["marker_id"], ["labs.markers.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["triage_run_id"], ["ai_triage.lab_triage_runs.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id", name="pk_ai_triage_lab_triage_flags"),
+        schema="ai_triage",
+    )
+    op.create_index("ix_ai_triage_flags_run_severity", "lab_triage_flags", ["triage_run_id", "severity"], unique=False, schema="ai_triage")
+
     op.execute(sa.text("""
         INSERT INTO labs.markers (id, marker_code, display_name, category_code, default_unit, accepted_units, notes, is_active)
         VALUES

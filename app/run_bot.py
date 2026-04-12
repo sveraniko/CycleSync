@@ -9,7 +9,7 @@ from app.application.protocols import (
     PulseCalculationEngine,
 )
 from app.application.reminders import ReminderApplicationService
-from app.application.labs import LabsApplicationService
+from app.application.labs import LabsApplicationService, LabsTriageService
 from app.application.search import SearchApplicationService
 from app.bots.router import get_root_router
 from app.core.config import get_settings
@@ -17,7 +17,7 @@ from app.core.logging import configure_logging
 from app.infrastructure.bootstrap import close_infrastructure, init_infrastructure
 from app.infrastructure.protocols import SqlAlchemyDraftRepository
 from app.infrastructure.reminders import SqlAlchemyReminderRepository
-from app.infrastructure.labs import SqlAlchemyLabsRepository
+from app.infrastructure.labs import HeuristicLabsTriageGateway, SqlAlchemyLabsRepository
 from app.infrastructure.search import SqlAlchemySearchRepository
 
 
@@ -43,6 +43,7 @@ async def run_bot() -> None:
     draft_repository = SqlAlchemyDraftRepository(infra.db_session_factory)
     reminder_repository = SqlAlchemyReminderRepository(infra.db_session_factory)
     labs_repository = SqlAlchemyLabsRepository(infra.db_session_factory)
+    labs_triage_gateway = HeuristicLabsTriageGateway()
     readiness_service = ProtocolDraftReadinessService(repository=draft_repository)
     pulse_engine = PulseCalculationEngine()
     draft_service = DraftApplicationService(
@@ -56,6 +57,7 @@ async def run_bot() -> None:
         default_timezone=settings.timezone_default,
     )
     labs_service = LabsApplicationService(repository=labs_repository)
+    labs_triage_service = LabsTriageService(repository=labs_repository, gateway=labs_triage_gateway)
 
     bot = Bot(token=settings.bot_token)
     dispatcher = Dispatcher()
@@ -69,6 +71,7 @@ async def run_bot() -> None:
             draft_service=draft_service,
             reminder_service=reminder_service,
             labs_service=labs_service,
+            labs_triage_service=labs_triage_service,
         )
     finally:
         await bot.session.close()

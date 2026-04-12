@@ -1,6 +1,8 @@
 from app.domain.db import NAMING_CONVENTION
 from app.domain.db.base import Base
 from app.domain.models import (
+    LabTriageFlag,
+    LabTriageRun,
     Brand,
     JobRun,
     OutboxEvent,
@@ -60,3 +62,8 @@ def test_labs_models_bound_to_labs_schema() -> None:
     assert LabPanelMarker.__table__.schema == "labs"
     assert LabReport.__table__.schema == "labs"
     assert LabReportEntry.__table__.schema == "labs"
+
+
+def test_ai_triage_models_bound_to_ai_triage_schema() -> None:
+    assert LabTriageRun.__table__.schema == "ai_triage"
+    assert LabTriageFlag.__table__.schema == "ai_triage"
