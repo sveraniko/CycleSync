@@ -10,6 +10,7 @@ from app.application.protocols import (
 )
 from app.application.reminders import ReminderApplicationService
 from app.application.labs import LabsApplicationService, LabsTriageService
+from app.application.expert_cases import SpecialistCaseAssemblyService
 from app.application.search import SearchApplicationService
 from app.bots.router import get_root_router
 from app.core.config import get_settings
@@ -18,6 +19,7 @@ from app.infrastructure.bootstrap import close_infrastructure, init_infrastructu
 from app.infrastructure.protocols import SqlAlchemyDraftRepository
 from app.infrastructure.reminders import SqlAlchemyReminderRepository
 from app.infrastructure.labs import SqlAlchemyLabsRepository, build_labs_triage_gateway
+from app.infrastructure.expert_cases import SqlAlchemySpecialistCasesRepository
 from app.infrastructure.search import SqlAlchemySearchRepository
 
 
@@ -43,6 +45,7 @@ async def run_bot() -> None:
     draft_repository = SqlAlchemyDraftRepository(infra.db_session_factory)
     reminder_repository = SqlAlchemyReminderRepository(infra.db_session_factory)
     labs_repository = SqlAlchemyLabsRepository(infra.db_session_factory)
+    specialist_cases_repository = SqlAlchemySpecialistCasesRepository(infra.db_session_factory)
     labs_triage_gateway = build_labs_triage_gateway(settings)
     logger.info("labs_triage_gateway_configured", **labs_triage_gateway.diagnostics())
     readiness_service = ProtocolDraftReadinessService(repository=draft_repository)
@@ -59,6 +62,7 @@ async def run_bot() -> None:
     )
     labs_service = LabsApplicationService(repository=labs_repository)
     labs_triage_service = LabsTriageService(repository=labs_repository, gateway=labs_triage_gateway)
+    specialist_case_service = SpecialistCaseAssemblyService(repository=specialist_cases_repository)
 
     bot = Bot(token=settings.bot_token)
     dispatcher = Dispatcher()
@@ -73,6 +77,7 @@ async def run_bot() -> None:
             reminder_service=reminder_service,
             labs_service=labs_service,
             labs_triage_service=labs_triage_service,
+            specialist_case_service=specialist_case_service,
         )
     finally:
         await bot.session.close()

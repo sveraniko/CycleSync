@@ -2,6 +2,7 @@ from app.bots.handlers.labs import (
     build_labs_root_actions,
     build_panel_marker_actions,
     build_report_entry_actions,
+    build_case_actions,
 )
 
 
@@ -27,3 +28,15 @@ def test_report_entry_actions_contains_required_panels() -> None:
     assert "labs:triage:run" in callbacks
     assert "labs:triage:latest" in callbacks
     assert "labs:triage:regenerate" in callbacks
+
+
+def test_report_entry_actions_contains_consult_specialist() -> None:
+    keyboard = build_report_entry_actions()
+    callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+    assert "labs:case:consult" in callbacks
+
+
+def test_case_actions_contains_latest_case() -> None:
+    keyboard = build_case_actions()
+    callbacks = [b.callback_data for row in keyboard.inline_keyboard for b in row]
+    assert "labs:case:latest" in callbacks
