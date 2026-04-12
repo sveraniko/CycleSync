@@ -409,6 +409,30 @@ def test_idempotent_callback_behavior() -> None:
     assert repo.adherence_events == []
 
 
+def test_reminder_dispatch_replay_idempotency_on_completed_state() -> None:
+    repo = FakeReminderRepo()
+    repo.action_status = "completed"
+    service = ReminderApplicationService(repo, access_evaluator=AllowAccess())
+
+    import asyncio
+
+    first = asyncio.run(
+        service.handle_reminder_action(
+            reminder_id=repo.runtime.reminder_id,
+            action_code="done",
+        )
+    )
+    second = asyncio.run(
+        service.handle_reminder_action(
+            reminder_id=repo.runtime.reminder_id,
+            action_code="done",
+        )
+    )
+    assert first.idempotent is True
+    assert second.idempotent is True
+    assert repo.adherence_events == []
+
+
 def test_materialization_uses_protocol_anchor_when_scheduled_day_missing() -> None:
     repo = FakeReminderRepo()
     repo.entries[0] = PulsePlanEntryView(

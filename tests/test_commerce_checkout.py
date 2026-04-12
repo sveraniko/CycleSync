@@ -374,6 +374,17 @@ def test_fulfillment_is_idempotent() -> None:
     assert len(access_repo.grants) == first
 
 
+def test_fulfillment_replay_idempotency_no_double_grants() -> None:
+    repo = FakeCommerceRepository()
+    service, access_repo = _service(repo)
+    checkout = _create_checkout(repo, service)
+    asyncio.run(service.settle_free_checkout(checkout_id=checkout.checkout.checkout_id, reason_code="dev_mode"))
+    first_grant_refs = {(g.user_id, g.entitlement_code, g.source_ref) for g in access_repo.grants}
+    asyncio.run(service.fulfillment_service.fulfill_checkout(checkout_id=checkout.checkout.checkout_id))
+    second_grant_refs = {(g.user_id, g.entitlement_code, g.source_ref) for g in access_repo.grants}
+    assert first_grant_refs == second_grant_refs
+
+
 def test_free_settlement_and_gift_settlement_use_same_fulfillment_path() -> None:
     repo = FakeCommerceRepository()
     service, _ = _service(repo)
