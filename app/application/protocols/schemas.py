@@ -212,3 +212,36 @@ class ActiveProtocolView:
     protocol_input_mode: str | None
     summary_metrics: dict | None
     warning_flags: list[str]
+
+
+@dataclass(slots=True)
+class CourseEstimateLine:
+    product_id: UUID
+    product_name: str
+    required_active_mg_total: Decimal
+    required_volume_ml_total: Decimal | None
+    required_unit_count_total: Decimal | None
+    package_kind: str | None
+    package_count_required: Decimal | None
+    package_count_required_rounded: int | None
+    available_active_mg: Decimal | None
+    available_package_count: Decimal | None
+    inventory_sufficiency_status: str
+    shortfall_active_mg: Decimal | None
+    shortfall_package_count: Decimal | None
+    estimation_status: str
+    estimation_warnings: list[str]
+
+
+@dataclass(slots=True)
+class CourseEstimate:
+    source_type: str
+    protocol_id: UUID | None
+    preview_id: UUID | None
+    draft_id: UUID | None
+    protocol_input_mode: str | None
+    duration_weeks: int | None
+    total_products_count: int
+    has_inventory_comparison: bool
+    generated_at: datetime
+    lines: list[CourseEstimateLine]

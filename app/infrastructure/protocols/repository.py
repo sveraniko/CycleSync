@@ -6,7 +6,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from app.application.protocols.repository import DraftCalculationProductInfo, DraftProductInfo
+from app.application.protocols.repository import (
+    CourseEstimateSourceData,
+    DraftCalculationProductInfo,
+    DraftProductInfo,
+    EstimatorProductMetadata,
+)
 from app.application.protocols.schemas import (
     ActiveProtocolView,
     AddProductToDraftResult,
@@ -638,6 +643,87 @@ class SqlAlchemyDraftRepository:
             await session.commit()
             return protocol.id
 
+    async def get_course_estimate_source_from_preview(self, preview_id: UUID) -> CourseEstimateSourceData | None:
+        async with self.session_factory() as session:
+            preview = await session.scalar(select(PulsePlanPreview).where(PulsePlanPreview.id == preview_id))
+            if preview is None:
+                return None
+            entries_rows = await session.scalars(
+                select(PulsePlanPreviewEntry)
+                .where(PulsePlanPreviewEntry.preview_id == preview_id)
+                .order_by(PulsePlanPreviewEntry.day_offset.asc(), PulsePlanPreviewEntry.sequence_no.asc())
+            )
+            entries = [
+                PulsePlanEntry(
+                    day_offset=row.day_offset,
+                    scheduled_day=row.scheduled_day,
+                    product_id=row.product_id,
+                    ingredient_context=row.ingredient_context,
+                    volume_ml=Decimal(str(row.volume_ml)),
+                    computed_mg=Decimal(str(row.computed_mg)),
+                    injection_event_key=row.injection_event_key,
+                    sequence_no=row.sequence_no,
+                )
+                for row in entries_rows
+            ]
+            metadata = await self._load_estimator_product_metadata(
+                session, {entry.product_id for entry in entries}
+            )
+            constraints = await self.list_inventory_constraints(preview.draft_id, protocol_input_mode="inventory_constrained")
+            return CourseEstimateSourceData(
+                source_type="preview",
+                preview_id=preview.id,
+                protocol_id=None,
+                draft_id=preview.draft_id,
+                protocol_input_mode=preview.protocol_input_mode,
+                duration_weeks=self._resolve_duration_weeks(preview.settings_snapshot_json),
+                entries=entries,
+                inventory_constraints=constraints,
+                product_metadata=metadata,
+            )
+
+    async def get_course_estimate_source_from_active_protocol(self, protocol_id: UUID) -> CourseEstimateSourceData | None:
+        async with self.session_factory() as session:
+            protocol = await session.scalar(select(Protocol).where(Protocol.id == protocol_id, Protocol.status == "active"))
+            if protocol is None:
+                return None
+            pulse_plan = await session.scalar(select(PulsePlan).where(PulsePlan.protocol_id == protocol_id))
+            if pulse_plan is None:
+                return None
+            entry_rows = await session.scalars(
+                select(PulsePlanEntryRecord)
+                .where(PulsePlanEntryRecord.pulse_plan_id == pulse_plan.id)
+                .order_by(PulsePlanEntryRecord.day_offset.asc(), PulsePlanEntryRecord.sequence_no.asc())
+            )
+            entries = [
+                PulsePlanEntry(
+                    day_offset=row.day_offset,
+                    scheduled_day=row.scheduled_day,
+                    product_id=row.product_id,
+                    ingredient_context=row.ingredient_context,
+                    volume_ml=Decimal(str(row.volume_ml)),
+                    computed_mg=Decimal(str(row.computed_mg)),
+                    injection_event_key=row.injection_event_key,
+                    sequence_no=row.sequence_no,
+                )
+                for row in entry_rows
+            ]
+            metadata = await self._load_estimator_product_metadata(
+                session, {entry.product_id for entry in entries}
+            )
+            constraints = await self.list_inventory_constraints(protocol.draft_id, protocol_input_mode="inventory_constrained")
+            return CourseEstimateSourceData(
+                source_type="active_protocol",
+                preview_id=pulse_plan.source_preview_id,
+                protocol_id=protocol.id,
+                draft_id=protocol.draft_id,
+                protocol_input_mode=protocol.protocol_input_mode,
+                duration_weeks=self._resolve_duration_weeks(protocol.settings_snapshot_json),
+                entries=entries,
+                inventory_constraints=constraints,
+                product_metadata=metadata,
+            )
+
     async def _fetch_active_draft(self, session, user_id: str) -> ProtocolDraft | None:
         return await session.scalar(
             select(ProtocolDraft)
@@ -724,3 +810,42 @@ class SqlAlchemyDraftRepository:
                     preview.lifecycle_status = "superseded"
                     preview.superseded_at = datetime.now(timezone.utc).date()
                     session.add(preview)
+
+    async def _load_estimator_product_metadata(
+        self, session, product_ids: set[UUID]
+    ) -> dict[UUID, EstimatorProductMetadata]:
+        if not product_ids:
+            return {}
+        rows = await session.execute(
+            select(
+                CompoundProduct.id,
+                CompoundProduct.display_name,
+                CompoundProduct.package_kind,
+                CompoundProduct.units_per_package,
+                CompoundProduct.volume_per_package_ml,
+                CompoundProduct.unit_strength_mg,
+            ).where(CompoundProduct.id.in_(product_ids))
+        )
+        return {
+            row[0]: EstimatorProductMetadata(
+                product_id=row[0],
+                product_name=row[1],
+                package_kind=row[2],
+                units_per_package=row[3],
+                volume_per_package_ml=row[4],
+                unit_strength_mg=row[5],
+            )
+            for row in rows
+        }
+
+    @staticmethod
+    def _resolve_duration_weeks(snapshot: dict | None) -> int | None:
+        if not snapshot:
+            return None
+        raw = snapshot.get("duration_weeks")
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError):  # pragma: no cover
+            return None
