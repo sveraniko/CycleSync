@@ -1229,7 +1229,10 @@ def upgrade() -> None:
         sa.Column("opened_reason_code", sa.String(length=64), nullable=False),
         sa.Column("opened_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("answered_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("latest_snapshot_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("latest_response_id", postgresql.UUID(as_uuid=True), nullable=True),
+        sa.Column("assigned_specialist_id", sa.String(length=64), nullable=True),
         sa.Column("notes_from_user", sa.Text(), nullable=True),
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -1258,11 +1261,43 @@ def upgrade() -> None:
         schema="expert_cases",
     )
     op.create_index("ix_expert_cases_case_snapshots_case_version", "specialist_case_snapshots", ["case_id", "snapshot_version"], unique=False, schema="expert_cases")
+
+    op.create_table(
+        "specialist_case_responses",
+        sa.Column("case_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("responded_by", sa.String(length=64), nullable=False),
+        sa.Column("response_text", sa.Text(), nullable=False),
+        sa.Column("response_summary", sa.Text(), nullable=True),
+        sa.Column("is_final", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["case_id"], ["expert_cases.specialist_cases.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id", name="pk_expert_cases_specialist_case_responses"),
+        schema="expert_cases",
+    )
+    op.create_index(
+        "ix_expert_cases_case_responses_case_created",
+        "specialist_case_responses",
+        ["case_id", "created_at"],
+        unique=False,
+        schema="expert_cases",
+    )
     op.create_foreign_key(
         "fk_expert_cases_specialist_cases_latest_snapshot",
         source_table="specialist_cases",
         referent_table="specialist_case_snapshots",
         local_cols=["latest_snapshot_id"],
+        remote_cols=["id"],
+        source_schema="expert_cases",
+        referent_schema="expert_cases",
+        ondelete="SET NULL",
+    )
+    op.create_foreign_key(
+        "fk_expert_cases_specialist_cases_latest_response",
+        source_table="specialist_cases",
+        referent_table="specialist_case_responses",
+        local_cols=["latest_response_id"],
         remote_cols=["id"],
         source_schema="expert_cases",
         referent_schema="expert_cases",

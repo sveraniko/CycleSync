@@ -12,14 +12,16 @@ from app.application.expert_cases.schemas import (
     ProtocolCaseContextView,
     PulsePlanCaseContextView,
     SpecialistCaseAccessDecision,
+    SpecialistCaseDetailView,
     SpecialistCaseListItemView,
+    SpecialistCaseResponseView,
     SpecialistCaseSnapshotView,
     SpecialistCaseView,
     TriageFlagCaseView,
     TriageRunCaseView,
 )
 from app.domain.models.ai_triage import LabTriageFlag, LabTriageRun
-from app.domain.models.expert_cases import SpecialistCase, SpecialistCaseSnapshot
+from app.domain.models.expert_cases import SpecialistCase, SpecialistCaseResponse, SpecialistCaseSnapshot
 from app.domain.models.labs import LabMarker, LabReport, LabReportEntry
 from app.domain.models.ops import OutboxEvent
 from app.domain.models.protocols import Protocol
@@ -28,8 +30,9 @@ from app.domain.models.reminders import ProtocolAdherenceSummary
 
 
 class SqlAlchemySpecialistCasesRepository(SpecialistCasesRepository):
-    def __init__(self, session_factory: async_sessionmaker):
+    def __init__(self, session_factory: async_sessionmaker, *, allow_all_access: bool = True):
         self.session_factory = session_factory
+        self.allow_all_access = allow_all_access
 
     async def get_lab_report_case_view(self, *, report_id: UUID, user_id: str) -> LabReportCaseView | None:
         async with self.session_factory() as session:
@@ -158,8 +161,10 @@ class SqlAlchemySpecialistCasesRepository(SpecialistCasesRepository):
 
     async def check_case_access(self, *, user_id: str) -> SpecialistCaseAccessDecision:
         _ = user_id
-        # TODO(W7/PR2): replace baseline allow-all with entitlement check for `expert_case_access`.
-        return SpecialistCaseAccessDecision(allowed=True, reason_code="allow_baseline")
+        if self.allow_all_access:
+            return SpecialistCaseAccessDecision(allowed=True, reason_code="allow_dev_mode")
+        # TODO(W7/PR2): wire real entitlement table lookup for `expert_case_access`.
+        return SpecialistCaseAccessDecision(allowed=False, reason_code="missing_expert_case_access_entitlement")
 
     async def create_case(self, *, user_id: str, protocol_id: UUID | None, lab_report_id: UUID | None, triage_run_id: UUID | None, case_status: str, opened_reason_code: str, opened_at_iso: str, notes_from_user: str | None) -> SpecialistCaseView:
         async with self.session_factory() as session:
@@ -212,8 +217,14 @@ class SqlAlchemySpecialistCasesRepository(SpecialistCasesRepository):
     async def list_user_cases(self, *, user_id: str, limit: int = 20) -> list[SpecialistCaseListItemView]:
         async with self.session_factory() as session:
             rows = await session.execute(
-                select(SpecialistCase, LabReport.report_date)
+                select(
+                    SpecialistCase,
+                    LabReport.report_date,
+                    SpecialistCaseResponse.response_summary,
+                    SpecialistCaseResponse.created_at,
+                )
                 .join(LabReport, LabReport.id == SpecialistCase.lab_report_id, isouter=True)
+                .join(SpecialistCaseResponse, SpecialistCaseResponse.id == SpecialistCase.latest_response_id, isouter=True)
                 .where(SpecialistCase.user_id == user_id)
                 .order_by(SpecialistCase.opened_at.desc())
                 .limit(limit)
@@ -227,13 +238,124 @@ class SqlAlchemySpecialistCasesRepository(SpecialistCasesRepository):
                     lab_report_date=report_date,
                     triage_run_id=case.triage_run_id,
                     latest_snapshot_id=case.latest_snapshot_id,
+                    latest_response_summary=response_summary,
+                    latest_response_created_at=response_created_at,
                 )
-                for case, report_date in rows.all()
+                for case, report_date, response_summary, response_created_at in rows.all()
             ]
 
     async def get_latest_user_case(self, *, user_id: str) -> SpecialistCaseListItemView | None:
         items = await self.list_user_cases(user_id=user_id, limit=1)
         return items[0] if items else None
+
+    async def get_user_case_detail(self, *, user_id: str, case_id: UUID) -> SpecialistCaseDetailView | None:
+        detail = await self.get_case_detail(case_id=case_id)
+        if detail is None or detail.case.user_id != user_id:
+            return None
+        return detail
+
+    async def list_awaiting_cases(self, *, limit: int = 20) -> list[SpecialistCaseListItemView]:
+        async with self.session_factory() as session:
+            rows = await session.execute(
+                select(
+                    SpecialistCase,
+                    LabReport.report_date,
+                    SpecialistCaseResponse.response_summary,
+                    SpecialistCaseResponse.created_at,
+                )
+                .join(LabReport, LabReport.id == SpecialistCase.lab_report_id, isouter=True)
+                .join(SpecialistCaseResponse, SpecialistCaseResponse.id == SpecialistCase.latest_response_id, isouter=True)
+                .where(SpecialistCase.case_status == "awaiting_specialist")
+                .order_by(SpecialistCase.opened_at.asc())
+                .limit(limit)
+            )
+            return [
+                SpecialistCaseListItemView(
+                    case_id=case.id,
+                    case_status=case.case_status,
+                    opened_at=case.opened_at,
+                    lab_report_id=case.lab_report_id,
+                    lab_report_date=report_date,
+                    triage_run_id=case.triage_run_id,
+                    latest_snapshot_id=case.latest_snapshot_id,
+                    latest_response_summary=response_summary,
+                    latest_response_created_at=response_created_at,
+                )
+                for case, report_date, response_summary, response_created_at in rows.all()
+            ]
+
+    async def get_case_detail(self, *, case_id: UUID) -> SpecialistCaseDetailView | None:
+        async with self.session_factory() as session:
+            case = await session.scalar(select(SpecialistCase).where(SpecialistCase.id == case_id))
+            if case is None:
+                return None
+            latest_response = None
+            if case.latest_response_id is not None:
+                response = await session.scalar(
+                    select(SpecialistCaseResponse).where(SpecialistCaseResponse.id == case.latest_response_id)
+                )
+                if response is not None:
+                    latest_response = self._to_response_view(response)
+            return SpecialistCaseDetailView(case=self._to_case_view(case), latest_response=latest_response)
+
+    async def assign_case_to_specialist(self, *, case_id: UUID, specialist_id: str, case_status: str) -> SpecialistCaseView:
+        async with self.session_factory() as session:
+            case = await session.scalar(select(SpecialistCase).where(SpecialistCase.id == case_id))
+            if case is None:
+                raise ValueError("specialist_case_not_found")
+            case.assigned_specialist_id = specialist_id
+            case.case_status = case_status
+            session.add(case)
+            await session.commit()
+            await session.refresh(case)
+            return self._to_case_view(case)
+
+    async def create_case_response(
+        self,
+        *,
+        case_id: UUID,
+        responded_by: str,
+        response_text: str,
+        response_summary: str | None,
+        is_final: bool,
+    ) -> SpecialistCaseResponseView:
+        async with self.session_factory() as session:
+            row = SpecialistCaseResponse(
+                case_id=case_id,
+                responded_by=responded_by,
+                response_text=response_text,
+                response_summary=response_summary,
+                is_final=is_final,
+            )
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            return self._to_response_view(row)
+
+    async def set_case_answered(self, *, case_id: UUID, latest_response_id: UUID, answered_at_iso: str) -> SpecialistCaseView:
+        async with self.session_factory() as session:
+            case = await session.scalar(select(SpecialistCase).where(SpecialistCase.id == case_id))
+            if case is None:
+                raise ValueError("specialist_case_not_found")
+            case.case_status = "answered"
+            case.latest_response_id = latest_response_id
+            case.answered_at = datetime.fromisoformat(answered_at_iso)
+            session.add(case)
+            await session.commit()
+            await session.refresh(case)
+            return self._to_case_view(case)
+
+    async def set_case_closed(self, *, case_id: UUID, closed_at_iso: str) -> SpecialistCaseView:
+        async with self.session_factory() as session:
+            case = await session.scalar(select(SpecialistCase).where(SpecialistCase.id == case_id))
+            if case is None:
+                raise ValueError("specialist_case_not_found")
+            case.case_status = "closed"
+            case.closed_at = datetime.fromisoformat(closed_at_iso)
+            session.add(case)
+            await session.commit()
+            await session.refresh(case)
+            return self._to_case_view(case)
 
     async def enqueue_event(self, *, event_type: str, aggregate_type: str, aggregate_id: UUID, payload: dict) -> None:
         async with self.session_factory() as session:
@@ -287,7 +409,10 @@ class SqlAlchemySpecialistCasesRepository(SpecialistCasesRepository):
             opened_reason_code=row.opened_reason_code,
             opened_at=row.opened_at,
             closed_at=row.closed_at,
+            answered_at=row.answered_at,
             latest_snapshot_id=row.latest_snapshot_id,
+            latest_response_id=row.latest_response_id,
+            assigned_specialist_id=row.assigned_specialist_id,
             notes_from_user=row.notes_from_user,
         )
 
@@ -298,5 +423,17 @@ class SqlAlchemySpecialistCasesRepository(SpecialistCasesRepository):
             case_id=row.case_id,
             snapshot_version=row.snapshot_version,
             payload_json=row.payload_json,
+            created_at=row.created_at,
+        )
+
+    @staticmethod
+    def _to_response_view(row: SpecialistCaseResponse) -> SpecialistCaseResponseView:
+        return SpecialistCaseResponseView(
+            response_id=row.id,
+            case_id=row.case_id,
+            responded_by=row.responded_by,
+            response_text=row.response_text,
+            response_summary=row.response_summary,
+            is_final=row.is_final,
             created_at=row.created_at,
         )

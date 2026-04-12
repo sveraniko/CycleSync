@@ -36,7 +36,10 @@ class SpecialistCaseView:
     opened_reason_code: str
     opened_at: datetime
     closed_at: datetime | None
+    answered_at: datetime | None
     latest_snapshot_id: UUID | None
+    latest_response_id: UUID | None
+    assigned_specialist_id: str | None
     notes_from_user: str | None
 
 
@@ -146,6 +149,25 @@ class SpecialistCaseListItemView:
     lab_report_date: date | None
     triage_run_id: UUID | None
     latest_snapshot_id: UUID | None
+    latest_response_summary: str | None
+    latest_response_created_at: datetime | None
+
+
+@dataclass(slots=True)
+class SpecialistCaseResponseView:
+    response_id: UUID
+    case_id: UUID
+    responded_by: str
+    response_text: str
+    response_summary: str | None
+    is_final: bool
+    created_at: datetime
+
+
+@dataclass(slots=True)
+class SpecialistCaseDetailView:
+    case: SpecialistCaseView
+    latest_response: SpecialistCaseResponseView | None
 
 
 @dataclass(slots=True)

@@ -28,6 +28,7 @@ class LabsEntryState(StatesGroup):
     reference_min = State()
     reference_max = State()
     specialist_note = State()
+    specialist_answer = State()
 
 
 @router.message(F.text.func(lambda value: (value or "").strip().lower() == "labs"))
@@ -387,13 +388,135 @@ async def on_latest_specialist_case(callback: CallbackQuery, specialist_case_ser
         await callback.message.answer("Specialist case пока нет.")
         await callback.answer()
         return
+    detail = await specialist_case_service.get_user_case_detail(user_id=user_id, case_id=item.case_id)
+    answer_line = (
+        f"\nanswer={detail.latest_response.response_text}"
+        if detail and detail.latest_response and item.case_status == "answered"
+        else ""
+    )
     await callback.message.answer(
         "Latest specialist case:\n"
         f"id={item.case_id}\n"
         f"status={item.case_status}\n"
         f"opened_at={item.opened_at.isoformat()}\n"
         f"report_date={item.lab_report_date or '—'}"
+        f"{answer_line}"
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "labs:ops:menu")
+async def on_specialist_ops_menu(callback: CallbackQuery) -> None:
+    await callback.message.answer(
+        "Specialist operator flow.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="Awaiting cases", callback_data="labs:ops:awaiting")]]
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "labs:ops:awaiting")
+async def on_specialist_ops_awaiting(callback: CallbackQuery, specialist_case_service: SpecialistCaseAssemblyService) -> None:
+    items = await specialist_case_service.list_awaiting_cases(limit=10)
+    if not items:
+        await callback.message.answer("No awaiting specialist cases.")
+        await callback.answer()
+        return
+    lines = ["Awaiting cases:"]
+    keyboard_rows = []
+    for idx, item in enumerate(items, start=1):
+        lines.append(f"{idx}. id={item.case_id} | opened={item.opened_at.date().isoformat()}")
+        keyboard_rows.append(
+            [InlineKeyboardButton(text=f"Open {idx}", callback_data=f"labs:ops:open:{item.case_id}")]
+        )
+    await callback.message.answer("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard_rows))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("labs:ops:open:"))
+async def on_specialist_ops_open_case(callback: CallbackQuery, specialist_case_service: SpecialistCaseAssemblyService) -> None:
+    case_id = UUID(callback.data.split(":")[-1])
+    detail = await specialist_case_service.get_case_detail(case_id=case_id)
+    if detail is None:
+        await callback.message.answer("Case not found.")
+        await callback.answer()
+        return
+    snapshot = detail.case.latest_snapshot_id
+    await callback.message.answer(
+        "Case detail:\n"
+        f"id={detail.case.case_id}\n"
+        f"status={detail.case.case_status}\n"
+        f"user_id={detail.case.user_id}\n"
+        f"assigned={detail.case.assigned_specialist_id or '—'}\n"
+        f"snapshot={snapshot or '—'}\n"
+        f"user_note={detail.case.notes_from_user or '—'}",
+        reply_markup=build_operator_actions(str(detail.case.case_id)),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("labs:ops:take:"))
+async def on_specialist_ops_take_case(callback: CallbackQuery, specialist_case_service: SpecialistCaseAssemblyService) -> None:
+    case_id = UUID(callback.data.split(":")[-1])
+    specialist_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+    try:
+        detail = await specialist_case_service.take_case_in_review(case_id=case_id, specialist_id=specialist_id)
+    except SpecialistCaseError as exc:
+        await callback.message.answer(f"Cannot take case: {exc}")
+        await callback.answer()
+        return
+    await callback.message.answer(f"Case {detail.case.case_id} is now in_review by {specialist_id}.")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("labs:ops:answer:"))
+async def on_specialist_ops_answer_start(callback: CallbackQuery, state: FSMContext) -> None:
+    case_id = callback.data.split(":")[-1]
+    await state.update_data(specialist_answer_case_id=case_id)
+    await state.set_state(LabsEntryState.specialist_answer)
+    await callback.message.answer("Send specialist answer text.")
+    await callback.answer()
+
+
+@router.message(LabsEntryState.specialist_answer)
+async def on_specialist_ops_answer_submit(
+    message: Message, state: FSMContext, specialist_case_service: SpecialistCaseAssemblyService
+) -> None:
+    data = await state.get_data()
+    case_id_raw = data.get("specialist_answer_case_id")
+    if not case_id_raw:
+        await message.answer("No case selected.")
+        await state.set_state(None)
+        return
+    specialist_id = _resolve_user_id(message.from_user.id if message.from_user else None)
+    text = (message.text or "").strip()
+    try:
+        response = await specialist_case_service.submit_specialist_response(
+            case_id=UUID(case_id_raw),
+            specialist_id=specialist_id,
+            response_text=text,
+            response_summary=text[:120] if text else None,
+            is_final=True,
+        )
+    except SpecialistCaseError as exc:
+        await message.answer(f"Cannot submit answer: {exc}")
+        await state.set_state(None)
+        return
+    await state.set_state(None)
+    await message.answer(f"Response saved: id={response.response_id}")
+
+
+@router.callback_query(F.data.startswith("labs:ops:close:"))
+async def on_specialist_ops_close_case(callback: CallbackQuery, specialist_case_service: SpecialistCaseAssemblyService) -> None:
+    case_id = UUID(callback.data.split(":")[-1])
+    try:
+        detail = await specialist_case_service.close_case(case_id=case_id)
+    except SpecialistCaseError as exc:
+        await callback.message.answer(f"Cannot close case: {exc}")
+        await callback.answer()
+        return
+    await callback.message.answer(f"Case {detail.case.case_id} closed.")
     await callback.answer()
 
 
@@ -435,6 +558,7 @@ def build_labs_root_actions() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="New report", callback_data="labs:new")],
             [InlineKeyboardButton(text="History", callback_data="labs:history")],
             [InlineKeyboardButton(text="My specialist cases", callback_data="labs:case:list")],
+            [InlineKeyboardButton(text="Specialist operator", callback_data="labs:ops:menu")],
         ]
     )
 
@@ -468,7 +592,20 @@ def build_panel_marker_actions() -> InlineKeyboardMarkup:
 
 def build_case_actions() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="Open latest case", callback_data="labs:case:latest")]]
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Open latest case", callback_data="labs:case:latest")],
+        ]
+    )
+
+
+def build_operator_actions(case_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Take in review", callback_data=f"labs:ops:take:{case_id}")],
+            [InlineKeyboardButton(text="Submit answer", callback_data=f"labs:ops:answer:{case_id}")],
+            [InlineKeyboardButton(text="Close case", callback_data=f"labs:ops:close:{case_id}")],
+            [InlineKeyboardButton(text="Back to awaiting", callback_data="labs:ops:awaiting")],
+        ]
     )
 
 

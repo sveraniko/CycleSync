@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     labs_ai_model: str = Field(default="gpt-4.1-mini")
     labs_ai_timeout_seconds: float = Field(default=8.0)
     labs_ai_prompt_version: str = Field(default="w6_pr3_v1")
+    expert_case_allow_dev_access: bool = Field(default=True)
 
 
 @lru_cache(maxsize=1)
