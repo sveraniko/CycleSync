@@ -189,8 +189,68 @@ def upgrade() -> None:
         schema="billing",
     )
     op.create_table(
+        "sellable_offers",
+        sa.Column("offer_code", sa.String(length=64), nullable=False),
+        sa.Column("title", sa.String(length=255), nullable=False),
+        sa.Column("status", sa.String(length=24), nullable=False),
+        sa.Column("currency", sa.String(length=8), nullable=False),
+        sa.Column("default_amount", sa.Integer(), nullable=False),
+        sa.Column("description", sa.Text(), nullable=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.PrimaryKeyConstraint("id", name="pk_billing_sellable_offers"),
+        sa.UniqueConstraint("offer_code", name="uq_billing_sellable_offers_offer_code"),
+        schema="billing",
+    )
+    op.create_index(
+        "ix_billing_sellable_offers_status",
+        "sellable_offers",
+        ["status"],
+        unique=False,
+        schema="billing",
+    )
+    op.create_index(
+        "ix_billing_sellable_offers_code",
+        "sellable_offers",
+        ["offer_code"],
+        unique=False,
+        schema="billing",
+    )
+    op.create_table(
+        "offer_entitlements",
+        sa.Column("offer_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("entitlement_code", sa.String(length=64), nullable=False),
+        sa.Column("grant_duration_days", sa.Integer(), nullable=True),
+        sa.Column("qty", sa.Integer(), nullable=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["offer_id"], ["billing.sellable_offers.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["entitlement_code"], ["access.entitlements.code"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("id", name="pk_billing_offer_entitlements"),
+        sa.UniqueConstraint("offer_id", "entitlement_code", name="uq_billing_offer_entitlements_offer_entitlement"),
+        schema="billing",
+    )
+    op.create_index(
+        "ix_billing_offer_entitlements_offer",
+        "offer_entitlements",
+        ["offer_id"],
+        unique=False,
+        schema="billing",
+    )
+    op.create_index(
+        "ix_billing_offer_entitlements_offer_code",
+        "offer_entitlements",
+        ["offer_id", "entitlement_code"],
+        unique=False,
+        schema="billing",
+    )
+    op.create_table(
         "checkout_items",
         sa.Column("checkout_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("offer_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("offer_code", sa.String(length=64), nullable=False),
         sa.Column("item_code", sa.String(length=64), nullable=False),
         sa.Column("title", sa.String(length=255), nullable=False),
         sa.Column("qty", sa.Integer(), nullable=False),
@@ -200,7 +260,31 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["checkout_id"], ["billing.checkouts.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["offer_id"], ["billing.sellable_offers.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id", name="pk_billing_checkout_items"),
+        schema="billing",
+    )
+    op.create_table(
+        "checkout_fulfillments",
+        sa.Column("checkout_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("fulfillment_status", sa.String(length=24), nullable=False),
+        sa.Column("fulfilled_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("result_payload_json", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("error_code", sa.String(length=64), nullable=True),
+        sa.Column("error_message", sa.Text(), nullable=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["checkout_id"], ["billing.checkouts.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id", name="pk_billing_checkout_fulfillments"),
+        sa.UniqueConstraint("checkout_id", name="uq_billing_checkout_fulfillments_checkout_id"),
+        schema="billing",
+    )
+    op.create_index(
+        "ix_billing_checkout_fulfillments_checkout",
+        "checkout_fulfillments",
+        ["checkout_id"],
+        unique=False,
         schema="billing",
     )
     op.create_table(
@@ -319,6 +403,25 @@ def upgrade() -> None:
             (gen_random_uuid(), 'adherence_access', 'Adherence access', 'Adherence analytics and actions access', true),
             (gen_random_uuid(), 'ai_triage_access', 'AI triage access', 'Labs AI triage runtime access', true),
             (gen_random_uuid(), 'expert_case_access', 'Expert case access', 'Specialist consultation case access', true)
+            """
+        )
+    )
+    op.execute(
+        sa.text(
+            """
+            WITH offers AS (
+                INSERT INTO billing.sellable_offers (id, offer_code, title, status, currency, default_amount, description)
+                VALUES
+                (gen_random_uuid(), 'triage_access', 'AI triage access', 'active', 'USD', 100, 'AI triage runtime access offer'),
+                (gen_random_uuid(), 'expert_case_access', 'Specialist consult access', 'active', 'USD', 1500, 'Specialist case assembly access offer')
+                RETURNING id, offer_code
+            )
+            INSERT INTO billing.offer_entitlements (id, offer_id, entitlement_code, grant_duration_days, qty)
+            SELECT gen_random_uuid(), offers.id,
+                CASE WHEN offers.offer_code = 'triage_access' THEN 'ai_triage_access' ELSE 'expert_case_access' END,
+                CASE WHEN offers.offer_code = 'triage_access' THEN 30 ELSE NULL END,
+                1
+            FROM offers
             """
         )
     )

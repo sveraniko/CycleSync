@@ -46,6 +46,18 @@ class SqlAlchemyAccessRepository(AccessRepository):
 
     async def create_grant(self, request: EntitlementGrantCreate, *, now_utc: datetime) -> EntitlementGrantView:
         async with self.session_factory() as session:
+            if request.source_ref is not None:
+                existing = await session.scalar(
+                    select(EntitlementGrant).where(
+                        EntitlementGrant.user_id == request.user_id,
+                        EntitlementGrant.entitlement_code == request.entitlement_code,
+                        EntitlementGrant.granted_by_source == request.granted_by_source,
+                        EntitlementGrant.source_ref == request.source_ref,
+                        EntitlementGrant.grant_status == "active",
+                    )
+                )
+                if existing is not None:
+                    return self._to_view(existing)
             row = EntitlementGrant(
                 user_id=request.user_id,
                 entitlement_code=request.entitlement_code,

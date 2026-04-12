@@ -40,7 +40,17 @@ from app.domain.models.labs import (
 from app.domain.models.ai_triage import LabTriageFlag, LabTriageRun
 from app.domain.models.expert_cases import SpecialistCase, SpecialistCaseResponse, SpecialistCaseSnapshot
 from app.domain.models.access import AccessKey, AccessKeyEntitlement, AccessKeyRedemption, Entitlement, EntitlementGrant
-from app.domain.models.billing import Checkout, CheckoutItem, Coupon, CouponRedemption, PaymentAttempt, PaymentProviderSession
+from app.domain.models.billing import (
+    Checkout,
+    CheckoutFulfillment,
+    CheckoutItem,
+    Coupon,
+    CouponRedemption,
+    OfferEntitlement,
+    PaymentAttempt,
+    PaymentProviderSession,
+    SellableOffer,
+)
 
 __all__ = [
     "OutboxEvent",
@@ -87,8 +97,11 @@ __all__ = [
     "AccessKeyRedemption",
     "Checkout",
     "CheckoutItem",
+    "CheckoutFulfillment",
     "Coupon",
     "CouponRedemption",
+    "SellableOffer",
+    "OfferEntitlement",
     "PaymentAttempt",
     "PaymentProviderSession",
 ]

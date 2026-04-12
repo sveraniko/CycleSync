@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 from app.application.commerce.schemas import (
+    CheckoutFulfillmentView,
     CheckoutCreate,
     CheckoutDiagnostics,
     CheckoutItemCreate,
@@ -12,7 +13,9 @@ from app.application.commerce.schemas import (
     CouponRedemptionView,
     CouponView,
     PaymentAttemptView,
+    OfferEntitlementView,
     ProviderSessionView,
+    SellableOfferView,
 )
 
 
@@ -21,6 +24,15 @@ class CommerceRepository:
         raise NotImplementedError
 
     async def add_checkout_items(self, *, checkout_id: UUID, items: tuple[CheckoutItemCreate, ...], now_utc: datetime) -> tuple[CheckoutItemView, ...]:
+        raise NotImplementedError
+
+    async def get_sellable_offer_by_code(self, *, offer_code: str) -> SellableOfferView | None:
+        raise NotImplementedError
+
+    async def list_sellable_offers(self, *, only_active: bool = True) -> tuple[SellableOfferView, ...]:
+        raise NotImplementedError
+
+    async def list_offer_entitlements(self, *, offer_ids: tuple[UUID, ...]) -> tuple[OfferEntitlementView, ...]:
         raise NotImplementedError
 
     async def get_checkout(self, *, checkout_id: UUID) -> CheckoutStateView | None:
@@ -112,6 +124,22 @@ class CommerceRepository:
         session_payload: dict,
         now_utc: datetime,
     ) -> ProviderSessionView:
+        raise NotImplementedError
+
+    async def get_checkout_fulfillment(self, *, checkout_id: UUID) -> CheckoutFulfillmentView | None:
+        raise NotImplementedError
+
+    async def upsert_checkout_fulfillment(
+        self,
+        *,
+        checkout_id: UUID,
+        fulfillment_status: str,
+        now_utc: datetime,
+        fulfilled_at: datetime | None = None,
+        result_payload: dict | None = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+    ) -> CheckoutFulfillmentView:
         raise NotImplementedError
 
     async def get_diagnostics(self, *, commerce_mode: str, provider_summary: dict[str, dict[str, object]]) -> CheckoutDiagnostics:

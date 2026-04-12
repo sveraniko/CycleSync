@@ -3,6 +3,7 @@ from uuid import UUID
 
 from app.application.commerce.providers import PaymentProviderRegistry
 from app.application.commerce.repository import CommerceRepository
+from app.application.commerce.fulfillment import CheckoutFulfillmentService
 from app.application.commerce.schemas import (
     CHECKOUT_STATUSES,
     COMMERCE_MODES,
@@ -24,12 +25,19 @@ class CommerceError(ValueError):
 
 
 class CheckoutService:
-    def __init__(self, repository: CommerceRepository, provider_registry: PaymentProviderRegistry, commerce_mode: str) -> None:
+    def __init__(
+        self,
+        repository: CommerceRepository,
+        provider_registry: PaymentProviderRegistry,
+        commerce_mode: str,
+        fulfillment_service: CheckoutFulfillmentService | None = None,
+    ) -> None:
         if commerce_mode not in COMMERCE_MODES:
             raise CommerceError(f"unsupported_commerce_mode:{commerce_mode}")
         self.repository = repository
         self.provider_registry = provider_registry
         self.commerce_mode = commerce_mode
+        self.fulfillment_service = fulfillment_service
 
     async def create_checkout(
         self,
@@ -51,7 +59,10 @@ class CheckoutService:
             ),
             now_utc=now,
         )
-        saved_items = await self.repository.add_checkout_items(checkout_id=checkout.checkout_id, items=items, now_utc=now)
+        try:
+            saved_items = await self.repository.add_checkout_items(checkout_id=checkout.checkout_id, items=items, now_utc=now)
+        except ValueError as exc:
+            raise CommerceError(str(exc)) from exc
         subtotal = sum(item.line_total for item in saved_items)
         await self.repository.mark_checkout_status(
             checkout_id=checkout.checkout_id,
@@ -369,6 +380,8 @@ class CheckoutService:
                 aggregate_id=checkout_id,
                 payload={"reason_code": reason_code},
             )
+            if self.fulfillment_service is not None:
+                await self.fulfillment_service.fulfill_checkout(checkout_id=checkout_id, now_utc=now)
         else:
             await self.repository.update_payment_attempt(
                 attempt_id=attempt.attempt_id,
@@ -398,3 +411,6 @@ class CheckoutService:
             commerce_mode=self.commerce_mode,
             provider_summary=self.provider_registry.diagnostics(),
         )
+
+    async def list_offers(self):
+        return await self.repository.list_sellable_offers(only_active=True)

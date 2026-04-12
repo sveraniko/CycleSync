@@ -8,14 +8,35 @@ PAYMENT_ATTEMPT_STATUSES = {"started", "succeeded", "failed"}
 FREE_REASON_CODES = {"dev_mode", "gift_coupon", "manual_free_checkout", "ops_test"}
 COUPON_STATUSES = {"active", "disabled", "expired", "exhausted"}
 COUPON_DISCOUNT_TYPES = {"percent", "fixed"}
+OFFER_STATUSES = {"active", "inactive"}
+FULFILLMENT_STATUSES = {"started", "succeeded", "failed"}
 
 
 @dataclass(slots=True)
 class CheckoutItemCreate:
-    item_code: str
-    title: str
+    offer_code: str
     qty: int
-    unit_amount: int
+
+
+@dataclass(slots=True)
+class SellableOfferView:
+    offer_id: UUID
+    offer_code: str
+    title: str
+    status: str
+    currency: str
+    default_amount: int
+    description: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(slots=True)
+class OfferEntitlementView:
+    offer_id: UUID
+    entitlement_code: str
+    grant_duration_days: int | None
+    qty: int | None
 
 
 @dataclass(slots=True)
@@ -46,11 +67,26 @@ class CheckoutView:
 class CheckoutItemView:
     checkout_item_id: UUID
     checkout_id: UUID
+    offer_id: UUID
+    offer_code: str
     item_code: str
     title: str
     qty: int
     unit_amount: int
     line_total: int
+
+
+@dataclass(slots=True)
+class CheckoutFulfillmentView:
+    fulfillment_id: UUID
+    checkout_id: UUID
+    fulfillment_status: str
+    fulfilled_at: datetime | None
+    result_payload: dict | None
+    error_code: str | None
+    error_message: str | None
+    created_at: datetime
+    updated_at: datetime
 
 
 @dataclass(slots=True)
@@ -125,6 +161,7 @@ class CheckoutStateView:
     checkout: CheckoutView
     items: tuple[CheckoutItemView, ...]
     attempts: tuple[PaymentAttemptView, ...]
+    fulfillment: CheckoutFulfillmentView | None = None
 
 
 @dataclass(slots=True)
