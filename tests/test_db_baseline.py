@@ -7,11 +7,14 @@ from app.domain.models import (
     AccessKeyEntitlement,
     AccessKeyRedemption,
     Checkout,
+    CheckoutFulfillment,
     CheckoutItem,
     Coupon,
     CouponRedemption,
+    OfferEntitlement,
     PaymentAttempt,
     PaymentProviderSession,
+    SellableOffer,
     LabTriageFlag,
     LabTriageRun,
     Brand,
@@ -102,5 +105,8 @@ def test_billing_models_bound_to_billing_schema() -> None:
     assert CheckoutItem.__table__.schema == "billing"
     assert Coupon.__table__.schema == "billing"
     assert CouponRedemption.__table__.schema == "billing"
+    assert SellableOffer.__table__.schema == "billing"
+    assert OfferEntitlement.__table__.schema == "billing"
+    assert CheckoutFulfillment.__table__.schema == "billing"
     assert PaymentAttempt.__table__.schema == "billing"
     assert PaymentProviderSession.__table__.schema == "billing"

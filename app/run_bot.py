@@ -13,7 +13,7 @@ from app.application.reminders import ReminderApplicationService
 from app.application.labs import LabsApplicationService, LabsTriageService
 from app.application.expert_cases import SpecialistCaseAssemblyService
 from app.application.search import SearchApplicationService
-from app.application.commerce import CheckoutService, FreePaymentProvider, PaymentProviderRegistry
+from app.application.commerce import CheckoutFulfillmentService, CheckoutService, FreePaymentProvider, PaymentProviderRegistry
 from app.bots.router import get_root_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
@@ -84,10 +84,12 @@ async def run_bot() -> None:
         declared_providers=declared_providers,
     )
     commerce_repository = SqlAlchemyCommerceRepository(infra.db_session_factory)
+    checkout_fulfillment_service = CheckoutFulfillmentService(repository=commerce_repository, access_service=access_service)
     checkout_service = CheckoutService(
         repository=commerce_repository,
         provider_registry=provider_registry,
         commerce_mode=settings.commerce_mode,
+        fulfillment_service=checkout_fulfillment_service,
     )
 
     bot = Bot(token=settings.bot_token)

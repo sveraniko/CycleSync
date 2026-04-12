@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -38,6 +38,12 @@ class CheckoutItem(SchemaTableMixin, BaseModel):
         ForeignKey("billing.checkouts.id", ondelete="CASCADE"),
         nullable=False,
     )
+    offer_id: Mapped[PGUUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("billing.sellable_offers.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    offer_code: Mapped[str] = mapped_column(String(64), nullable=False)
     item_code: Mapped[str] = mapped_column(String(64), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     qty: Mapped[int] = mapped_column(Integer(), nullable=False)
@@ -135,5 +141,67 @@ class PaymentProviderSession(SchemaTableMixin, BaseModel):
 
     __table_args__ = (
         Index("ix_billing_provider_sessions_checkout", "checkout_id"),
+        {"schema": "billing"},
+    )
+
+
+class SellableOffer(SchemaTableMixin, BaseModel):
+    __tablename__ = "sellable_offers"
+    __schema_name__ = "billing"
+
+    offer_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False)
+    default_amount: Mapped[int] = mapped_column(Integer(), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text(), nullable=True)
+
+    __table_args__ = (
+        Index("ix_billing_sellable_offers_status", "status"),
+        Index("ix_billing_sellable_offers_code", "offer_code"),
+        UniqueConstraint("offer_code", name="uq_billing_sellable_offers_offer_code"),
+        {"schema": "billing"},
+    )
+
+
+class OfferEntitlement(SchemaTableMixin, BaseModel):
+    __tablename__ = "offer_entitlements"
+    __schema_name__ = "billing"
+
+    offer_id: Mapped[PGUUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("billing.sellable_offers.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    entitlement_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    grant_duration_days: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    qty: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+
+    __table_args__ = (
+        Index("ix_billing_offer_entitlements_offer", "offer_id"),
+        Index("ix_billing_offer_entitlements_offer_code", "offer_id", "entitlement_code"),
+        UniqueConstraint("offer_id", "entitlement_code", name="uq_billing_offer_entitlements_offer_entitlement"),
+        {"schema": "billing"},
+    )
+
+
+class CheckoutFulfillment(SchemaTableMixin, BaseModel):
+    __tablename__ = "checkout_fulfillments"
+    __schema_name__ = "billing"
+
+    checkout_id: Mapped[PGUUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("billing.checkouts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    fulfillment_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    fulfilled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result_payload_json: Mapped[dict | None] = mapped_column(JSONB(), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text(), nullable=True)
+
+    __table_args__ = (
+        Index("ix_billing_checkout_fulfillments_checkout", "checkout_id"),
+        UniqueConstraint("checkout_id", name="uq_billing_checkout_fulfillments_checkout_id"),
         {"schema": "billing"},
     )

@@ -8,6 +8,7 @@ from app.application.commerce.repository import CommerceRepository
 from app.application.commerce.schemas import (
     CheckoutCreate,
     CheckoutDiagnostics,
+    CheckoutFulfillmentView,
     CheckoutItemCreate,
     CheckoutItemView,
     CheckoutStateView,
@@ -15,10 +16,22 @@ from app.application.commerce.schemas import (
     CouponCreate,
     CouponRedemptionView,
     CouponView,
+    OfferEntitlementView,
     PaymentAttemptView,
     ProviderSessionView,
+    SellableOfferView,
 )
-from app.domain.models.billing import Checkout, CheckoutItem, Coupon, CouponRedemption, PaymentAttempt, PaymentProviderSession
+from app.domain.models.billing import (
+    Checkout,
+    CheckoutFulfillment,
+    CheckoutItem,
+    Coupon,
+    CouponRedemption,
+    OfferEntitlement,
+    PaymentAttempt,
+    PaymentProviderSession,
+    SellableOffer,
+)
 from app.domain.models.ops import OutboxEvent
 
 
@@ -46,19 +59,50 @@ class SqlAlchemyCommerceRepository(CommerceRepository):
             await session.refresh(row)
             return self._to_checkout_view(row)
 
+    async def get_sellable_offer_by_code(self, *, offer_code: str) -> SellableOfferView | None:
+        async with self.session_factory() as session:
+            row = await session.scalar(select(SellableOffer).where(SellableOffer.offer_code == offer_code))
+            return self._to_offer_view(row) if row else None
+
+    async def list_sellable_offers(self, *, only_active: bool = True) -> tuple[SellableOfferView, ...]:
+        async with self.session_factory() as session:
+            stmt = select(SellableOffer).order_by(SellableOffer.offer_code.asc())
+            if only_active:
+                stmt = stmt.where(SellableOffer.status == "active")
+            rows = list(await session.scalars(stmt))
+            return tuple(self._to_offer_view(row) for row in rows)
+
+    async def list_offer_entitlements(self, *, offer_ids: tuple[UUID, ...]) -> tuple[OfferEntitlementView, ...]:
+        if not offer_ids:
+            return ()
+        async with self.session_factory() as session:
+            rows = list(
+                await session.scalars(
+                    select(OfferEntitlement)
+                    .where(OfferEntitlement.offer_id.in_(offer_ids))
+                    .order_by(OfferEntitlement.offer_id.asc(), OfferEntitlement.entitlement_code.asc())
+                )
+            )
+            return tuple(self._to_offer_entitlement_view(row) for row in rows)
+
     async def add_checkout_items(self, *, checkout_id: UUID, items: tuple[CheckoutItemCreate, ...], now_utc: datetime) -> tuple[CheckoutItemView, ...]:
         async with self.session_factory() as session:
             persisted: list[CheckoutItem] = []
             subtotal = 0
             for item in items:
-                line_total = item.qty * item.unit_amount
+                offer = await session.scalar(select(SellableOffer).where(SellableOffer.offer_code == item.offer_code, SellableOffer.status == "active"))
+                if offer is None:
+                    raise ValueError(f"offer_not_found_or_inactive:{item.offer_code}")
+                line_total = item.qty * offer.default_amount
                 subtotal += line_total
                 row = CheckoutItem(
                     checkout_id=checkout_id,
-                    item_code=item.item_code,
-                    title=item.title,
+                    offer_id=offer.id,
+                    offer_code=offer.offer_code,
+                    item_code=offer.offer_code,
+                    title=offer.title,
                     qty=item.qty,
-                    unit_amount=item.unit_amount,
+                    unit_amount=offer.default_amount,
                     line_total=line_total,
                     created_at=now_utc,
                     updated_at=now_utc,
@@ -83,10 +127,12 @@ class SqlAlchemyCommerceRepository(CommerceRepository):
                 return None
             items = list(await session.scalars(select(CheckoutItem).where(CheckoutItem.checkout_id == checkout_id).order_by(CheckoutItem.created_at.asc())))
             attempts = list(await session.scalars(select(PaymentAttempt).where(PaymentAttempt.checkout_id == checkout_id).order_by(PaymentAttempt.created_at.asc())))
+            fulfillment = await session.scalar(select(CheckoutFulfillment).where(CheckoutFulfillment.checkout_id == checkout_id))
             return CheckoutStateView(
                 checkout=self._to_checkout_view(checkout),
                 items=tuple(self._to_item_view(item) for item in items),
                 attempts=tuple(self._to_attempt_view(item) for item in attempts),
+                fulfillment=self._to_fulfillment_view(fulfillment) if fulfillment else None,
             )
 
     async def mark_checkout_status(self, *, checkout_id: UUID, checkout_status: str, now_utc: datetime, completed_at: datetime | None = None) -> CheckoutView | None:
@@ -163,21 +209,12 @@ class SqlAlchemyCommerceRepository(CommerceRepository):
 
     async def list_coupon_redemptions(self, *, coupon_id: UUID) -> tuple[CouponRedemptionView, ...]:
         async with self.session_factory() as session:
-            rows = list(
-                await session.scalars(
-                    select(CouponRedemption)
-                    .where(CouponRedemption.coupon_id == coupon_id)
-                    .order_by(CouponRedemption.redeemed_at.desc())
-                )
-            )
+            rows = list(await session.scalars(select(CouponRedemption).where(CouponRedemption.coupon_id == coupon_id).order_by(CouponRedemption.redeemed_at.desc())))
             return tuple(self._to_coupon_redemption_view(row) for row in rows)
 
     async def count_coupon_success_redemptions(self, *, coupon_id: UUID, user_id: str | None = None) -> int:
         async with self.session_factory() as session:
-            query = select(func.count()).select_from(CouponRedemption).where(
-                CouponRedemption.coupon_id == coupon_id,
-                CouponRedemption.result_status == "applied",
-            )
+            query = select(func.count()).select_from(CouponRedemption).where(CouponRedemption.coupon_id == coupon_id, CouponRedemption.result_status == "applied")
             if user_id is not None:
                 query = query.where(CouponRedemption.user_id == user_id)
             value = await session.scalar(query)
@@ -185,27 +222,10 @@ class SqlAlchemyCommerceRepository(CommerceRepository):
 
     async def get_applied_coupon_redemption(self, *, checkout_id: UUID, coupon_id: UUID) -> CouponRedemptionView | None:
         async with self.session_factory() as session:
-            row = await session.scalar(
-                select(CouponRedemption).where(
-                    CouponRedemption.checkout_id == checkout_id,
-                    CouponRedemption.coupon_id == coupon_id,
-                    CouponRedemption.result_status == "applied",
-                )
-            )
+            row = await session.scalar(select(CouponRedemption).where(CouponRedemption.checkout_id == checkout_id, CouponRedemption.coupon_id == coupon_id, CouponRedemption.result_status == "applied"))
             return self._to_coupon_redemption_view(row) if row else None
 
-    async def create_coupon_redemption(
-        self,
-        *,
-        coupon_id: UUID,
-        checkout_id: UUID,
-        user_id: str,
-        redeemed_at: datetime,
-        result_status: str,
-        result_reason_code: str | None,
-        discount_amount: int,
-        final_total_after_discount: int,
-    ) -> CouponRedemptionView:
+    async def create_coupon_redemption(self, *, coupon_id: UUID, checkout_id: UUID, user_id: str, redeemed_at: datetime, result_status: str, result_reason_code: str | None, discount_amount: int, final_total_after_discount: int) -> CouponRedemptionView:
         async with self.session_factory() as session:
             row = CouponRedemption(
                 coupon_id=coupon_id,
@@ -284,13 +304,38 @@ class SqlAlchemyCommerceRepository(CommerceRepository):
             session.add(row)
             await session.commit()
             await session.refresh(row)
-            return ProviderSessionView(
-                provider_session_id=row.id,
-                checkout_id=row.checkout_id,
-                provider_code=row.provider_code,
-                session_status=row.session_status,
-                session_payload=row.session_payload_json,
-            )
+            return ProviderSessionView(provider_session_id=row.id, checkout_id=row.checkout_id, provider_code=row.provider_code, session_status=row.session_status, session_payload=row.session_payload_json)
+
+    async def get_checkout_fulfillment(self, *, checkout_id: UUID) -> CheckoutFulfillmentView | None:
+        async with self.session_factory() as session:
+            row = await session.scalar(select(CheckoutFulfillment).where(CheckoutFulfillment.checkout_id == checkout_id))
+            return self._to_fulfillment_view(row) if row else None
+
+    async def upsert_checkout_fulfillment(self, *, checkout_id: UUID, fulfillment_status: str, now_utc: datetime, fulfilled_at: datetime | None = None, result_payload: dict | None = None, error_code: str | None = None, error_message: str | None = None) -> CheckoutFulfillmentView:
+        async with self.session_factory() as session:
+            row = await session.scalar(select(CheckoutFulfillment).where(CheckoutFulfillment.checkout_id == checkout_id))
+            if row is None:
+                row = CheckoutFulfillment(
+                    checkout_id=checkout_id,
+                    fulfillment_status=fulfillment_status,
+                    fulfilled_at=fulfilled_at,
+                    result_payload_json=result_payload,
+                    error_code=error_code,
+                    error_message=error_message,
+                    created_at=now_utc,
+                    updated_at=now_utc,
+                )
+            else:
+                row.fulfillment_status = fulfillment_status
+                row.fulfilled_at = fulfilled_at
+                row.result_payload_json = result_payload
+                row.error_code = error_code
+                row.error_message = error_message
+                row.updated_at = now_utc
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            return self._to_fulfillment_view(row)
 
     async def get_diagnostics(self, *, commerce_mode: str, provider_summary: dict[str, dict[str, object]]) -> CheckoutDiagnostics:
         async with self.session_factory() as session:
@@ -327,15 +372,7 @@ class SqlAlchemyCommerceRepository(CommerceRepository):
 
     async def enqueue_event(self, *, event_type: str, aggregate_type: str, aggregate_id: UUID, payload: dict) -> None:
         async with self.session_factory() as session:
-            session.add(
-                OutboxEvent(
-                    event_type=event_type,
-                    aggregate_type=aggregate_type,
-                    aggregate_id=aggregate_id,
-                    payload_json=payload,
-                    status="pending",
-                )
-            )
+            session.add(OutboxEvent(event_type=event_type, aggregate_type=aggregate_type, aggregate_id=aggregate_id, payload_json=payload, status="pending"))
             await session.commit()
 
     @staticmethod
@@ -360,11 +397,50 @@ class SqlAlchemyCommerceRepository(CommerceRepository):
         return CheckoutItemView(
             checkout_item_id=row.id,
             checkout_id=row.checkout_id,
+            offer_id=row.offer_id,
+            offer_code=row.offer_code,
             item_code=row.item_code,
             title=row.title,
             qty=row.qty,
             unit_amount=row.unit_amount,
             line_total=row.line_total,
+        )
+
+    @staticmethod
+    def _to_offer_view(row: SellableOffer) -> SellableOfferView:
+        return SellableOfferView(
+            offer_id=row.id,
+            offer_code=row.offer_code,
+            title=row.title,
+            status=row.status,
+            currency=row.currency,
+            default_amount=row.default_amount,
+            description=row.description,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
+    @staticmethod
+    def _to_offer_entitlement_view(row: OfferEntitlement) -> OfferEntitlementView:
+        return OfferEntitlementView(
+            offer_id=row.offer_id,
+            entitlement_code=row.entitlement_code,
+            grant_duration_days=row.grant_duration_days,
+            qty=row.qty,
+        )
+
+    @staticmethod
+    def _to_fulfillment_view(row: CheckoutFulfillment) -> CheckoutFulfillmentView:
+        return CheckoutFulfillmentView(
+            fulfillment_id=row.id,
+            checkout_id=row.checkout_id,
+            fulfillment_status=row.fulfillment_status,
+            fulfilled_at=row.fulfilled_at,
+            result_payload=row.result_payload_json,
+            error_code=row.error_code,
+            error_message=row.error_message,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
         )
 
     @staticmethod

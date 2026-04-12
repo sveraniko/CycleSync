@@ -37,3 +37,23 @@ def test_checkout_render_smoke() -> None:
     assert "status=created" in text
     assert "discount=0" in text
     assert "Specialist consult access" in text
+
+
+def test_checkout_render_fulfillment_confirmation_smoke() -> None:
+    state = _State()
+    state.fulfillment = type(
+        "Fulfillment",
+        (),
+        {
+            "fulfillment_status": "succeeded",
+            "fulfilled_at": "2026-04-12T00:00:00+00:00",
+            "result_payload": {
+                "grants": [
+                    {"offer_code": "expert_case_access", "entitlement_code": "expert_case_access", "expires_at": None}
+                ]
+            },
+        },
+    )
+    text = _render_checkout(state)
+    assert "Fulfillment" in text
+    assert "Unlocked" in text

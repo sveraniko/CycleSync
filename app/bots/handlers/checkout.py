@@ -18,7 +18,7 @@ async def checkout_demo(message: Message, checkout_service: CheckoutService) -> 
         currency="USD",
         settlement_mode="internal",
         source_context="specialist_access",
-        items=(CheckoutItemCreate(item_code="expert_case_access", title="Specialist consult access", qty=1, unit_amount=1500),),
+        items=(CheckoutItemCreate(offer_code="expert_case_access", qty=1),),
     )
     await message.answer(_render_checkout(checkout), reply_markup=build_checkout_actions(checkout.checkout.checkout_id))
 
@@ -93,6 +93,18 @@ async def show_status(callback: CallbackQuery, checkout_service: CheckoutService
     await callback.answer()
 
 
+@router.message(Command("offers"))
+async def list_offers(message: Message, checkout_service: CheckoutService) -> None:
+    offers = await checkout_service.list_offers()
+    if not offers:
+        await message.answer("No active offers available.")
+        return
+    lines = ["Active offers:"]
+    for offer in offers:
+        lines.append(f"- {offer.offer_code}: {offer.title} — {offer.default_amount} {offer.currency}")
+    await message.answer("\n".join(lines))
+
+
 def build_checkout_actions(checkout_id) -> InlineKeyboardMarkup:
     checkout_id = str(checkout_id)
     return InlineKeyboardMarkup(
@@ -107,7 +119,7 @@ def build_checkout_actions(checkout_id) -> InlineKeyboardMarkup:
 
 def _render_checkout(state) -> str:
     item_lines = [f"- {item.title}: {item.qty} x {item.unit_amount} = {item.line_total}" for item in state.items]
-    return (
+    base = (
         "Checkout\n"
         f"id={state.checkout.checkout_id}\n"
         f"status={state.checkout.checkout_status}\n"
@@ -116,4 +128,19 @@ def _render_checkout(state) -> str:
         f"total={state.checkout.total_amount} {state.checkout.currency}\n"
         f"mode={state.checkout.settlement_mode}\n"
         + "\n".join(item_lines)
+    )
+    fulfillment = getattr(state, "fulfillment", None)
+    if fulfillment is None:
+        return base
+    grants = (fulfillment.result_payload or {}).get("grants", [])
+    grant_lines = [
+        f"- {grant['offer_code']} -> {grant['entitlement_code']} (until {grant['expires_at'] or 'no expiry'})"
+        for grant in grants
+    ]
+    return (
+        base
+        + "\n\nFulfillment\n"
+        + f"status={fulfillment.fulfillment_status}\n"
+        + f"fulfilled_at={fulfillment.fulfilled_at}\n"
+        + ("Unlocked:\n" + "\n".join(grant_lines) if grant_lines else "Unlocked: none")
     )
