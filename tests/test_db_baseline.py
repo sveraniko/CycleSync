@@ -3,6 +3,9 @@ from app.domain.db.base import Base
 from app.domain.models import (
     Entitlement,
     EntitlementGrant,
+    AccessKey,
+    AccessKeyEntitlement,
+    AccessKeyRedemption,
     LabTriageFlag,
     LabTriageRun,
     Brand,
@@ -83,3 +86,6 @@ def test_expert_cases_models_bound_to_expert_cases_schema() -> None:
 def test_access_models_bound_to_access_schema() -> None:
     assert Entitlement.__table__.schema == "access"
     assert EntitlementGrant.__table__.schema == "access"
+    assert AccessKey.__table__.schema == "access"
+    assert AccessKeyEntitlement.__table__.schema == "access"
+    assert AccessKeyRedemption.__table__.schema == "access"
