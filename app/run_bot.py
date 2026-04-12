@@ -8,7 +8,7 @@ from app.application.protocols import (
     ProtocolDraftReadinessService,
     PulseCalculationEngine,
 )
-from app.application.access import AccessEvaluationService
+from app.application.access import AccessEvaluationService, AccessKeyService
 from app.application.reminders import ReminderApplicationService
 from app.application.labs import LabsApplicationService, LabsTriageService
 from app.application.expert_cases import SpecialistCaseAssemblyService
@@ -50,6 +50,7 @@ async def run_bot() -> None:
     specialist_cases_repository = SqlAlchemySpecialistCasesRepository(infra.db_session_factory)
     access_repository = SqlAlchemyAccessRepository(infra.db_session_factory)
     access_service = AccessEvaluationService(repository=access_repository)
+    access_key_service = AccessKeyService(repository=access_repository, evaluator=access_service)
     labs_triage_gateway = build_labs_triage_gateway(settings)
     logger.info("labs_triage_gateway_configured", **labs_triage_gateway.diagnostics())
     readiness_service = ProtocolDraftReadinessService(repository=draft_repository)
@@ -90,6 +91,7 @@ async def run_bot() -> None:
             labs_service=labs_service,
             labs_triage_service=labs_triage_service,
             specialist_case_service=specialist_case_service,
+            access_key_service=access_key_service,
         )
     finally:
         await bot.session.close()

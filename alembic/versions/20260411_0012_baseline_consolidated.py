@@ -89,6 +89,73 @@ def upgrade() -> None:
         unique=False,
         schema="access",
     )
+    op.create_table(
+        "access_keys",
+        sa.Column("key_code", sa.String(length=128), nullable=False),
+        sa.Column("status", sa.String(length=24), nullable=False),
+        sa.Column("max_redemptions", sa.Integer(), nullable=False, server_default=sa.text("1")),
+        sa.Column("redeemed_count", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_by_source", sa.String(length=64), nullable=False),
+        sa.Column("notes", sa.Text(), nullable=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.PrimaryKeyConstraint("id", name="pk_access_access_keys"),
+        sa.UniqueConstraint("key_code", name="uq_access_access_keys_key_code"),
+        schema="access",
+    )
+    op.create_index(
+        "ix_access_access_keys_status_expires",
+        "access_keys",
+        ["status", "expires_at"],
+        unique=False,
+        schema="access",
+    )
+    op.create_table(
+        "access_key_entitlements",
+        sa.Column("access_key_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("entitlement_code", sa.String(length=64), nullable=False),
+        sa.Column("grant_duration_days", sa.Integer(), nullable=True),
+        sa.Column("grant_status_template", sa.String(length=24), nullable=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["access_key_id"], ["access.access_keys.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["entitlement_code"], ["access.entitlements.code"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("id", name="pk_access_access_key_entitlements"),
+        sa.UniqueConstraint("access_key_id", "entitlement_code", name="uq_access_key_entitlement_identity"),
+        schema="access",
+    )
+    op.create_table(
+        "access_key_redemptions",
+        sa.Column("access_key_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("user_id", sa.String(length=128), nullable=False),
+        sa.Column("redeemed_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("result_status", sa.String(length=24), nullable=False),
+        sa.Column("result_reason_code", sa.String(length=64), nullable=True),
+        sa.Column("created_grant_ids", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["access_key_id"], ["access.access_keys.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id", name="pk_access_access_key_redemptions"),
+        schema="access",
+    )
+    op.create_index(
+        "ix_access_access_key_redemptions_key_user",
+        "access_key_redemptions",
+        ["access_key_id", "user_id"],
+        unique=False,
+        schema="access",
+    )
+    op.create_index(
+        "ix_access_access_key_redemptions_redeemed_at",
+        "access_key_redemptions",
+        ["redeemed_at"],
+        unique=False,
+        schema="access",
+    )
     op.execute(
         sa.text(
             """
