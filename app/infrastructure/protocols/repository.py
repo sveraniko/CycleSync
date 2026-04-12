@@ -14,6 +14,8 @@ from app.application.protocols.schemas import (
     DraftSettingsInput,
     DraftSettingsView,
     DraftView,
+    InventoryConstraintInput,
+    InventoryConstraintView,
     PulseIngredientProfile,
     PulsePlanEntry,
     PulsePlanPreviewPersistPayload,
@@ -32,6 +34,7 @@ from app.domain.models import (
     ProtocolDraftItem,
     ProtocolDraftSettings,
     ProtocolInputTarget,
+    ProtocolInventoryConstraint,
     PulseCalculationRun,
     PulsePlan,
     PulsePlanEntryRecord,
@@ -139,6 +142,12 @@ class SqlAlchemyDraftRepository:
                     ProtocolInputTarget.product_id == item.product_id,
                 )
             )
+            await session.execute(
+                delete(ProtocolInventoryConstraint).where(
+                    ProtocolInventoryConstraint.draft_id == draft.id,
+                    ProtocolInventoryConstraint.product_id == item.product_id,
+                )
+            )
             await session.commit()
             draft = await self._fetch_active_draft(session, user_id)
             if draft is None:
@@ -153,6 +162,7 @@ class SqlAlchemyDraftRepository:
                 return None
             await session.execute(delete(ProtocolDraftItem).where(ProtocolDraftItem.draft_id == draft.id))
             await session.execute(delete(ProtocolInputTarget).where(ProtocolInputTarget.draft_id == draft.id))
+            await session.execute(delete(ProtocolInventoryConstraint).where(ProtocolInventoryConstraint.draft_id == draft.id))
             await session.commit()
             draft = await self._fetch_active_draft(session, user_id)
             if draft is None:
@@ -233,6 +243,11 @@ class SqlAlchemyDraftRepository:
                     CompoundProduct.display_name,
                     CompoundProduct.is_automatable,
                     CompoundProduct.max_injection_volume_ml,
+                    CompoundProduct.concentration_value,
+                    CompoundProduct.package_kind,
+                    CompoundProduct.units_per_package,
+                    CompoundProduct.volume_per_package_ml,
+                    CompoundProduct.unit_strength_mg,
                     CompoundIngredient.ingredient_name,
                     CompoundIngredient.half_life_days,
                 )
@@ -242,13 +257,29 @@ class SqlAlchemyDraftRepository:
                 .order_by(CompoundProduct.display_name, CompoundIngredient.sort_order)
             )
             grouped: dict[UUID, DraftCalculationProductInfo] = {}
-            for product_id, display_name, is_automatable, max_volume, ingredient_name, half_life in rows:
+            for (
+                product_id,
+                display_name,
+                is_automatable,
+                max_volume,
+                concentration_mg_ml,
+                package_kind,
+                _units_per_package,
+                volume_per_package_ml,
+                unit_strength_mg,
+                ingredient_name,
+                half_life,
+            ) in rows:
                 if product_id not in grouped:
                     grouped[product_id] = DraftCalculationProductInfo(
                         product_id=product_id,
                         product_name=display_name,
                         is_automatable=is_automatable,
                         max_injection_volume_ml=max_volume,
+                        concentration_mg_ml=concentration_mg_ml,
+                        package_kind=package_kind,
+                        volume_per_package_ml=volume_per_package_ml,
+                        unit_strength_mg=unit_strength_mg,
                         ingredient_names=[],
                         has_half_life=False,
                     )
@@ -266,6 +297,10 @@ class SqlAlchemyDraftRepository:
                     CompoundProduct.display_name,
                     CompoundProduct.concentration_value,
                     CompoundProduct.max_injection_volume_ml,
+                    CompoundProduct.package_kind,
+                    CompoundProduct.units_per_package,
+                    CompoundProduct.volume_per_package_ml,
+                    CompoundProduct.unit_strength_mg,
                     CompoundIngredient.ingredient_name,
                     CompoundIngredient.half_life_days,
                     CompoundIngredient.amount,
@@ -287,18 +322,22 @@ class SqlAlchemyDraftRepository:
                         product_name=row[1],
                         concentration_mg_ml=row[2],
                         max_injection_volume_ml=row[3],
+                        package_kind=row[4],
+                        units_per_package=row[5],
+                        volume_per_package_ml=row[6],
+                        unit_strength_mg=row[7],
                         ingredients=[],
                     )
-                if row[4]:
+                if row[8]:
                     grouped[row[0]].ingredients.append(
                         PulseIngredientProfile(
-                            ingredient_name=row[4],
-                            half_life_days=row[5],
-                            amount_mg=row[6],
-                            is_pulse_driver=row[7],
-                            dose_guidance_min_mg_week=row[8],
-                            dose_guidance_max_mg_week=row[9],
-                            dose_guidance_typical_mg_week=row[10],
+                            ingredient_name=row[8],
+                            half_life_days=row[9],
+                            amount_mg=row[10],
+                            is_pulse_driver=row[11],
+                            dose_guidance_min_mg_week=row[12],
+                            dose_guidance_max_mg_week=row[13],
+                            dose_guidance_typical_mg_week=row[14],
                         )
                     )
             return list(grouped.values())
@@ -343,6 +382,50 @@ class SqlAlchemyDraftRepository:
                 query = query.where(ProtocolInputTarget.protocol_input_mode == protocol_input_mode)
             rows = await session.scalars(query.order_by(ProtocolInputTarget.created_at.asc()))
             return [self._to_stack_target_view(row) for row in rows]
+
+    async def upsert_inventory_constraints(
+        self, draft_id: UUID, constraints: list[InventoryConstraintInput]
+    ) -> list[InventoryConstraintView]:
+        async with self.session_factory() as session:
+            mode = constraints[0].protocol_input_mode if constraints else "inventory_constrained"
+            for constraint in constraints:
+                row = await session.scalar(
+                    select(ProtocolInventoryConstraint).where(
+                        ProtocolInventoryConstraint.draft_id == draft_id,
+                        ProtocolInventoryConstraint.product_id == constraint.product_id,
+                        ProtocolInventoryConstraint.protocol_input_mode == constraint.protocol_input_mode,
+                    )
+                )
+                if row is None:
+                    row = ProtocolInventoryConstraint(
+                        draft_id=draft_id,
+                        product_id=constraint.product_id,
+                        protocol_input_mode=constraint.protocol_input_mode,
+                    )
+                    session.add(row)
+                    await session.flush()
+                row.available_count = constraint.available_count
+                row.count_unit = constraint.count_unit
+            await session.commit()
+            rows = await session.scalars(
+                select(ProtocolInventoryConstraint)
+                .where(
+                    ProtocolInventoryConstraint.draft_id == draft_id,
+                    ProtocolInventoryConstraint.protocol_input_mode == mode,
+                )
+                .order_by(ProtocolInventoryConstraint.created_at.asc())
+            )
+            return [self._to_inventory_constraint_view(row) for row in rows]
+
+    async def list_inventory_constraints(
+        self, draft_id: UUID, protocol_input_mode: str | None = None
+    ) -> list[InventoryConstraintView]:
+        async with self.session_factory() as session:
+            query = select(ProtocolInventoryConstraint).where(ProtocolInventoryConstraint.draft_id == draft_id)
+            if protocol_input_mode:
+                query = query.where(ProtocolInventoryConstraint.protocol_input_mode == protocol_input_mode)
+            rows = await session.scalars(query.order_by(ProtocolInventoryConstraint.created_at.asc()))
+            return [self._to_inventory_constraint_view(row) for row in rows]
 
     async def create_pulse_plan_preview(self, payload: PulsePlanPreviewPersistPayload) -> PulsePlanPreviewView:
         async with self.session_factory() as session:
@@ -610,6 +693,19 @@ class SqlAlchemyDraftRepository:
             product_id=row.product_id,
             protocol_input_mode=row.protocol_input_mode,
             desired_weekly_mg=row.desired_weekly_mg,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
+    @staticmethod
+    def _to_inventory_constraint_view(row: ProtocolInventoryConstraint) -> InventoryConstraintView:
+        return InventoryConstraintView(
+            id=row.id,
+            draft_id=row.draft_id,
+            product_id=row.product_id,
+            protocol_input_mode=row.protocol_input_mode,
+            available_count=row.available_count,
+            count_unit=row.count_unit,
             created_at=row.created_at,
             updated_at=row.updated_at,
         )

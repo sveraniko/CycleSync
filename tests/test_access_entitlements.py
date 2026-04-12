@@ -185,3 +185,13 @@ def test_evaluation_allowed_and_denied_paths() -> None:
     )
     allowed = asyncio.run(service.evaluate(user_id="tg:2", entitlement_code="reminders_access"))
     assert allowed.allowed is True
+
+
+def test_inventory_constrained_entitlement_gate_denies_without_grant() -> None:
+    repo = FakeAccessRepo()
+    service = AccessEvaluationService(repo)
+    import asyncio
+
+    decision = asyncio.run(service.evaluate(user_id="tg:9", entitlement_code="inventory_constrained_access"))
+    assert decision.allowed is False
+    assert decision.reason_code == "entitlement_absent"

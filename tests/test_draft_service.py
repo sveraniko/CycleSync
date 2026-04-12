@@ -13,6 +13,8 @@ from app.application.protocols.schemas import (
     DraftSettingsInput,
     DraftSettingsView,
     DraftView,
+    InventoryConstraintInput,
+    InventoryConstraintView,
     StackInputTargetInput,
     StackInputTargetView,
 )
@@ -35,6 +37,7 @@ class FakeDraftRepository:
         self.settings: DraftSettingsView | None = None
         self.calculation_products: list[DraftCalculationProductInfo] = []
         self.stack_targets: list[StackInputTargetView] = []
+        self.inventory_constraints: list[InventoryConstraintView] = []
 
     async def get_or_create_active_draft(self, user_id: str):
         created = not hasattr(self, "_created")
@@ -137,6 +140,48 @@ class FakeDraftRepository:
         rows = [target for target in self.stack_targets if target.draft_id == draft_id]
         if protocol_input_mode is not None:
             rows = [target for target in rows if target.protocol_input_mode == protocol_input_mode]
+        return rows
+
+    async def upsert_inventory_constraints(
+        self, draft_id: UUID, constraints: list[InventoryConstraintInput]
+    ) -> list[InventoryConstraintView]:
+        for constraint in constraints:
+            existing = next(
+                (
+                    row
+                    for row in self.inventory_constraints
+                    if row.draft_id == draft_id
+                    and row.product_id == constraint.product_id
+                    and row.protocol_input_mode == constraint.protocol_input_mode
+                ),
+                None,
+            )
+            now = datetime.now(timezone.utc)
+            if existing:
+                existing.available_count = constraint.available_count
+                existing.count_unit = constraint.count_unit
+                existing.updated_at = now
+            else:
+                self.inventory_constraints.append(
+                    InventoryConstraintView(
+                        id=uuid4(),
+                        draft_id=draft_id,
+                        product_id=constraint.product_id,
+                        protocol_input_mode=constraint.protocol_input_mode,
+                        available_count=constraint.available_count,
+                        count_unit=constraint.count_unit,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+        return [item for item in self.inventory_constraints if item.draft_id == draft_id]
+
+    async def list_inventory_constraints(
+        self, draft_id: UUID, protocol_input_mode: str | None = None
+    ) -> list[InventoryConstraintView]:
+        rows = [item for item in self.inventory_constraints if item.draft_id == draft_id]
+        if protocol_input_mode is not None:
+            rows = [item for item in rows if item.protocol_input_mode == protocol_input_mode]
         return rows
 
     def _build_draft(self, user_id: str) -> DraftView:
@@ -261,3 +306,29 @@ def test_stack_input_persistence_and_event() -> None:
     assert saved[0].desired_weekly_mg == Decimal("175")
     assert loaded[0].product_id == product_id
     assert any(event.event_type == "stack_input_updated" for event in repo.events)
+
+
+def test_inventory_input_persistence_and_event() -> None:
+    repo = FakeDraftRepository()
+    service = DraftApplicationService(repository=repo)
+    product_id = uuid4()
+    asyncio.run(service.add_product_to_draft("u1", product_id))
+
+    saved = asyncio.run(
+        service.save_inventory_constraints(
+            "u1",
+            [
+                InventoryConstraintInput(
+                    product_id=product_id,
+                    protocol_input_mode="inventory_constrained",
+                    available_count=Decimal("20"),
+                    count_unit="vial",
+                )
+            ],
+        )
+    )
+    loaded = asyncio.run(service.get_inventory_constraints("u1"))
+
+    assert saved[0].available_count == Decimal("20")
+    assert loaded[0].count_unit == "vial"
+    assert any(event.event_type == "inventory_constraints_updated" for event in repo.events)

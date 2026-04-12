@@ -12,6 +12,7 @@ from app.domain.models.protocols import (
     Protocol,
     ProtocolDraft,
     ProtocolDraftItem,
+    ProtocolInventoryConstraint,
     ProtocolInputTarget,
     ProtocolDraftSettings,
 )
@@ -69,6 +70,7 @@ __all__ = [
     "ProtocolDraft",
     "ProtocolDraftItem",
     "ProtocolInputTarget",
+    "ProtocolInventoryConstraint",
     "ProtocolDraftSettings",
     "Protocol",
     "PulseCalculationRun",

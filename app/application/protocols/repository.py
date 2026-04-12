@@ -9,6 +9,8 @@ from app.application.protocols.schemas import (
     DraftSettingsInput,
     DraftSettingsView,
     DraftView,
+    InventoryConstraintInput,
+    InventoryConstraintView,
     PulsePlanPreviewPersistPayload,
     PulsePlanPreviewView,
     PulseProductProfile,
@@ -32,6 +34,10 @@ class DraftCalculationProductInfo:
     max_injection_volume_ml: Decimal | None
     ingredient_names: list[str]
     has_half_life: bool
+    concentration_mg_ml: Decimal | None = None
+    package_kind: str | None = None
+    volume_per_package_ml: Decimal | None = None
+    unit_strength_mg: Decimal | None = None
 
 
 class DraftRepository:
@@ -83,6 +89,16 @@ class DraftRepository:
     async def list_stack_input_targets(
         self, draft_id: UUID, protocol_input_mode: str | None = None
     ) -> list[StackInputTargetView]:
+        raise NotImplementedError
+
+    async def upsert_inventory_constraints(
+        self, draft_id: UUID, constraints: list[InventoryConstraintInput]
+    ) -> list[InventoryConstraintView]:
+        raise NotImplementedError
+
+    async def list_inventory_constraints(
+        self, draft_id: UUID, protocol_input_mode: str | None = None
+    ) -> list[InventoryConstraintView]:
         raise NotImplementedError
 
     async def has_successful_preview_for_draft(self, draft_id: UUID) -> bool:

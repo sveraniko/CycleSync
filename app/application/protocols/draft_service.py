@@ -11,6 +11,8 @@ from app.application.protocols.schemas import (
     DraftSettingsInput,
     DraftSettingsView,
     DraftView,
+    InventoryConstraintInput,
+    InventoryConstraintView,
     PulsePlanPreviewPersistPayload,
     PulsePlanPreviewView,
     StackInputTargetInput,
@@ -163,6 +165,29 @@ class DraftApplicationService:
         draft = await self.get_or_create_active_draft(user_id)
         return await self.repository.list_stack_input_targets(draft.draft_id, protocol_input_mode=protocol_input_mode)
 
+    async def save_inventory_constraints(
+        self, user_id: str, constraints: list[InventoryConstraintInput]
+    ) -> list[InventoryConstraintView]:
+        draft = await self.get_or_create_active_draft(user_id)
+        saved = await self.repository.upsert_inventory_constraints(draft.draft_id, constraints)
+        await self.repository.enqueue_event(
+            event_type="inventory_constraints_updated",
+            aggregate_type="protocol_draft",
+            aggregate_id=draft.draft_id,
+            payload={
+                "user_id": user_id,
+                "protocol_input_mode": "inventory_constrained",
+                "constraints_count": len(saved),
+            },
+        )
+        return saved
+
+    async def get_inventory_constraints(
+        self, user_id: str, protocol_input_mode: str = "inventory_constrained"
+    ) -> list[InventoryConstraintView]:
+        draft = await self.get_or_create_active_draft(user_id)
+        return await self.repository.list_inventory_constraints(draft.draft_id, protocol_input_mode=protocol_input_mode)
+
     async def generate_pulse_plan_preview(self, user_id: str) -> PulsePlanPreviewView:
         if self.pulse_engine is None:
             raise RuntimeError("pulse engine is not configured")
@@ -172,6 +197,9 @@ class DraftApplicationService:
         products = await self.repository.list_pulse_product_profiles(draft.draft_id)
         stack_targets = await self.repository.list_stack_input_targets(
             draft.draft_id, protocol_input_mode="stack_smoothing"
+        )
+        inventory_constraints = await self.repository.list_inventory_constraints(
+            draft.draft_id, protocol_input_mode="inventory_constrained"
         )
 
         await self.repository.enqueue_event(
@@ -184,7 +212,12 @@ class DraftApplicationService:
             },
         )
 
-        result = self.pulse_engine.calculate(settings=settings, products=products, stack_targets=stack_targets)
+        result = self.pulse_engine.calculate(
+            settings=settings,
+            products=products,
+            stack_targets=stack_targets,
+            inventory_constraints=inventory_constraints,
+        )
         selected_mode = settings.protocol_input_mode if settings and is_valid_protocol_input_mode(settings.protocol_input_mode) else "total_target"
         had_previous_preview = await self.repository.has_successful_preview_for_draft(draft.draft_id)
         payload = PulsePlanPreviewPersistPayload(
@@ -203,6 +236,13 @@ class DraftApplicationService:
                 "max_injections_per_week": settings.max_injections_per_week if settings else None,
                 "planned_start_date": settings.planned_start_date.isoformat() if settings and settings.planned_start_date else None,
                 "stack_input_targets_mg": {str(target.product_id): str(target.desired_weekly_mg) for target in stack_targets},
+                "inventory_constraints": {
+                    str(constraint.product_id): {
+                        "available_count": str(constraint.available_count),
+                        "count_unit": constraint.count_unit,
+                    }
+                    for constraint in inventory_constraints
+                },
             },
             summary_metrics=result.summary_metrics,
             warning_flags=result.warning_flags,

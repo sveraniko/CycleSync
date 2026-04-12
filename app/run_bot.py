@@ -107,6 +107,7 @@ async def run_bot() -> None:
             labs_triage_service=labs_triage_service,
             specialist_case_service=specialist_case_service,
             access_key_service=access_key_service,
+            access_service=access_service,
             checkout_service=checkout_service,
         )
     finally:

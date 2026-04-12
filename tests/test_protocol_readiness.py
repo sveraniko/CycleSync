@@ -6,7 +6,7 @@ from uuid import uuid4
 from app.application.protocols.readiness import ProtocolDraftReadinessService
 from app.application.protocols.repository import DraftCalculationProductInfo
 from app.application.protocols.schemas import DraftItemView, DraftSettingsView, DraftView
-from app.application.protocols.schemas import StackInputTargetView
+from app.application.protocols.schemas import InventoryConstraintView, StackInputTargetView
 
 
 class FakeReadinessRepository:
@@ -15,10 +15,12 @@ class FakeReadinessRepository:
         settings: DraftSettingsView | None,
         products: list[DraftCalculationProductInfo],
         stack_targets: list[StackInputTargetView] | None = None,
+        inventory_constraints: list[InventoryConstraintView] | None = None,
     ) -> None:
         self.settings = settings
         self.products = products
         self.stack_targets = stack_targets or []
+        self.inventory_constraints = inventory_constraints or []
 
     async def get_draft_settings(self, draft_id):
         return self.settings
@@ -30,6 +32,11 @@ class FakeReadinessRepository:
         if protocol_input_mode is None:
             return self.stack_targets
         return [target for target in self.stack_targets if target.protocol_input_mode == protocol_input_mode]
+
+    async def list_inventory_constraints(self, draft_id, protocol_input_mode=None):
+        if protocol_input_mode is None:
+            return self.inventory_constraints
+        return [item for item in self.inventory_constraints if item.protocol_input_mode == protocol_input_mode]
 
 
 def _draft_with_one_item() -> DraftView:
@@ -164,7 +171,7 @@ def test_auto_pulse_mode_allows_missing_weekly_target() -> None:
     assert all(issue.code != "settings.weekly_target_required" for issue in result.issues)
 
 
-def test_inventory_constrained_mode_reports_not_available() -> None:
+def test_inventory_constrained_mode_requires_inventory_for_each_product() -> None:
     draft = _draft_with_one_item()
     settings = DraftSettingsView(
         draft_id=draft.draft_id,
@@ -179,7 +186,7 @@ def test_inventory_constrained_mode_reports_not_available() -> None:
     )
     repo = FakeReadinessRepository(settings=settings, products=[])
     result = asyncio.run(ProtocolDraftReadinessService(repository=repo).validate(draft))
-    assert any(issue.code == "settings.inventory_constrained.not_available" for issue in result.issues)
+    assert any(issue.code == "settings.inventory_missing_for_some_products" for issue in result.issues)
 
 
 def test_stack_smoothing_mode_requires_target_for_each_selected_product() -> None:

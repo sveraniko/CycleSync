@@ -11,6 +11,7 @@ ENTITLEMENT_CODES = {
     "adherence_access",
     "ai_triage_access",
     "expert_case_access",
+    "inventory_constrained_access",
 }
 
 ACTIVE_GRANT_STATUSES = {"active"}

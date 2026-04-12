@@ -402,7 +402,8 @@ def upgrade() -> None:
             (gen_random_uuid(), 'reminders_access', 'Reminders access', 'Reminder enablement, materialization and dispatch access', true),
             (gen_random_uuid(), 'adherence_access', 'Adherence access', 'Adherence analytics and actions access', true),
             (gen_random_uuid(), 'ai_triage_access', 'AI triage access', 'Labs AI triage runtime access', true),
-            (gen_random_uuid(), 'expert_case_access', 'Expert case access', 'Specialist consultation case access', true)
+            (gen_random_uuid(), 'expert_case_access', 'Expert case access', 'Specialist consultation case access', true),
+            (gen_random_uuid(), 'inventory_constrained_access', 'Inventory constrained access', 'Advanced inventory-constrained protocol planning access', true)
             """
         )
     )
@@ -545,6 +546,10 @@ def upgrade() -> None:
         sa.Column("concentration_value", sa.Numeric(precision=12, scale=4), nullable=True),
         sa.Column("concentration_unit", sa.String(length=32), nullable=True),
         sa.Column("concentration_basis", sa.String(length=32), nullable=True),
+        sa.Column("package_kind", sa.String(length=32), nullable=True),
+        sa.Column("units_per_package", sa.Numeric(precision=12, scale=4), nullable=True),
+        sa.Column("volume_per_package_ml", sa.Numeric(precision=12, scale=4), nullable=True),
+        sa.Column("unit_strength_mg", sa.Numeric(precision=12, scale=4), nullable=True),
         sa.Column("official_url", sa.String(length=1024), nullable=True),
         sa.Column("authenticity_notes", sa.Text(), nullable=True),
         sa.Column("source", sa.String(length=64), nullable=False),
@@ -918,6 +923,34 @@ def upgrade() -> None:
     op.create_index(
         "ix_protocol_input_targets_draft_mode",
         "protocol_input_targets",
+        ["draft_id", "protocol_input_mode"],
+        unique=False,
+        schema="protocols",
+    )
+    op.create_table(
+        "protocol_inventory_constraints",
+        sa.Column("draft_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("product_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("protocol_input_mode", sa.String(length=32), nullable=False),
+        sa.Column("available_count", sa.Numeric(precision=12, scale=4), nullable=False),
+        sa.Column("count_unit", sa.String(length=32), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["draft_id"], ["protocols.protocol_drafts.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["product_id"], ["compound_catalog.compound_products.id"], ondelete="RESTRICT"),
+        sa.PrimaryKeyConstraint("id", name="pk_protocols_protocol_inventory_constraints"),
+        sa.UniqueConstraint(
+            "draft_id",
+            "product_id",
+            "protocol_input_mode",
+            name="uq_protocol_inventory_constraint_identity",
+        ),
+        schema="protocols",
+    )
+    op.create_index(
+        "ix_protocol_inventory_constraints_draft_mode",
+        "protocol_inventory_constraints",
         ["draft_id", "protocol_input_mode"],
         unique=False,
         schema="protocols",

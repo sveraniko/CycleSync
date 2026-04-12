@@ -1,7 +1,6 @@
 from decimal import Decimal
 
 from app.application.protocols.draft_service import DraftReadinessValidator
-from app.application.protocols.input_modes import LOCKED_PROTOCOL_INPUT_MODES
 from app.application.protocols.repository import DraftRepository
 from app.application.protocols.schemas import DraftReadinessIssue, DraftReadinessResult, DraftView
 
@@ -16,6 +15,9 @@ class ProtocolDraftReadinessService(DraftReadinessValidator):
         settings = await self.repository.get_draft_settings(draft_id=draft.draft_id)
         products = await self.repository.list_calculation_products(draft_id=draft.draft_id)
         stack_targets = await self.repository.list_stack_input_targets(draft_id=draft.draft_id, protocol_input_mode="stack_smoothing")
+        inventory_constraints = await self.repository.list_inventory_constraints(
+            draft_id=draft.draft_id, protocol_input_mode="inventory_constrained"
+        )
 
         if not draft.items:
             issues.append(DraftReadinessIssue(code="draft.empty", severity="error", message="Добавьте минимум один продукт в Draft."))
@@ -30,14 +32,6 @@ class ProtocolDraftReadinessService(DraftReadinessValidator):
             )
         else:
             selected_mode = settings.protocol_input_mode or "total_target"
-            if selected_mode in LOCKED_PROTOCOL_INPUT_MODES:
-                issues.append(
-                    DraftReadinessIssue(
-                        code=f"settings.{selected_mode}.not_available",
-                        severity="error",
-                        message=f"Режим {selected_mode} пока недоступен в полном расчете.",
-                    )
-                )
             if selected_mode == "total_target" and (
                 settings.weekly_target_total_mg is None or settings.weekly_target_total_mg <= Decimal("0")
             ):
@@ -61,12 +55,25 @@ class ProtocolDraftReadinessService(DraftReadinessValidator):
                                 context={"product_id": str(item.product_id)},
                             )
                         )
-                    elif target.desired_weekly_mg <= Decimal("0"):
+            if selected_mode == "inventory_constrained":
+                inventory_by_product = {constraint.product_id: constraint for constraint in inventory_constraints}
+                for item in draft.items:
+                    constraint = inventory_by_product.get(item.product_id)
+                    if constraint is None:
                         issues.append(
                             DraftReadinessIssue(
-                                code="settings.stack_target_invalid",
+                                code="settings.inventory_missing_for_some_products",
                                 severity="error",
-                                message=f"Для продукта '{item.selected_product_name or item.product_id}' desired weekly mg должен быть > 0.",
+                                message=f"Для продукта '{item.selected_product_name or item.product_id}' не задан inventory available count.",
+                                context={"product_id": str(item.product_id)},
+                            )
+                        )
+                    elif constraint.available_count <= Decimal("0"):
+                        issues.append(
+                            DraftReadinessIssue(
+                                code="settings.inventory_available_count_invalid",
+                                severity="error",
+                                message=f"Для продукта '{item.selected_product_name or item.product_id}' available count должен быть > 0.",
                                 context={"product_id": str(item.product_id)},
                             )
                         )
@@ -122,6 +129,28 @@ class ProtocolDraftReadinessService(DraftReadinessValidator):
                         context={"product_id": str(product.product_id), "ingredients": product.ingredient_names},
                     )
                 )
+            if settings and settings.protocol_input_mode == "inventory_constrained":
+                if product.package_kind in {"vial", "ampoule"} and (
+                    product.concentration_mg_ml is None
+                    or product.volume_per_package_ml is None
+                ):
+                    issues.append(
+                        DraftReadinessIssue(
+                            code="settings.inventory_metadata_insufficient",
+                            severity="error",
+                            message=f"Для '{product.product_name}' отсутствуют packaging поля для injectable inventory semantics.",
+                            context={"product_id": str(product.product_id)},
+                        )
+                    )
+                if product.package_kind in {"tablet", "capsule"} and product.unit_strength_mg is None:
+                    issues.append(
+                        DraftReadinessIssue(
+                            code="settings.inventory_metadata_insufficient",
+                            severity="error",
+                            message=f"Для '{product.product_name}' отсутствует unit_strength_mg для tablet/capsule inventory semantics.",
+                            context={"product_id": str(product.product_id)},
+                        )
+                    )
 
         if settings and settings.max_injections_per_week and settings.duration_weeks:
             if settings.max_injections_per_week > 14:

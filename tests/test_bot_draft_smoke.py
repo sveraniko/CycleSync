@@ -13,6 +13,8 @@ from app.bots.handlers.draft import (
     build_readiness_actions,
     _render_active_protocol_summary,
     _render_stack_composition,
+    _render_inventory_composition,
+    _parse_inventory_input,
     _render_preview_summary,
 )
 from app.application.protocols.schemas import ActiveProtocolView, DraftItemView, DraftView, PulsePlanEntry, PulsePlanPreviewView
@@ -157,3 +159,14 @@ def test_render_stack_composition_smoke() -> None:
     text = _render_stack_composition({pid: Decimal("150")}, {pid: "Sustanon"})
     assert "Sustanon" in text
     assert "Derived total weekly mg: 150" in text
+
+
+def test_inventory_input_parser_and_render_smoke() -> None:
+    parsed = _parse_inventory_input("20 vial")
+    assert parsed == (Decimal("20"), "vial")
+    assert _parse_inventory_input("oops") is None
+    pid = str(uuid4())
+    item = type("Constraint", (), {"available_count": Decimal("20"), "count_unit": "vial"})()
+    text = _render_inventory_composition({pid: item}, {pid: "Sustanon"})
+    assert "Sustanon" in text
+    assert "20 vial" in text
