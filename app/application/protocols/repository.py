@@ -13,6 +13,7 @@ from app.application.protocols.schemas import (
     InventoryConstraintView,
     PulsePlanPreviewPersistPayload,
     PulsePlanPreviewView,
+    PulsePlanEntry,
     PulseProductProfile,
     StackInputTargetInput,
     StackInputTargetView,
@@ -38,6 +39,29 @@ class DraftCalculationProductInfo:
     package_kind: str | None = None
     volume_per_package_ml: Decimal | None = None
     unit_strength_mg: Decimal | None = None
+
+
+@dataclass(slots=True)
+class EstimatorProductMetadata:
+    product_id: UUID
+    product_name: str
+    package_kind: str | None
+    units_per_package: Decimal | None
+    volume_per_package_ml: Decimal | None
+    unit_strength_mg: Decimal | None
+
+
+@dataclass(slots=True)
+class CourseEstimateSourceData:
+    source_type: str
+    preview_id: UUID | None
+    protocol_id: UUID | None
+    draft_id: UUID | None
+    protocol_input_mode: str | None
+    duration_weeks: int | None
+    entries: list[PulsePlanEntry]
+    inventory_constraints: list[InventoryConstraintView]
+    product_metadata: dict[UUID, EstimatorProductMetadata]
 
 
 class DraftRepository:
@@ -111,4 +135,10 @@ class DraftRepository:
         raise NotImplementedError
 
     async def cancel_active_protocol(self, user_id: str) -> UUID | None:
+        raise NotImplementedError
+
+    async def get_course_estimate_source_from_preview(self, preview_id: UUID) -> CourseEstimateSourceData | None:
+        raise NotImplementedError
+
+    async def get_course_estimate_source_from_active_protocol(self, protocol_id: UUID) -> CourseEstimateSourceData | None:
         raise NotImplementedError
