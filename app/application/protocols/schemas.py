@@ -58,6 +58,24 @@ class DraftSettingsView:
 
 
 @dataclass(slots=True)
+class StackInputTargetInput:
+    product_id: UUID
+    protocol_input_mode: str
+    desired_weekly_mg: Decimal
+
+
+@dataclass(slots=True)
+class StackInputTargetView:
+    id: UUID
+    draft_id: UUID
+    product_id: UUID
+    protocol_input_mode: str
+    desired_weekly_mg: Decimal
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(slots=True)
 class DraftReadinessIssue:
     code: str
     message: str

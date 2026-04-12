@@ -12,6 +12,7 @@ from app.application.protocols.schemas import (
     PulseIngredientProfile,
     PulsePlanPreviewView,
     PulseProductProfile,
+    StackInputTargetView,
 )
 
 
@@ -51,6 +52,9 @@ class FakePulseRepository:
 
     async def has_successful_preview_for_draft(self, draft_id):
         return self.has_previous_preview
+
+    async def list_stack_input_targets(self, draft_id, protocol_input_mode=None):
+        return []
 
     async def create_pulse_plan_preview(self, payload):
         self.last_payload = payload
@@ -148,3 +152,46 @@ def test_failed_preview_emits_failed_only() -> None:
     assert preview.status == "failed_validation"
     assert "pulse_plan_preview_failed" in repo.events
     assert "protocol_calculation_preview_generated" not in repo.events
+
+
+def test_preview_summary_has_derived_total_weekly_mg_for_stack_smoothing() -> None:
+    class StackRepo(FakePulseRepository):
+        fixed_product_id = uuid4()
+
+        async def get_draft_settings(self, draft_id):
+            settings = await super().get_draft_settings(draft_id)
+            settings.protocol_input_mode = "stack_smoothing"
+            settings.weekly_target_total_mg = None
+            return settings
+
+        async def list_pulse_product_profiles(self, draft_id):
+            return [
+                PulseProductProfile(
+                    product_id=self.fixed_product_id,
+                    product_name="A",
+                    concentration_mg_ml=Decimal("250"),
+                    max_injection_volume_ml=Decimal("2.5"),
+                    ingredients=[PulseIngredientProfile("a", Decimal("4"), Decimal("250"), True)],
+                )
+            ]
+
+        async def list_stack_input_targets(self, draft_id, protocol_input_mode=None):
+            return [
+                StackInputTargetView(
+                    id=uuid4(),
+                    draft_id=draft_id,
+                    product_id=self.fixed_product_id,
+                    protocol_input_mode="stack_smoothing",
+                    desired_weekly_mg=Decimal("180"),
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
+                )
+            ]
+
+    repo = StackRepo()
+    service = DraftApplicationService(repository=repo, pulse_engine=PulseCalculationEngine())
+    preview = asyncio.run(service.generate_pulse_plan_preview("u1"))
+
+    assert preview.summary_metrics is not None
+    per_product = preview.summary_metrics.get("per_product_weekly_target_mg") or {}
+    assert sum(per_product.values()) == 180.0

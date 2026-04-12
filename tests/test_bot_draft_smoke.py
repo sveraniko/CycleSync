@@ -12,6 +12,7 @@ from app.bots.handlers.draft import (
     build_preview_actions,
     build_readiness_actions,
     _render_active_protocol_summary,
+    _render_stack_composition,
     _render_preview_summary,
 )
 from app.application.protocols.schemas import ActiveProtocolView, DraftItemView, DraftView, PulsePlanEntry, PulsePlanPreviewView
@@ -78,6 +79,7 @@ def test_build_readiness_and_preview_actions() -> None:
     readiness_callbacks = [b.callback_data for row in readiness.inline_keyboard for b in row]
     preview_callbacks = [b.callback_data for row in preview.inline_keyboard for b in row]
     assert "draft:calculate:run" in readiness_callbacks
+    assert "draft:stack:edit" in readiness_callbacks
     assert "draft:calculate:run" in preview_callbacks
     assert "draft:activate:latest" in preview_callbacks
 
@@ -148,3 +150,10 @@ def test_build_input_mode_actions_smoke() -> None:
     assert "draft:calc:mode:stack_smoothing" in callbacks
     assert "draft:calc:mode:inventory_constrained" in callbacks
     assert set(labels) == set(INPUT_MODE_LABELS.values())
+
+
+def test_render_stack_composition_smoke() -> None:
+    pid = str(uuid4())
+    text = _render_stack_composition({pid: Decimal("150")}, {pid: "Sustanon"})
+    assert "Sustanon" in text
+    assert "Derived total weekly mg: 150" in text

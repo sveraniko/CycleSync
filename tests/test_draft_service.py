@@ -7,7 +7,15 @@ from uuid import UUID, uuid4
 from app.application.protocols.draft_service import DraftApplicationService
 from app.application.protocols.readiness import ProtocolDraftReadinessService
 from app.application.protocols.repository import DraftCalculationProductInfo
-from app.application.protocols.schemas import AddProductToDraftResult, DraftItemView, DraftSettingsInput, DraftSettingsView, DraftView
+from app.application.protocols.schemas import (
+    AddProductToDraftResult,
+    DraftItemView,
+    DraftSettingsInput,
+    DraftSettingsView,
+    DraftView,
+    StackInputTargetInput,
+    StackInputTargetView,
+)
 
 
 @dataclass
@@ -26,6 +34,7 @@ class FakeDraftRepository:
         self.events: list[EventRecord] = []
         self.settings: DraftSettingsView | None = None
         self.calculation_products: list[DraftCalculationProductInfo] = []
+        self.stack_targets: list[StackInputTargetView] = []
 
     async def get_or_create_active_draft(self, user_id: str):
         created = not hasattr(self, "_created")
@@ -93,6 +102,42 @@ class FakeDraftRepository:
 
     async def list_calculation_products(self, draft_id: UUID) -> list[DraftCalculationProductInfo]:
         return self.calculation_products
+
+    async def upsert_stack_input_targets(self, draft_id: UUID, targets: list[StackInputTargetInput]) -> list[StackInputTargetView]:
+        for target in targets:
+            existing = next(
+                (
+                    row
+                    for row in self.stack_targets
+                    if row.draft_id == draft_id
+                    and row.product_id == target.product_id
+                    and row.protocol_input_mode == target.protocol_input_mode
+                ),
+                None,
+            )
+            now = datetime.now(timezone.utc)
+            if existing:
+                existing.desired_weekly_mg = target.desired_weekly_mg
+                existing.updated_at = now
+            else:
+                self.stack_targets.append(
+                    StackInputTargetView(
+                        id=uuid4(),
+                        draft_id=draft_id,
+                        product_id=target.product_id,
+                        protocol_input_mode=target.protocol_input_mode,
+                        desired_weekly_mg=target.desired_weekly_mg,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+        return [target for target in self.stack_targets if target.draft_id == draft_id]
+
+    async def list_stack_input_targets(self, draft_id: UUID, protocol_input_mode: str | None = None) -> list[StackInputTargetView]:
+        rows = [target for target in self.stack_targets if target.draft_id == draft_id]
+        if protocol_input_mode is not None:
+            rows = [target for target in rows if target.protocol_input_mode == protocol_input_mode]
+        return rows
 
     def _build_draft(self, user_id: str) -> DraftView:
         now = datetime.now(timezone.utc)
@@ -191,3 +236,28 @@ def test_draft_settings_persistence_and_readiness() -> None:
     readiness_result = asyncio.run(service.get_draft_readiness("u1"))
     assert readiness_result.ready is True
     assert readiness_result.issues == []
+
+
+def test_stack_input_persistence_and_event() -> None:
+    repo = FakeDraftRepository()
+    service = DraftApplicationService(repository=repo)
+    product_id = uuid4()
+    asyncio.run(service.add_product_to_draft("u1", product_id))
+
+    saved = asyncio.run(
+        service.save_stack_input_targets(
+            "u1",
+            [
+                StackInputTargetInput(
+                    product_id=product_id,
+                    protocol_input_mode="stack_smoothing",
+                    desired_weekly_mg=Decimal("175"),
+                )
+            ],
+        )
+    )
+    loaded = asyncio.run(service.get_stack_input_targets("u1"))
+
+    assert saved[0].desired_weekly_mg == Decimal("175")
+    assert loaded[0].product_id == product_id
+    assert any(event.event_type == "stack_input_updated" for event in repo.events)

@@ -3,7 +3,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 from app.application.protocols.pulse_engine import PulseCalculationEngine
-from app.application.protocols.schemas import DraftSettingsView, PulseIngredientProfile, PulseProductProfile
+from app.application.protocols.schemas import DraftSettingsView, PulseIngredientProfile, PulseProductProfile, StackInputTargetView
 
 
 def _settings(preset: str, max_inj: int = 4) -> DraftSettingsView:
@@ -259,9 +259,51 @@ def test_auto_pulse_mode_does_not_require_total_target() -> None:
     assert result.allocation_mode == "auto_pulse_guidance_driven"
 
 
+def test_stack_smoothing_uses_user_defined_per_product_weekly_mg_exactly() -> None:
+    products = _products()
+    settings = _settings("layered_pulse")
+    settings.protocol_input_mode = "stack_smoothing"
+    settings.weekly_target_total_mg = None
+    targets = [
+        StackInputTargetView(
+            id=uuid4(),
+            draft_id=settings.draft_id,
+            product_id=products[0].product_id,
+            protocol_input_mode="stack_smoothing",
+            desired_weekly_mg=Decimal("210"),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        ),
+        StackInputTargetView(
+            id=uuid4(),
+            draft_id=settings.draft_id,
+            product_id=products[1].product_id,
+            protocol_input_mode="stack_smoothing",
+            desired_weekly_mg=Decimal("95"),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        ),
+    ]
+    result = PulseCalculationEngine().calculate(settings=settings, products=products, stack_targets=targets)
+    per_product = (result.summary_metrics or {}).get("per_product_weekly_target_mg") or {}
+    assert result.allocation_mode == "stack_input_fixed"
+    assert per_product[str(products[0].product_id)] == 210.0
+    assert per_product[str(products[1].product_id)] == 95.0
+
+
+def test_stack_smoothing_missing_target_fails_validation() -> None:
+    products = _products()
+    settings = _settings("layered_pulse")
+    settings.protocol_input_mode = "stack_smoothing"
+    settings.weekly_target_total_mg = None
+    result = PulseCalculationEngine().calculate(settings=settings, products=products, stack_targets=[])
+    assert result.status == "failed_validation"
+    assert "stack_targets_missing" in result.validation_issues
+
+
 def test_locked_mode_returns_clean_validation_issue() -> None:
     settings = _settings("layered_pulse")
     settings.protocol_input_mode = "stack_smoothing"
     result = PulseCalculationEngine().calculate(settings=settings, products=_products())
     assert result.status == "failed_validation"
-    assert "stack_smoothing_not_yet_available" in result.validation_issues
+    assert "stack_targets_missing" in result.validation_issues

@@ -8,6 +8,7 @@ from app.application.protocols.schemas import (
     PulseCalculationResult,
     PulsePlanEntry,
     PulseProductProfile,
+    StackInputTargetView,
 )
 from app.application.protocols.input_modes import LOCKED_PROTOCOL_INPUT_MODES, is_valid_protocol_input_mode
 
@@ -35,6 +36,7 @@ class PulseCalculationEngine:
         *,
         settings: DraftSettingsView | None,
         products: list[PulseProductProfile],
+        stack_targets: list[StackInputTargetView] | None = None,
     ) -> PulseCalculationResult:
         validation_issues: list[str] = []
         protocol_input_mode = settings.protocol_input_mode if settings else None
@@ -55,6 +57,16 @@ class PulseCalculationEngine:
             settings.weekly_target_total_mg is None or settings.weekly_target_total_mg <= 0
         ):
             validation_issues.append("weekly_target_invalid")
+        if protocol_input_mode == "stack_smoothing":
+            target_map = {target.product_id: target for target in (stack_targets or [])}
+            if not stack_targets:
+                validation_issues.append("stack_targets_missing")
+            for product in products:
+                target = target_map.get(product.product_id)
+                if target is None:
+                    validation_issues.append(f"stack_target_missing:{product.product_id}")
+                elif target.desired_weekly_mg <= 0:
+                    validation_issues.append(f"stack_target_invalid:{product.product_id}")
         if protocol_input_mode in LOCKED_PROTOCOL_INPUT_MODES:
             validation_issues.append(f"{protocol_input_mode}_not_yet_available")
         if settings and (settings.max_injections_per_week is None or settings.max_injections_per_week <= 0):
@@ -94,6 +106,8 @@ class PulseCalculationEngine:
         allocation_context = self._resolve_allocation(products, settings.weekly_target_total_mg or Decimal("0"))
         if protocol_input_mode == "auto_pulse":
             allocation_context = self._resolve_auto_pulse_allocation(products)
+        if protocol_input_mode == "stack_smoothing":
+            allocation_context = self._resolve_stack_smoothing_allocation(products, stack_targets or [])
         plans = self._build_plan_products(settings, products, strategy, allocation_context["per_product_mg"])
 
         optimization_applied = False
@@ -159,6 +173,29 @@ class PulseCalculationEngine:
             entries=entries,
             validation_issues=[],
         )
+
+    def _resolve_stack_smoothing_allocation(
+        self, products: list[PulseProductProfile], stack_targets: list[StackInputTargetView]
+    ) -> dict:
+        by_product = {str(target.product_id): target.desired_weekly_mg for target in stack_targets}
+        per_product_mg: dict[str, Decimal] = {}
+        for product in sorted(products, key=lambda p: str(p.product_id)):
+            per_product_mg[str(product.product_id)] = by_product[str(product.product_id)].quantize(Decimal("0.0001"))
+        derived_total = sum(per_product_mg.values())
+        return {
+            "allocation_mode": "stack_input_fixed",
+            "per_product_mg": per_product_mg,
+            "guidance_coverage_score": Decimal("100.00"),
+            "guidance_band_fit_score": Decimal("100.00"),
+            "effective_half_life_mode": "amount_weighted",
+            "half_life_resolution_quality": Decimal("1.00"),
+            "quality_flags": [],
+            "allocation_details": {
+                "mode": "stack_input_fixed",
+                "per_product_allocated_mg_week": {k: float(v) for k, v in per_product_mg.items()},
+                "derived_total_weekly_target_mg": float(derived_total),
+            },
+        }
 
     def _resolve_auto_pulse_allocation(self, products: list[PulseProductProfile]) -> dict:
         sorted_products = sorted(products, key=lambda p: str(p.product_id))

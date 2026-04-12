@@ -15,6 +15,7 @@ class ProtocolDraftReadinessService(DraftReadinessValidator):
 
         settings = await self.repository.get_draft_settings(draft_id=draft.draft_id)
         products = await self.repository.list_calculation_products(draft_id=draft.draft_id)
+        stack_targets = await self.repository.list_stack_input_targets(draft_id=draft.draft_id, protocol_input_mode="stack_smoothing")
 
         if not draft.items:
             issues.append(DraftReadinessIssue(code="draft.empty", severity="error", message="Добавьте минимум один продукт в Draft."))
@@ -47,6 +48,28 @@ class ProtocolDraftReadinessService(DraftReadinessValidator):
                         message="Укажите weekly target total mg больше 0.",
                     )
                 )
+            if selected_mode == "stack_smoothing":
+                target_by_product = {target.product_id: target for target in stack_targets}
+                for item in draft.items:
+                    target = target_by_product.get(item.product_id)
+                    if target is None:
+                        issues.append(
+                            DraftReadinessIssue(
+                                code="settings.stack_target_missing",
+                                severity="error",
+                                message=f"Для продукта '{item.selected_product_name or item.product_id}' не задан desired weekly mg.",
+                                context={"product_id": str(item.product_id)},
+                            )
+                        )
+                    elif target.desired_weekly_mg <= Decimal("0"):
+                        issues.append(
+                            DraftReadinessIssue(
+                                code="settings.stack_target_invalid",
+                                severity="error",
+                                message=f"Для продукта '{item.selected_product_name or item.product_id}' desired weekly mg должен быть > 0.",
+                                context={"product_id": str(item.product_id)},
+                            )
+                        )
             if settings.duration_weeks is None or settings.duration_weeks <= 0:
                 issues.append(
                     DraftReadinessIssue(

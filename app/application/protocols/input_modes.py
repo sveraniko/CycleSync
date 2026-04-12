@@ -7,11 +7,11 @@ PROTOCOL_INPUT_MODES: tuple[str, ...] = (
 
 WORKING_PROTOCOL_INPUT_MODES: tuple[str, ...] = (
     "auto_pulse",
+    "stack_smoothing",
     "total_target",
 )
 
 LOCKED_PROTOCOL_INPUT_MODES: tuple[str, ...] = (
-    "stack_smoothing",
     "inventory_constrained",
 )
 
