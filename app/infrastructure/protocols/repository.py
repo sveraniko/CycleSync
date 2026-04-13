@@ -113,9 +113,10 @@ class SqlAlchemyDraftRepository:
                 added = False
 
             await session.commit()
-            draft = await self._fetch_active_draft(session, user_id)
-            if draft is None:  # pragma: no cover
-                raise RuntimeError("failed to load draft after add")
+            # expire_on_commit=False means draft.items is stale after commit;
+            # force-refresh the items collection to include the newly added row.
+            await session.refresh(draft, attribute_names=["items"])
+            await session.refresh(existing)
             item = next((i for i in draft.items if i.product_id == product_id), None)
             if item is None:  # pragma: no cover
                 raise RuntimeError("failed to load draft item after add")
