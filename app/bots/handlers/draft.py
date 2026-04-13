@@ -788,7 +788,7 @@ def build_draft_actions(draft: DraftView, *, clear_confirm: bool = False) -> Inl
             )
         else:
             rows.append([InlineKeyboardButton(text="Очистить Draft", callback_data="draft:clear:confirm")])
-    rows.append([InlineKeyboardButton(text="◀️ К поиску", callback_data="search:back")])
+    rows.append([InlineKeyboardButton(text="◀️ К поиску", callback_data="search:back"), InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")])
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

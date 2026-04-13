@@ -33,6 +33,23 @@ async def settings_entrypoint(
     )
 
 
+@router.callback_query(F.data == "settings:open")
+async def on_settings_open(
+    callback: CallbackQuery,
+    state: FSMContext,
+    reminder_service: ReminderApplicationService,
+) -> None:
+    user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+    settings = await reminder_service.get_reminder_settings(user_id)
+    await safe_edit_or_send(
+        state=state,
+        source_message=callback.message,
+        text=_render_settings(settings),
+        reply_markup=build_settings_actions(settings.reminders_enabled),
+    )
+    await callback.answer()
+
+
 @router.callback_query(F.data == "settings:reminders:on")
 async def on_reminders_on(
     callback: CallbackQuery,
@@ -187,6 +204,9 @@ def build_settings_actions(reminders_enabled: bool) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="Protocol status", callback_data="settings:protocol:status"
                 )
+            ],
+            [
+                InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home"),
             ],
         ]
     )

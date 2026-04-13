@@ -285,6 +285,7 @@ def build_results_actions(*, items: list[SearchResultItem], page: int, total: in
     if nav:
         rows.append(nav)
 
+    rows.append([InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -321,6 +322,7 @@ def build_card_actions(card: OpenCard, *, show_auth: bool, show_media: bool, sho
     for i in range(0, len(link_buttons), 2):
         rows.append(link_buttons[i : i + 2])
 
+    rows.append([InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
