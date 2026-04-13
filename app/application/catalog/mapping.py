@@ -8,6 +8,22 @@ from app.application.catalog.normalization import (
 from app.application.catalog.schemas import CatalogProductInput, IngredientInput, IngestIssue
 
 
+def _derive_package_kind(packaging_raw: str | None) -> str | None:
+    """Parse the 'packaging' column (e.g. '10 ml vial') into a package_kind."""
+    if not packaging_raw:
+        return None
+    text = packaging_raw.strip().lower()
+    if "vial" in text:
+        return "vial"
+    if "ampoule" in text or "ampule" in text or "amp" in text:
+        return "ampoule"
+    if "tablet" in text or "tab" in text:
+        return "tablet"
+    if "capsule" in text or "caps" in text:
+        return "capsule"
+    return None
+
+
 def parse_ingredient_token(token: str) -> IngredientInput:
     # name|qualifier|amount|unit|basis|half_life_days|dose_min|dose_max|dose_typical|is_pulse_driver
     parts = [part.strip() for part in token.split("|")]
@@ -62,6 +78,10 @@ def map_sheet_row(row: dict[str, str], row_number: int) -> tuple[CatalogProductI
         is_automatable=parse_bool(row.get("is_automatable")) is not False,
         pharmacology_notes=normalize_text(row.get("pharmacology_notes", "")) or None,
         composition_basis_notes=normalize_text(row.get("composition_basis_notes", "")) or None,
+        package_kind=normalize_text(row.get("package_kind", "")) or _derive_package_kind(row.get("packaging")),
+        volume_per_package_ml=parse_decimal(row.get("volume_per_package_ml")) or parse_decimal(row.get("vial_volume_ml")),
+        unit_strength_mg=parse_decimal(row.get("unit_strength_mg")) or concentration_value,
+        units_per_package=parse_decimal(row.get("units_per_package")),
         aliases=split_list_field(row.get("aliases", "")),
         ingredients=ingredients,
         image_refs=split_list_field(row.get("image_refs", "")),

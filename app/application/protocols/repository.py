@@ -140,6 +140,9 @@ class DraftRepository:
     async def get_latest_active_protocol_id(self, user_id: str) -> UUID | None:
         raise NotImplementedError
 
+    async def get_active_protocol_view(self, user_id: str) -> ActiveProtocolView | None:
+        raise NotImplementedError
+
     async def cancel_active_protocol(self, user_id: str) -> UUID | None:
         raise NotImplementedError
 

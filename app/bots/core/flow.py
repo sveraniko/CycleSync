@@ -72,7 +72,11 @@ async def safe_edit_or_send(
             reply_markup=reply_markup,
             parse_mode=parse_mode,
         )
-    except TelegramBadRequest:
+    except TelegramBadRequest as exc:
+        # "message is not modified" — content unchanged, do NOT spawn a duplicate.
+        if "message is not modified" in str(exc).lower():
+            return source_message
+        # For any other Telegram error (deleted message, too old, etc.) fall back to new message.
         sent = await source_message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
         await remember_container(state, sent.message_id)
         return sent

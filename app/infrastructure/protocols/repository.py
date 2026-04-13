@@ -657,6 +657,31 @@ class SqlAlchemyDraftRepository:
                 .order_by(Protocol.created_at.desc())
             )
 
+    async def get_active_protocol_view(self, user_id: str) -> ActiveProtocolView | None:
+        """Return the latest active protocol as a view object, without mutating state."""
+        async with self.session_factory() as session:
+            protocol = await session.scalar(
+                select(Protocol)
+                .where(Protocol.user_id == user_id, Protocol.status == "active")
+                .order_by(Protocol.created_at.desc())
+            )
+            if protocol is None:
+                return None
+            pulse_plan = await session.scalar(
+                select(PulsePlan).where(PulsePlan.protocol_id == protocol.id)
+            )
+            return ActiveProtocolView(
+                protocol_id=protocol.id,
+                draft_id=protocol.draft_id,
+                source_preview_id=protocol.source_preview_id,
+                pulse_plan_id=pulse_plan.id if pulse_plan else protocol.id,
+                status=protocol.status,
+                settings_snapshot=protocol.settings_snapshot_json or {},
+                protocol_input_mode=protocol.protocol_input_mode,
+                summary_metrics=pulse_plan.summary_metrics_json if pulse_plan else None,
+                warning_flags=pulse_plan.warning_flags_json if pulse_plan else [],
+            )
+
     async def cancel_active_protocol(self, user_id: str) -> UUID | None:
         async with self.session_factory() as session:
             protocol = await session.scalar(

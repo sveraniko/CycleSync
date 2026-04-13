@@ -926,6 +926,7 @@ def build_labs_root_actions(can_access_operator: bool = False) -> InlineKeyboard
     ]
     if can_access_operator:
         rows.append([InlineKeyboardButton(text="🛠 Operator", callback_data="labs:ops:menu")])
+    rows.append([InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

@@ -19,8 +19,11 @@ from app.application.protocols.schemas import (
     StackInputTargetInput,
 )
 from app.application.access import AccessEvaluationService
-from app.bots.core.flow import delete_user_input_message, safe_edit_or_send
+from app.application.search.service import SearchApplicationService
+from app.bots.core.flow import delete_user_input_message, remember_container, safe_edit_or_send
 from app.bots.core.formatting import compact_status_label, escape_html_text, format_decimal_human
+from app.bots.core.permissions import is_admin_user
+from app.bots.handlers.search import CARD_STATE_KEY, _render_card, re_render_search_results
 
 router = Router(name="draft")
 _DRAFT_CLEAR_CONFIRM_KEY = "draft_clear_confirm"
@@ -69,8 +72,15 @@ async def draft_entrypoint(message: Message, state: FSMContext, draft_service: D
 
 
 @router.callback_query(F.data.startswith("search:draft:"))
-async def on_add_to_draft(callback: CallbackQuery, draft_service: DraftApplicationService) -> None:
-    user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+async def on_add_to_draft(
+    callback: CallbackQuery,
+    state: FSMContext,
+    draft_service: DraftApplicationService,
+    search_service: SearchApplicationService,
+    admin_ids: tuple[int, ...] | None = None,
+) -> None:
+    uid = callback.from_user.id if callback.from_user else None
+    user_id = _resolve_user_id(uid)
     product_id = UUID(callback.data.split(":", 2)[2])
     try:
         result = await draft_service.add_product_to_draft(user_id=user_id, product_id=product_id)
@@ -78,14 +88,55 @@ async def on_add_to_draft(callback: CallbackQuery, draft_service: DraftApplicati
         await callback.answer("Карточка недоступна в каталоге.", show_alert=True)
         return
 
-    await callback.answer(
-        "Добавлено в Draft." if result.added else "Уже есть в Draft.",
-        show_alert=False,
-    )
+    # Check whether the user was looking at the open card for this product
+    data = await state.get_data()
+    card_state = dict(data.get(CARD_STATE_KEY) or {})
+    on_card = card_state.get("product_id") == str(product_id)
+
+    if not result.added:
+        if on_card:
+            # Already in draft AND on the card — navigate to draft panel
+            draft = await draft_service.list_draft(user_id)
+            await state.update_data(**{_DRAFT_CLEAR_CONFIRM_KEY: False})
+            await _render_draft_panel(message=callback.message, state=state, draft=draft)
+            await callback.answer()
+        else:
+            # Already in draft from results list — open draft panel
+            draft = await draft_service.list_draft(user_id)
+            await state.update_data(**{_DRAFT_CLEAR_CONFIRM_KEY: False})
+            await _render_draft_panel(message=callback.message, state=state, draft=draft)
+            await callback.answer()
+        return
+
+    # Successfully added
+    if on_card:
+        # Update checkmark and re-render the card
+        card_state["is_in_draft"] = True
+        await state.update_data(**{CARD_STATE_KEY: card_state})
+        card = await search_service.open_card(product_id)
+        if card is not None:
+            await _render_card(
+                callback.message,
+                state,
+                card,
+                is_admin=is_admin_user(uid, admin_ids),
+            )
+    else:
+        # From results list — re-render results with checkmark on the added product
+        draft = await draft_service.get_or_create_active_draft(user_id)
+        draft_product_ids = {str(item.product_id) for item in draft.items}
+        await re_render_search_results(
+            message=callback.message,
+            state=state,
+            draft_product_ids=draft_product_ids,
+        )
+
+    await callback.answer()
 
 
 @router.callback_query(F.data == "draft:open")
 async def on_open_draft(callback: CallbackQuery, state: FSMContext, draft_service: DraftApplicationService) -> None:
+    await remember_container(state, callback.message.message_id)
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     draft = await draft_service.list_draft(user_id)
     await state.update_data(**{_DRAFT_CLEAR_CONFIRM_KEY: False})
@@ -305,11 +356,15 @@ async def on_run_pulse_calculation(
     draft_service: DraftApplicationService,
 ) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+    # Sync container with the actual callback message to prevent duplicates.
+    await remember_container(state, callback.message.message_id)
     preview = await draft_service.generate_pulse_plan_preview(user_id)
+    draft = await draft_service.list_draft(user_id)
+    product_names = _build_product_name_map(draft)
     await safe_edit_or_send(
         state=state,
         source_message=callback.message,
-        text=_render_preview_summary(preview),
+        text=_render_preview_summary(preview, product_names),
         reply_markup=build_preview_actions(preview.preview_id),
         parse_mode=ParseMode.HTML,
     )
@@ -375,6 +430,8 @@ async def on_preview_estimate(
     state: FSMContext,
     estimator_service: CourseEstimatorService,
 ) -> None:
+    # Sync container to prevent duplicate panels.
+    await remember_container(state, callback.message.message_id)
     preview_id = UUID(callback.data.split(":", 3)[3])
     try:
         estimate = await estimator_service.estimate_from_preview(preview_id)
@@ -396,6 +453,66 @@ async def on_preview_estimate(
     await callback.answer()
 
 
+@router.callback_query(F.data == "protocol:view")
+async def on_view_protocol(
+    callback: CallbackQuery,
+    state: FSMContext,
+    draft_service: DraftApplicationService,
+) -> None:
+    # Sync container to prevent duplicate panels.
+    await remember_container(state, callback.message.message_id)
+    user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+    protocol_id = await draft_service.get_latest_active_protocol_id(user_id)
+    if protocol_id is None:
+        await safe_edit_or_send(
+            state=state,
+            source_message=callback.message,
+            text=(
+                "<b>🧬 Мой протокол</b>\n\n"
+                "Активных протоколов нет.\n"
+                "Создайте Draft, запустите расчёт и активируйте протокол."
+            ),
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="📋 Открыть Draft", callback_data="draft:open")],
+                    [InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")],
+                ]
+            ),
+            parse_mode=ParseMode.HTML,
+        )
+        await callback.answer()
+        return
+
+    active = await draft_service.get_active_protocol(user_id)
+    if active is None:
+        await safe_edit_or_send(
+            state=state,
+            source_message=callback.message,
+            text="Протокол не найден.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")]]
+            ),
+            parse_mode=ParseMode.HTML,
+        )
+        await callback.answer()
+        return
+
+    await safe_edit_or_send(
+        state=state,
+        source_message=callback.message,
+        text=_render_active_protocol_summary(active),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📊 Course estimate", callback_data="draft:estimate:active:latest")],
+                [InlineKeyboardButton(text="📋 Draft", callback_data="draft:open")],
+                [InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")],
+            ]
+        ),
+        parse_mode=ParseMode.HTML,
+    )
+    await callback.answer()
+
+
 @router.callback_query(F.data == "draft:estimate:active:latest")
 async def on_active_protocol_estimate(
     callback: CallbackQuery,
@@ -403,6 +520,8 @@ async def on_active_protocol_estimate(
     draft_service: DraftApplicationService,
     estimator_service: CourseEstimatorService,
 ) -> None:
+    # Sync container to prevent duplicate panels.
+    await remember_container(state, callback.message.message_id)
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     protocol_id = await draft_service.get_latest_active_protocol_id(user_id)
     if protocol_id is None:
@@ -1060,13 +1179,102 @@ def _render_readiness_summary(readiness, settings=None) -> str:
     return "\n".join(lines)
 
 
-def _render_preview_summary(preview: PulsePlanPreviewView) -> str:
+def _build_product_name_map(draft: DraftView) -> dict[str, str]:
+    """Build product_id -> display_name map from draft items."""
+    return {
+        str(item.product_id): (item.selected_product_name or item.selected_brand or str(item.product_id)[:8])
+        for item in draft.items
+    }
+
+
+def _format_package_requirement(line) -> str:
+    """Human-readable packaging requirement text."""
+    from app.application.protocols.schemas import CourseEstimateLine  # noqa: F811
+
+    if line.package_count_required is None or line.package_count_required_rounded is None:
+        return "Упаковки: оценка недоступна"
+
+    kind = (line.package_kind or "").strip().lower()
+    rounded = line.package_count_required_rounded
+
+    if kind == "vial":
+        label = _pluralize_ru(rounded, "флакон", "флакона", "флаконов")
+        if line.required_volume_ml_total is not None:
+            return f"Нужно: {rounded} {label} ({format_decimal_human(line.required_volume_ml_total)} мл)"
+        return f"Нужно: {rounded} {label}"
+
+    if kind == "ampoule":
+        # Ampoules: 1ml each, sold in packs of N (units_per_package).
+        total_amps = rounded
+        label = _pluralize_ru(total_amps, "ампула", "ампулы", "ампул")
+        # If we know pack size, show breakdown.
+        if line.required_unit_count_total is not None:
+            total_amps = int(line.required_unit_count_total.to_integral_value(rounding=__import__('decimal').ROUND_CEILING))
+            label = _pluralize_ru(total_amps, "ампула", "ампулы", "ампул")
+        # Compute packs + remainder if units_per_package known (from volume-based calc).
+        # For ampoules the package_count_required_rounded already gives the ml-based count.
+        # total amps = required_volume_ml_total (since 1 amp = 1ml)
+        if line.required_volume_ml_total is not None:
+            from decimal import ROUND_CEILING as _RC
+            total_amps = int(line.required_volume_ml_total.to_integral_value(rounding=_RC))
+            label = _pluralize_ru(total_amps, "ампула", "ампулы", "ампул")
+            packs_of = rounded  # package_count_required_rounded is in packs
+            # Derive pack size from metadata: volume_per_package_ml = amps_per_pack (since 1amp=1ml)
+            if packs_of > 0 and total_amps > 0:
+                amps_per_pack = max(1, total_amps // packs_of) if packs_of < total_amps else total_amps
+                full_packs = total_amps // amps_per_pack if amps_per_pack > 0 else 0
+                remainder = total_amps - full_packs * amps_per_pack
+                if remainder > 0:
+                    rem_label = _pluralize_ru(remainder, "амп.", "амп.", "амп.")
+                    pack_label = _pluralize_ru(full_packs, "упаковка", "упаковки", "упаковок")
+                    return f"Нужно: {total_amps} {label} ({full_packs} {pack_label} + {remainder} {rem_label})"
+                pack_label = _pluralize_ru(full_packs, "упаковка", "упаковки", "упаковок")
+                return f"Нужно: {total_amps} {label} ({full_packs} {pack_label})"
+        return f"Нужно: {total_amps} {label}"
+
+    if kind in {"tablet", "capsule"}:
+        unit_label = "шт." if kind == "tablet" else "капс."
+        if line.required_unit_count_total is not None:
+            from decimal import ROUND_CEILING as _RC
+            total_units = int(line.required_unit_count_total.to_integral_value(rounding=_RC))
+        else:
+            total_units = None
+        if total_units is not None:
+            pack_label = _pluralize_ru(rounded, "упаковка", "упаковки", "упаковок")
+            return f"Нужно: {total_units} {unit_label} ({rounded} {pack_label})"
+        pack_label = _pluralize_ru(rounded, "упаковка", "упаковки", "упаковок")
+        return f"Нужно: {rounded} {pack_label}"
+
+    # Unknown package kind — generic fallback.
+    pack_label = _pluralize_ru(rounded, "упаковка", "упаковки", "упаковок")
+    return f"Нужно: {rounded} {pack_label}"
+
+
+def _pluralize_ru(n: int, form1: str, form2: str, form5: str) -> str:
+    """Russian pluralization: 1 флакон, 2 флакона, 5 флаконов."""
+    n_abs = abs(n) % 100
+    n1 = n_abs % 10
+    if 11 <= n_abs <= 19:
+        return form5
+    if n1 == 1:
+        return form1
+    if 2 <= n1 <= 4:
+        return form2
+    return form5
+
+
+def _render_preview_summary(preview: PulsePlanPreviewView, product_names: dict[str, str] | None = None) -> str:
     per_product_weekly = preview.summary_metrics.get("per_product_weekly_target_mg") if preview.summary_metrics else {}
     per_product_weekly = per_product_weekly or {}
-    product_aliases = {product_id: f"Продукт {idx}" for idx, product_id in enumerate(per_product_weekly.keys(), start=1)}
+    names = product_names or {}
+    # Fall back to draft-provided names; never use generic "Продукт N".
+    product_aliases: dict[str, str] = {}
+    for product_id in per_product_weekly.keys():
+        product_aliases[product_id] = names.get(product_id, product_id[:8])
     if not product_aliases:
         for entry in preview.entries:
-            product_aliases.setdefault(str(entry.product_id), f"Продукт {len(product_aliases) + 1}")
+            pid = str(entry.product_id)
+            product_aliases.setdefault(pid, names.get(pid, pid[:8]))
 
     source_metrics = preview.summary_metrics or {}
     flatness = format_decimal_human(source_metrics.get("flatness_stability_score"))
@@ -1104,8 +1312,9 @@ def _render_preview_summary(preview: PulsePlanPreviewView) -> str:
         for entry in preview.entries[:8]:
             mg = format_decimal_human(entry.computed_mg, precision=1)
             ml = format_decimal_human(entry.volume_ml, precision=2)
-            label = product_aliases.get(str(entry.product_id), "Продукт")
-            lines.append(f"• День +{entry.day_offset}: {label} — {mg} мг / {ml} мл")
+            label = product_aliases.get(str(entry.product_id), str(entry.product_id)[:8])
+            lines.append(f"\u2022 День +{entry.day_offset}")
+            lines.append(f"  {label} — {mg} мг / {ml} мл")
         if len(preview.entries) > 8:
             lines.append(f"… ещё {len(preview.entries) - 8}")
 
@@ -1182,7 +1391,7 @@ def _render_course_estimate(estimate: CourseEstimate) -> str:
 
     lines.extend(["", "<b>По продуктам</b>"])
     for line in estimate.lines:
-        lines.append(f"• <b>{escape_html_text(line.product_name)}</b>")
+        lines.append(f"\u2022 <b>{escape_html_text(line.product_name)}</b>")
         lines.append(f"  Нужно: {format_decimal_human(line.required_active_mg_total)} мг активного")
         required_form = (
             f"{format_decimal_human(line.required_volume_ml_total)} мл"
@@ -1193,13 +1402,8 @@ def _render_course_estimate(estimate: CourseEstimate) -> str:
                 else "—"
             )
         )
-        lines.append(f"  Форма: {required_form}")
-        if line.package_count_required is None or line.package_count_required_rounded is None:
-            lines.append("  Упаковки: оценка недоступна")
-        else:
-            lines.append(
-                f"  Нужно упаковок: {format_decimal_human(line.package_count_required)} (~{line.package_count_required_rounded})"
-            )
+        lines.append(f"  Объём (нужно): {required_form}")
+        lines.append(f"  {_format_package_requirement(line)}")
         if estimate.has_inventory_comparison:
             if line.available_package_count is None:
                 lines.append("  В наличии: нет данных")

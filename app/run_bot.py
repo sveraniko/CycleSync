@@ -16,6 +16,7 @@ from app.application.expert_cases import SpecialistCaseAssemblyService
 from app.application.search import SearchApplicationService
 from app.application.commerce import CheckoutFulfillmentService, CheckoutService, FreePaymentProvider, PaymentProviderRegistry, StarsPaymentProvider
 from app.bots.router import get_root_router
+from app.bots.core.admin_config import AdminRuntimeConfig
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.infrastructure.bootstrap import close_infrastructure, init_infrastructure
@@ -102,6 +103,9 @@ async def run_bot() -> None:
         for token in settings.bot_admin_ids.split(",")
         if token.strip().isdigit()
     )
+    admin_config = AdminRuntimeConfig(
+        commerce_enabled=settings.commerce_mode != "disabled",
+    )
 
     logger.info("bot_startup", env=settings.app_env)
     try:
@@ -118,6 +122,7 @@ async def run_bot() -> None:
             access_service=access_service,
             checkout_service=checkout_service,
             admin_ids=admin_ids,
+            admin_config=admin_config,
             debug_enabled=settings.bot_debug_enabled,
         )
     finally:

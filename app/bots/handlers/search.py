@@ -10,6 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.types.callback_query import CallbackQuery
 
+from app.application.protocols import DraftApplicationService
 from app.application.search.schemas import OpenCard, SearchResponse, SearchResultItem
 from app.application.search.service import SearchApplicationService
 from app.bots.core.flow import delete_user_input_message, safe_edit_or_send
@@ -23,7 +24,12 @@ PAGE_SIZE = 5
 
 
 @router.message(F.text)
-async def search_entrypoint(message: Message, state: FSMContext, search_service: SearchApplicationService) -> None:
+async def search_entrypoint(
+    message: Message,
+    state: FSMContext,
+    search_service: SearchApplicationService,
+    draft_service: DraftApplicationService,
+) -> None:
     text = (message.text or "").strip()
     if not text or text.startswith("/"):
         return
@@ -32,6 +38,7 @@ async def search_entrypoint(message: Message, state: FSMContext, search_service:
         message=message,
         state=state,
         search_service=search_service,
+        draft_service=draft_service,
         query=text,
         page=0,
     )
@@ -39,7 +46,12 @@ async def search_entrypoint(message: Message, state: FSMContext, search_service:
 
 
 @router.callback_query(F.data.startswith("search:open:"))
-async def on_open_card(callback: CallbackQuery, state: FSMContext, search_service: SearchApplicationService) -> None:
+async def on_open_card(
+    callback: CallbackQuery,
+    state: FSMContext,
+    search_service: SearchApplicationService,
+    admin_ids: tuple[int, ...] | None = None,
+) -> None:
     product_id = callback.data.split(":", 2)[2]
     card = await search_service.open_card(UUID(product_id))
     if card is None:
@@ -53,16 +65,24 @@ async def on_open_card(callback: CallbackQuery, state: FSMContext, search_servic
                 "show_auth": False,
                 "show_media": False,
                 "show_sources": False,
+                "is_in_draft": False,  # updated by on_add_to_draft when item is added
             }
         }
     )
 
-    await _render_card(callback.message, state, card)
+    uid = callback.from_user.id if callback.from_user else None
+    from app.bots.core.permissions import is_admin_user
+    await _render_card(callback.message, state, card, is_admin=is_admin_user(uid, admin_ids))
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("search:page:"))
-async def on_search_page(callback: CallbackQuery, state: FSMContext, search_service: SearchApplicationService) -> None:
+async def on_search_page(
+    callback: CallbackQuery,
+    state: FSMContext,
+    search_service: SearchApplicationService,
+    draft_service: DraftApplicationService,
+) -> None:
     page = int(callback.data.split(":", 2)[2])
     data = await state.get_data()
     panel_state = data.get(SEARCH_STATE_KEY) or {}
@@ -75,6 +95,7 @@ async def on_search_page(callback: CallbackQuery, state: FSMContext, search_serv
         message=callback.message,
         state=state,
         search_service=search_service,
+        draft_service=draft_service,
         query=str(query),
         page=page,
     )
@@ -82,7 +103,11 @@ async def on_search_page(callback: CallbackQuery, state: FSMContext, search_serv
 
 
 @router.callback_query(F.data == "search:back")
-async def on_back_to_results(callback: CallbackQuery, state: FSMContext) -> None:
+async def on_back_to_results(
+    callback: CallbackQuery,
+    state: FSMContext,
+    draft_service: DraftApplicationService,
+) -> None:
     data = await state.get_data()
     panel_state = data.get(SEARCH_STATE_KEY) or {}
     items_raw = panel_state.get("items") or []
@@ -94,19 +119,25 @@ async def on_back_to_results(callback: CallbackQuery, state: FSMContext) -> None
         return
 
     items = [_deserialize_item(raw) for raw in items_raw]
+    draft_product_ids = await _get_draft_product_ids(draft_service, callback.from_user.id if callback.from_user else None)
     rendered = _render_search_panel(query=str(query), total=int(total), page=int(page), items=items)
     await safe_edit_or_send(
         state=state,
         source_message=callback.message,
         text=rendered,
-        reply_markup=build_results_actions(items=items, page=int(page), total=int(total)),
+        reply_markup=build_results_actions(items=items, page=int(page), total=int(total), draft_product_ids=draft_product_ids),
         parse_mode=ParseMode.HTML,
     )
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("search:toggle:"))
-async def on_toggle_section(callback: CallbackQuery, state: FSMContext, search_service: SearchApplicationService) -> None:
+async def on_toggle_section(
+    callback: CallbackQuery,
+    state: FSMContext,
+    search_service: SearchApplicationService,
+    admin_ids: tuple[int, ...] | None = None,
+) -> None:
     section = callback.data.split(":", 2)[2]
     if section not in {"auth", "media", "sources"}:
         await callback.answer("Неизвестный раздел", show_alert=True)
@@ -132,7 +163,9 @@ async def on_toggle_section(callback: CallbackQuery, state: FSMContext, search_s
         await callback.answer("Карточка не найдена", show_alert=True)
         return
 
-    await _render_card(callback.message, state, card)
+    uid = callback.from_user.id if callback.from_user else None
+    from app.bots.core.permissions import is_admin_user
+    await _render_card(callback.message, state, card, is_admin=is_admin_user(uid, admin_ids))
     await callback.answer()
 
 
@@ -141,6 +174,7 @@ async def _render_search_page(
     message: Message,
     state: FSMContext,
     search_service: SearchApplicationService,
+    draft_service: DraftApplicationService,
     query: str,
     page: int,
 ) -> None:
@@ -168,6 +202,8 @@ async def _render_search_page(
         )
         return
 
+    draft_product_ids = await _get_draft_product_ids(draft_service, message.from_user.id if message.from_user else None)
+
     await state.update_data(
         **{
             SEARCH_STATE_KEY: {
@@ -188,24 +224,37 @@ async def _render_search_page(
             page=safe_page,
             items=response.results,
         ),
-        reply_markup=build_results_actions(items=response.results, page=safe_page, total=response.total),
+        reply_markup=build_results_actions(
+            items=response.results,
+            page=safe_page,
+            total=response.total,
+            draft_product_ids=draft_product_ids,
+        ),
         parse_mode=ParseMode.HTML,
     )
 
 
-async def _render_card(message: Message, state: FSMContext, card: OpenCard) -> None:
+async def _render_card(message: Message, state: FSMContext, card: OpenCard, is_admin: bool = False) -> None:
     data = await state.get_data()
     card_state = data.get(CARD_STATE_KEY) or {}
     show_auth = bool(card_state.get("show_auth", False))
     show_media = bool(card_state.get("show_media", False))
     show_sources = bool(card_state.get("show_sources", False))
+    is_in_draft = bool(card_state.get("is_in_draft", False))
 
     text = _render_product_card(card, show_auth=show_auth, show_media=show_media, show_sources=show_sources)
     await safe_edit_or_send(
         state=state,
         source_message=message,
         text=text,
-        reply_markup=build_card_actions(card, show_auth=show_auth, show_media=show_media, show_sources=show_sources),
+        reply_markup=build_card_actions(
+            card,
+            show_auth=show_auth,
+            show_media=show_media,
+            show_sources=show_sources,
+            is_admin=is_admin,
+            is_in_draft=is_in_draft,
+        ),
         parse_mode=ParseMode.HTML,
     )
 
@@ -266,13 +315,25 @@ def _render_product_card(card: OpenCard, *, show_auth: bool, show_media: bool, s
     return "\n".join(lines)
 
 
-def build_results_actions(*, items: list[SearchResultItem], page: int, total: int) -> InlineKeyboardMarkup:
+def build_results_actions(
+    *,
+    items: list[SearchResultItem],
+    page: int,
+    total: int,
+    draft_product_ids: set[str] | None = None,
+) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
+    _in_draft = draft_product_ids or set()
     for item in items:
+        pid = str(item.product_id)
+        if pid in _in_draft:
+            draft_btn = InlineKeyboardButton(text="✅", callback_data="draft:open")
+        else:
+            draft_btn = InlineKeyboardButton(text="+Draft", callback_data=f"search:draft:{item.product_id}")
         rows.append(
             [
                 InlineKeyboardButton(text=f"Open · {item.product_name[:20]}", callback_data=f"search:open:{item.product_id}"),
-                InlineKeyboardButton(text="+Draft", callback_data=f"search:draft:{item.product_id}"),
+                draft_btn,
             ]
         )
 
@@ -289,10 +350,23 @@ def build_results_actions(*, items: list[SearchResultItem], page: int, total: in
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def build_card_actions(card: OpenCard, *, show_auth: bool, show_media: bool, show_sources: bool) -> InlineKeyboardMarkup:
+def build_card_actions(
+    card: OpenCard,
+    *,
+    show_auth: bool,
+    show_media: bool,
+    show_sources: bool,
+    is_admin: bool = False,
+    is_in_draft: bool = False,
+) -> InlineKeyboardMarkup:
+    draft_btn = (
+        InlineKeyboardButton(text="✅ В Draft — тап чтобы открыть", callback_data="draft:open")
+        if is_in_draft
+        else InlineKeyboardButton(text="+Draft", callback_data=f"search:draft:{card.product_id}")
+    )
     rows: list[list[InlineKeyboardButton]] = [
         [InlineKeyboardButton(text="Back to results", callback_data="search:back")],
-        [InlineKeyboardButton(text="+Draft", callback_data=f"search:draft:{card.product_id}")],
+        [draft_btn],
         [
             InlineKeyboardButton(
                 text=("Hide" if show_auth else "Show") + " authenticity",
@@ -322,6 +396,11 @@ def build_card_actions(card: OpenCard, *, show_auth: bool, show_media: bool, sho
     for i in range(0, len(link_buttons), 2):
         rows.append(link_buttons[i : i + 2])
 
+    if is_admin:
+        rows.append([
+            InlineKeyboardButton(text="🖼️ Добавить медиа", callback_data=f"admin:media:start:{card.product_id}"),
+        ])
+
     rows.append([InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -335,6 +414,53 @@ def build_result_actions(product_id: str) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+async def _get_draft_product_ids(
+    draft_service: DraftApplicationService, telegram_user_id: int | None
+) -> set[str]:
+    """Return set of product_id strings currently in the user's draft."""
+    if telegram_user_id is None:
+        return set()
+    user_id = str(telegram_user_id)
+    draft = await draft_service.get_or_create_active_draft(user_id)
+    return {str(item.product_id) for item in draft.items}
+
+
+async def re_render_search_results(
+    *,
+    message: Message,
+    state: FSMContext,
+    draft_product_ids: set[str],
+) -> bool:
+    """Re-render the cached search results panel with updated draft checkmarks.
+
+    Returns True if the panel was successfully re-rendered.
+    """
+    data = await state.get_data()
+    panel_state = data.get(SEARCH_STATE_KEY) or {}
+    items_raw = panel_state.get("items") or []
+    query = panel_state.get("query")
+    total = panel_state.get("total", 0)
+    page = panel_state.get("page", 0)
+    if not query or not items_raw:
+        return False
+
+    items = [_deserialize_item(raw) for raw in items_raw]
+    rendered = _render_search_panel(query=str(query), total=int(total), page=int(page), items=items)
+    await safe_edit_or_send(
+        state=state,
+        source_message=message,
+        text=rendered,
+        reply_markup=build_results_actions(
+            items=items,
+            page=int(page),
+            total=int(total),
+            draft_product_ids=draft_product_ids,
+        ),
+        parse_mode=ParseMode.HTML,
+    )
+    return True
 
 
 def _shorten(value: str | None, *, limit: int) -> str:

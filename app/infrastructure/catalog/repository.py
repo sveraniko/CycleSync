@@ -83,6 +83,10 @@ class SqlAlchemyCatalogRepository:
                 is_automatable=product.is_automatable,
                 pharmacology_notes=product.pharmacology_notes,
                 composition_basis_notes=product.composition_basis_notes,
+                package_kind=product.package_kind,
+                volume_per_package_ml=product.volume_per_package_ml,
+                unit_strength_mg=product.unit_strength_mg,
+                units_per_package=product.units_per_package,
                 source="google_sheets",
                 source_ref=product.source_row_key,
                 is_active=True,
@@ -102,6 +106,15 @@ class SqlAlchemyCatalogRepository:
             existing.concentration_value = product.concentration_value
             existing.concentration_unit = product.concentration_unit
             existing.concentration_basis = product.concentration_basis
+            # Update packaging metadata only when the source provides values
+            if product.package_kind is not None:
+                existing.package_kind = product.package_kind
+            if product.volume_per_package_ml is not None:
+                existing.volume_per_package_ml = product.volume_per_package_ml
+            if product.unit_strength_mg is not None:
+                existing.unit_strength_mg = product.unit_strength_mg
+            if product.units_per_package is not None:
+                existing.units_per_package = product.units_per_package
             existing.is_active = True
 
         await self._replace_aliases(existing.id, product.aliases)

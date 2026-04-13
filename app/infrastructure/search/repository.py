@@ -2,13 +2,14 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.application.search.repository import SearchQueryLogEntry
 from app.application.search.schemas import CatalogIngredientRow, CatalogProjectionRow, OpenCard
 from app.domain.models import CompoundProduct, SearchProjectionState, SearchQueryLog
+from app.domain.models.compound_catalog import ProductMediaRef
 
 
 class SqlAlchemySearchRepository:
@@ -137,6 +138,30 @@ class SqlAlchemySearchRepository:
                 authenticity_notes=product.authenticity_notes,
                 media_refs=[m.ref_url for m in sorted(product.media_refs, key=lambda x: x.sort_order) if m.is_active],
             )
+
+    async def add_product_media_ref(self, product_id: UUID, ref_url: str, media_kind: str = "external") -> bool:
+        async with self.session_factory() as session:
+            existing = await session.scalar(
+                select(ProductMediaRef).where(
+                    ProductMediaRef.product_id == product_id,
+                    ProductMediaRef.ref_url == ref_url,
+                )
+            )
+            if existing is not None:
+                return False
+            max_sort = await session.scalar(
+                select(func.max(ProductMediaRef.sort_order)).where(ProductMediaRef.product_id == product_id)
+            ) or 0
+            session.add(
+                ProductMediaRef(
+                    product_id=product_id,
+                    media_kind=media_kind,
+                    ref_url=ref_url,
+                    sort_order=max_sort + 1,
+                )
+            )
+            await session.commit()
+            return True
 
 
 def _decimal_str(value: Decimal | None) -> str | None:

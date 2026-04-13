@@ -111,3 +111,8 @@ class SearchApplicationService:
 
     async def open_card(self, product_id: UUID):
         return await self.repository.get_open_card(product_id)
+
+    async def admin_add_media_ref(self, product_id: UUID, ref_url: str, media_kind: str = "external") -> bool:
+        return await self.repository.add_product_media_ref(
+            product_id=product_id, ref_url=ref_url, media_kind=media_kind
+        )

@@ -1,5 +1,6 @@
 from aiogram import Router
 
+from app.bots.handlers.admin import router as admin_router
 from app.bots.handlers.draft import router as draft_router
 from app.bots.handlers.search import router as search_router
 from app.bots.handlers.settings import router as settings_router
@@ -13,6 +14,7 @@ from app.bots.handlers.checkout import router as checkout_router
 def get_root_router() -> Router:
     root_router = Router(name="root")
     root_router.include_router(start_router)
+    root_router.include_router(admin_router)  # before search to catch admin: callbacks
     root_router.include_router(draft_router)
     root_router.include_router(search_router)
     root_router.include_router(settings_router)

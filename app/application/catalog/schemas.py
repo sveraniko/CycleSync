@@ -33,6 +33,11 @@ class CatalogProductInput:
     is_automatable: bool
     pharmacology_notes: str | None
     composition_basis_notes: str | None
+    # Packaging / estimator fields (optional — only present when columns exist in source)
+    package_kind: str | None
+    volume_per_package_ml: Decimal | None
+    unit_strength_mg: Decimal | None
+    units_per_package: Decimal | None
     aliases: list[str]
     ingredients: list[IngredientInput]
     image_refs: list[str]
