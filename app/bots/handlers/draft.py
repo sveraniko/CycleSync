@@ -20,7 +20,7 @@ from app.application.protocols.schemas import (
 )
 from app.application.access import AccessEvaluationService
 from app.bots.core.flow import delete_user_input_message, safe_edit_or_send
-from app.bots.core.formatting import escape_html_text, format_decimal_human
+from app.bots.core.formatting import compact_status_label, escape_html_text, format_decimal_human
 
 router = Router(name="draft")
 _DRAFT_CLEAR_CONFIRM_KEY = "draft_clear_confirm"
@@ -311,6 +311,7 @@ async def on_run_pulse_calculation(
         source_message=callback.message,
         text=_render_preview_summary(preview),
         reply_markup=build_preview_actions(preview.preview_id),
+        parse_mode=ParseMode.HTML,
     )
     await callback.answer()
 
@@ -318,6 +319,7 @@ async def on_run_pulse_calculation(
 @router.callback_query(F.data.startswith("draft:activate:prepare:"))
 async def on_prepare_activation(
     callback: CallbackQuery,
+    state: FSMContext,
     draft_service: DraftApplicationService,
     estimator_service: CourseEstimatorService,
 ) -> None:
@@ -325,66 +327,109 @@ async def on_prepare_activation(
     try:
         estimate = await estimator_service.estimate_from_preview(preview_id)
     except ValueError:
-        await callback.message.answer("Не удалось построить pre-start estimate: preview недоступен.")
+        await safe_edit_or_send(
+            state=state,
+            source_message=callback.message,
+            text="Не удалось открыть pre-start оценку: preview недоступен.",
+        )
         await callback.answer()
         return
 
-    await callback.message.answer(
-        _render_pre_start_estimate_snapshot(estimate),
+    await safe_edit_or_send(
+        state=state,
+        source_message=callback.message,
+        text=_render_pre_start_estimate_snapshot(estimate),
         reply_markup=build_pre_start_actions(preview_id),
+        parse_mode=ParseMode.HTML,
     )
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("draft:activate:confirm:"))
-async def on_activate_latest_preview(callback: CallbackQuery, draft_service: DraftApplicationService) -> None:
+async def on_activate_latest_preview(callback: CallbackQuery, state: FSMContext, draft_service: DraftApplicationService) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     try:
         active = await draft_service.confirm_latest_preview_activation(user_id)
     except ValueError:
-        await callback.message.answer("Нет готового preview для активации. Сначала запустите расчет.")
+        await safe_edit_or_send(
+            state=state,
+            source_message=callback.message,
+            text="Нет готового preview для активации. Сначала запустите расчёт.",
+        )
         await callback.answer()
         return
 
-    await callback.message.answer(_render_active_protocol_summary(active), reply_markup=build_active_protocol_actions())
+    await safe_edit_or_send(
+        state=state,
+        source_message=callback.message,
+        text=_render_active_protocol_summary(active),
+        reply_markup=build_active_protocol_actions(),
+        parse_mode=ParseMode.HTML,
+    )
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("draft:estimate:preview:"))
 async def on_preview_estimate(
     callback: CallbackQuery,
+    state: FSMContext,
     estimator_service: CourseEstimatorService,
 ) -> None:
     preview_id = UUID(callback.data.split(":", 3)[3])
     try:
         estimate = await estimator_service.estimate_from_preview(preview_id)
     except ValueError:
-        await callback.message.answer("Course estimate unavailable: preview не найден.")
+        await safe_edit_or_send(
+            state=state,
+            source_message=callback.message,
+            text="Оценка курса недоступна: preview не найден.",
+        )
         await callback.answer()
         return
-    await callback.message.answer(_render_course_estimate(estimate))
+    await safe_edit_or_send(
+        state=state,
+        source_message=callback.message,
+        text=_render_course_estimate(estimate),
+        reply_markup=build_preview_actions(preview_id),
+        parse_mode=ParseMode.HTML,
+    )
     await callback.answer()
 
 
 @router.callback_query(F.data == "draft:estimate:active:latest")
 async def on_active_protocol_estimate(
     callback: CallbackQuery,
+    state: FSMContext,
     draft_service: DraftApplicationService,
     estimator_service: CourseEstimatorService,
 ) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     protocol_id = await draft_service.get_latest_active_protocol_id(user_id)
     if protocol_id is None:
-        await callback.message.answer("Нет active protocol. Сначала активируйте протокол из preview.")
+        await safe_edit_or_send(
+            state=state,
+            source_message=callback.message,
+            text="Нет активного протокола. Сначала подтвердите старт из preview.",
+        )
         await callback.answer()
         return
     try:
         estimate = await estimator_service.estimate_from_active_protocol(protocol_id)
     except ValueError:
-        await callback.message.answer("Course estimate unavailable: active protocol не найден.")
+        await safe_edit_or_send(
+            state=state,
+            source_message=callback.message,
+            text="Оценка курса недоступна: активный протокол не найден.",
+        )
         await callback.answer()
         return
-    await callback.message.answer(_render_course_estimate(estimate))
+    await safe_edit_or_send(
+        state=state,
+        source_message=callback.message,
+        text=_render_course_estimate(estimate),
+        reply_markup=build_active_protocol_actions(),
+        parse_mode=ParseMode.HTML,
+    )
     await callback.answer()
 
 
@@ -707,6 +752,7 @@ def build_pre_start_actions(preview_id: UUID) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="Confirm start", callback_data=f"draft:activate:confirm:{preview_id}")],
             [InlineKeyboardButton(text="Course estimate", callback_data=f"draft:estimate:preview:{preview_id}")],
             [InlineKeyboardButton(text="Back to preview", callback_data="draft:calculate:run")],
+            [InlineKeyboardButton(text="Draft", callback_data="draft:open")],
         ]
     )
 
@@ -1015,104 +1061,99 @@ def _render_readiness_summary(readiness, settings=None) -> str:
 
 
 def _render_preview_summary(preview: PulsePlanPreviewView) -> str:
+    per_product_weekly = preview.summary_metrics.get("per_product_weekly_target_mg") if preview.summary_metrics else {}
+    per_product_weekly = per_product_weekly or {}
+    product_aliases = {product_id: f"Продукт {idx}" for idx, product_id in enumerate(per_product_weekly.keys(), start=1)}
+    if not product_aliases:
+        for entry in preview.entries:
+            product_aliases.setdefault(str(entry.product_id), f"Продукт {len(product_aliases) + 1}")
+
+    source_metrics = preview.summary_metrics or {}
+    flatness = format_decimal_human(source_metrics.get("flatness_stability_score"))
+    injections = format_decimal_human(source_metrics.get("estimated_injections_per_week"))
+    max_volume = format_decimal_human(source_metrics.get("max_volume_per_event_ml"))
+
     lines = [
-        "Pulse Plan Preview",
-        f"Статус: {STATUS_LABELS.get(preview.status, preview.status)}",
-        f"Input mode: {INPUT_MODE_LABELS.get(preview.protocol_input_mode, preview.protocol_input_mode)}",
-        f"Preset: {PRESET_LABELS.get(preview.preset_applied, preview.preset_applied)}",
+        "<b>Preview • Pulse Plan</b>",
+        f"Статус: <b>{STATUS_LABELS.get(preview.status, compact_status_label(preview.status))}</b>",
+        f"Режим: <b>{INPUT_MODE_LABELS.get(preview.protocol_input_mode, preview.protocol_input_mode)}</b>",
+        f"Пресет: <b>{PRESET_LABELS.get(preview.preset_applied, preview.preset_applied)}</b>",
+        "",
+        "<b>Параметры плана</b>",
+        f"• Flatness: {flatness}",
+        f"• Инъекций/нед: {injections}",
+        f"• Макс. объём: {max_volume} мл",
     ]
 
     if preview.degraded_fallback:
-        lines.append("⚠️ Golden Pulse деградирован в layered_pulse (deterministic fallback).")
+        lines.append("⚠️ Golden Pulse автоматически переведён в Layered Pulse для стабильного расчёта.")
 
-    if preview.summary_metrics:
-        per_product = preview.summary_metrics.get("per_product_weekly_target_mg") or {}
-        derived_total = sum(Decimal(str(v)) for v in per_product.values()) if per_product else None
-        lines.extend(
-            [
-                "\nSummary metrics:",
-                f"- flatness/stability: {preview.summary_metrics.get('flatness_stability_score')}",
-                f"- injections/week est: {preview.summary_metrics.get('estimated_injections_per_week')}",
-                f"- max volume/event ml: {preview.summary_metrics.get('max_volume_per_event_ml')}",
-                f"- allocation mode: {preview.summary_metrics.get('allocation_mode')}",
-                f"- guidance coverage score: {preview.summary_metrics.get('guidance_coverage_score')}",
-            ]
-        )
-        if per_product:
-            lines.append("- per-product weekly mg:")
-            for product_id, value in per_product.items():
-                lines.append(f"  • {product_id}: {value}")
-        if derived_total is not None:
-            lines.append(f"- derived total weekly mg: {derived_total}")
-        warning_flags = preview.summary_metrics.get("allocation_warning_flags") or []
-        if warning_flags:
-            lines.append("- allocation quality warnings:")
-            lines.extend(f"  • {flag}" for flag in warning_flags)
-        inventory_counts = (preview.summary_metrics.get("inventory_entered_counts_by_product") or {})
-        derived_active = (preview.summary_metrics.get("inventory_derived_available_active_mg_by_product") or {})
-        if inventory_counts:
-            lines.append("- inventory entered by product:")
-            for product_id, info in inventory_counts.items():
-                lines.append(f"  • {product_id}: {info.get('available_count')} {info.get('count_unit')}")
-        if derived_active:
-            lines.append("- derived available active mg:")
-            for product_id, value in derived_active.items():
-                lines.append(f"  • {product_id}: {value}")
-        if "inventory_duration_fully_covered" in preview.summary_metrics:
-            lines.append(f"- inventory duration fully covered: {preview.summary_metrics.get('inventory_duration_fully_covered')}")
-        if "inventory_feasibility_signal" in preview.summary_metrics:
-            lines.append(f"- inventory feasibility signal: {preview.summary_metrics.get('inventory_feasibility_signal')}")
+    if per_product_weekly:
+        lines.extend(["", "<b>Сводка по продуктам (мг/нед)</b>"])
+        for product_id, value in per_product_weekly.items():
+            lines.append(f"• {product_aliases[product_id]}: {format_decimal_human(value)}")
+    elif preview.entries:
+        lines.extend(["", f"Событий в расписании: <b>{len(preview.entries)}</b>"])
 
     if preview.warning_flags:
-        lines.append("\nWarnings:")
-        lines.extend(f"- {flag}" for flag in preview.warning_flags)
+        lines.extend(["", "<b>Важные предупреждения</b>"])
+        lines.extend(f"• {compact_status_label(flag)}" for flag in preview.warning_flags[:3])
 
     if preview.entries:
-        lines.append("\nSchedule preview (first 8):")
+        lines.extend(["", "<b>Schedule preview</b>"])
         for entry in preview.entries[:8]:
-            mg = round(float(entry.computed_mg), 1) if entry.computed_mg is not None else "—"
-            ml = round(float(entry.volume_ml), 2) if entry.volume_ml is not None else "—"
-            lines.append(
-                f"- day+{entry.day_offset} | {mg} mg | {ml} ml"
-            )
+            mg = format_decimal_human(entry.computed_mg, precision=1)
+            ml = format_decimal_human(entry.volume_ml, precision=2)
+            label = product_aliases.get(str(entry.product_id), "Продукт")
+            lines.append(f"• День +{entry.day_offset}: {label} — {mg} мг / {ml} мл")
         if len(preview.entries) > 8:
-            lines.append(f"… and {len(preview.entries) - 8} more")
+            lines.append(f"… ещё {len(preview.entries) - 8}")
 
-    lines.append("\nЕсли план устраивает — подтвердите activation.")
+    lines.append("\nЕсли план подходит — откройте оценку курса или запускайте протокол.")
     return "\n".join(lines)
 
 
 def _render_active_protocol_summary(active: ActiveProtocolView) -> str:
+    duration = active.settings_snapshot.get("duration_weeks")
+    weekly_target = format_decimal_human(active.settings_snapshot.get("weekly_target_total_mg"))
+    flatness = format_decimal_human((active.summary_metrics or {}).get("flatness_stability_score"))
+    injections = format_decimal_human((active.summary_metrics or {}).get("estimated_injections_per_week"))
     lines = [
-        "✅ Protocol activated",
-        f"- mode: {INPUT_MODE_LABELS.get(active.protocol_input_mode or '', active.protocol_input_mode or '—')}",
-        f"- preset: {PRESET_LABELS.get(active.settings_snapshot.get('preset_code') or '', active.settings_snapshot.get('preset_code') or '—')}",
-        f"- duration: {active.settings_snapshot.get('duration_weeks') or '—'} weeks",
-        f"- weekly target: {active.settings_snapshot.get('weekly_target_total_mg') or '—'} mg",
+        "<b>✅ Протокол активирован</b>",
+        f"Статус: <b>{compact_status_label(active.status)}</b>",
+        f"Режим: <b>{INPUT_MODE_LABELS.get(active.protocol_input_mode or '', active.protocol_input_mode or '—')}</b>",
+        f"Пресет: <b>{PRESET_LABELS.get(active.settings_snapshot.get('preset_code') or '', active.settings_snapshot.get('preset_code') or '—')}</b>",
+        f"Длительность: <b>{duration or '—'} нед.</b>",
+        f"Цель: <b>{weekly_target} мг/нед</b>",
         "",
-        "Protocol is active. Check Settings for reminders or open Labs to log results.",
+        "<b>Ключевые метрики</b>",
+        f"• Flatness: {flatness}",
+        f"• Инъекций/нед: {injections}",
+        "",
+        "Протокол запущен. Можно оценить покрытие курса и вернуться в Draft при необходимости.",
     ]
     return "\n".join(lines)
 
 
 def _render_pre_start_estimate_snapshot(estimate: CourseEstimate) -> str:
+    source_label = "по preview" if estimate.source_type == "preview" else "по активному протоколу"
     lines = [
-        "Pre-start course estimate snapshot",
-        f"- source: {estimate.source_type}",
-        f"- duration_weeks: {estimate.duration_weeks or 'unknown'}",
-        f"- products: {estimate.total_products_count}",
+        "<b>Pre-start checkpoint</b>",
+        f"Источник: <b>{source_label}</b>",
+        f"Длительность: <b>{estimate.duration_weeks or '—'} нед.</b>",
+        f"Продуктов в курсе: <b>{estimate.total_products_count}</b>",
     ]
     if estimate.has_inventory_comparison:
         insufficient = [line for line in estimate.lines if line.inventory_sufficiency_status == "insufficient"]
         if insufficient:
-            lines.append("⚠️ Inventory status: insufficient for full duration.")
-            lines.append("Before start, review `Course estimate` details.")
+            lines.append("⚠️ Запаса не хватает на полный курс по части позиций.")
+            lines.append("Проверьте детализацию в «Course estimate» перед стартом.")
         else:
-            lines.append("✅ Inventory status: covers course.")
+            lines.append("✅ Текущего запаса достаточно на курс.")
     else:
-        lines.append("- inventory comparison: not provided")
+        lines.append("ℹ️ Сравнение с инвентарём не задано.")
     lines.append("")
-    lines.append("Start is not blocked. Confirm when ready.")
+    lines.append("Старт не заблокирован — подтвердите запуск, когда будете готовы.")
     return "\n".join(lines)
 
 
@@ -1121,61 +1162,64 @@ def _render_course_estimate(estimate: CourseEstimate) -> str:
     sufficient_count = sum(1 for line in estimate.lines if line.inventory_sufficiency_status == "sufficient")
     unknown_inventory_count = sum(1 for line in estimate.lines if line.inventory_sufficiency_status == "unknown")
     unsupported_count = sum(1 for line in estimate.lines if line.estimation_status == "unsupported")
-    source_label = "preview-based" if estimate.source_type == "preview" else "active-protocol-based"
+    source_label = "по preview" if estimate.source_type == "preview" else "по активному протоколу"
+    mode = INPUT_MODE_LABELS.get(estimate.protocol_input_mode or "", "—")
 
     lines = [
-        "Course estimate",
-        f"- source: {source_label}",
-        f"- protocol_input_mode: {INPUT_MODE_LABELS.get(estimate.protocol_input_mode or '', estimate.protocol_input_mode or 'unknown')}",
-        f"- duration_weeks: {estimate.duration_weeks or 'unknown'}",
-        f"- total products: {estimate.total_products_count}",
-        f"- inventory comparison: {'yes' if estimate.has_inventory_comparison else 'no'}",
-        f"- insufficiency warnings: {insufficient_count}",
-        f"- estimation unavailable lines: {unsupported_count}",
+        "<b>Course estimate</b>",
+        f"Источник: <b>{source_label}</b>",
+        f"Режим: <b>{mode}</b>",
+        f"Длительность: <b>{estimate.duration_weeks or '—'} нед.</b>",
+        f"Продуктов: <b>{estimate.total_products_count}</b>",
+        f"Недостаточно запаса: <b>{insufficient_count}</b>",
+        f"Оценка недоступна: <b>{unsupported_count}</b>",
     ]
     if estimate.has_inventory_comparison:
-        lines.append(f"- covers course: {sufficient_count}")
-        lines.append(f"- insufficient for full duration: {insufficient_count}")
+        lines.append(f"Покрывают курс: <b>{sufficient_count}</b>")
+        lines.append(f"Не покрывают курс: <b>{insufficient_count}</b>")
         if unknown_inventory_count:
-            lines.append(f"- inventory unknown: {unknown_inventory_count}")
+            lines.append(f"Нет данных по запасу: <b>{unknown_inventory_count}</b>")
 
-    lines.append("")
-    lines.append("Lines:")
+    lines.extend(["", "<b>По продуктам</b>"])
     for line in estimate.lines:
-        lines.append(f"• {line.product_name}")
-        lines.append(f"  - required active total: {line.required_active_mg_total} mg")
+        lines.append(f"• <b>{escape_html_text(line.product_name)}</b>")
+        lines.append(f"  Нужно: {format_decimal_human(line.required_active_mg_total)} мг активного")
         required_form = (
-            f"{line.required_volume_ml_total} ml"
+            f"{format_decimal_human(line.required_volume_ml_total)} мл"
             if line.required_volume_ml_total is not None
             else (
-                f"{line.required_unit_count_total} units"
+                f"{format_decimal_human(line.required_unit_count_total)} ед."
                 if line.required_unit_count_total is not None
-                else "unknown"
+                else "—"
             )
         )
-        lines.append(f"  - required form total: {required_form}")
-        lines.append(f"  - package kind: {line.package_kind or 'unknown'}")
+        lines.append(f"  Форма: {required_form}")
         if line.package_count_required is None or line.package_count_required_rounded is None:
-            lines.append("  - package count: estimation unavailable (unsupported metadata)")
+            lines.append("  Упаковки: оценка недоступна")
         else:
             lines.append(
-                f"  - required packages: {line.package_count_required} (~{line.package_count_required_rounded} rounded)"
+                f"  Нужно упаковок: {format_decimal_human(line.package_count_required)} (~{line.package_count_required_rounded})"
             )
         if estimate.has_inventory_comparison:
             if line.available_package_count is None:
-                lines.append("  - available packages: unknown")
+                lines.append("  В наличии: нет данных")
             else:
-                lines.append(f"  - available packages: {line.available_package_count}")
+                lines.append(f"  В наличии: {format_decimal_human(line.available_package_count)} уп.")
             if line.inventory_sufficiency_status == "sufficient":
-                lines.append("  - status: covers course")
+                lines.append("  Статус: покрывает курс")
             elif line.inventory_sufficiency_status == "insufficient":
-                lines.append("  - status: insufficient for full duration")
-                shortage = line.shortfall_package_count if line.shortfall_package_count is not None else "unknown"
-                lines.append(f"  - shortage: {shortage} packages")
+                lines.append("  Статус: недостаточно на полный курс")
+                shortage = (
+                    format_decimal_human(line.shortfall_package_count)
+                    if line.shortfall_package_count is not None
+                    else "—"
+                )
+                lines.append(f"  Дефицит: {shortage} уп.")
             else:
-                lines.append("  - status: estimation unavailable")
+                lines.append("  Статус: оценка недоступна")
         if line.estimation_warnings:
-            lines.append("  - warnings: " + ", ".join(line.estimation_warnings))
+            warnings = ", ".join(compact_status_label(flag) for flag in line.estimation_warnings)
+            lines.append(f"  Предупреждения: {warnings}")
     return "\n".join(lines)
 
 

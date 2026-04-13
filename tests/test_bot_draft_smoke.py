@@ -35,6 +35,10 @@ from app.bots.handlers.draft import (
     on_clear_confirm,
     on_clear_yes,
     on_open_draft,
+    on_prepare_activation,
+    on_activate_latest_preview,
+    on_preview_estimate,
+    on_active_protocol_estimate,
     on_remove_item,
 )
 from app.application.protocols.schemas import (
@@ -112,6 +116,7 @@ class FakeDraftService:
         self.draft = draft
         self.stack_targets: dict[str, object] = {}
         self.inventory_constraints: dict[str, object] = {}
+        self.preview_id = uuid4()
 
     async def list_draft(self, user_id: str) -> DraftView:
         return self.draft
@@ -184,6 +189,23 @@ class FakeDraftService:
 
     async def get_draft_readiness(self, user_id: str):
         return SimpleNamespace(summary="ready", issues=[])
+
+    async def generate_pulse_plan_preview(self, user_id: str):
+        return _sample_preview()
+
+    async def confirm_latest_preview_activation(self, user_id: str):
+        return _sample_active_protocol()
+
+    async def get_latest_active_protocol_id(self, user_id: str):
+        return uuid4()
+
+
+class FakeEstimatorService:
+    async def estimate_from_preview(self, preview_id):
+        return _sample_estimate(source_type="preview")
+
+    async def estimate_from_active_protocol(self, protocol_id):
+        return _sample_estimate(source_type="active_protocol")
 
 
 class FakeAccessService:
@@ -265,6 +287,87 @@ def _draft_with_item_and_settings() -> DraftView:
     )
 
 
+def _sample_preview() -> PulsePlanPreviewView:
+    return PulsePlanPreviewView(
+        preview_id=uuid4(),
+        draft_id=uuid4(),
+        protocol_input_mode="auto_pulse",
+        preset_requested="golden_pulse",
+        preset_applied="layered_pulse",
+        status="degraded_fallback",
+        degraded_fallback=True,
+        summary_metrics={
+            "flatness_stability_score": 88.2,
+            "estimated_injections_per_week": 4,
+            "max_volume_per_event_ml": 1.1,
+            "per_product_weekly_target_mg": {str(uuid4()): Decimal("160.0000")},
+        },
+        warning_flags=["golden_pulse_fallback_to_layered"],
+        allocation_mode="guidance_weighted",
+        guidance_coverage_score=Decimal("92.0"),
+        calculation_quality_flags=[],
+        entries=[
+            PulsePlanEntry(
+                day_offset=0,
+                scheduled_day=None,
+                product_id=uuid4(),
+                ingredient_context="Test",
+                volume_ml=Decimal("1.0"),
+                computed_mg=Decimal("100"),
+                injection_event_key="evt_d0",
+                sequence_no=0,
+            )
+        ],
+    )
+
+
+def _sample_active_protocol() -> ActiveProtocolView:
+    return ActiveProtocolView(
+        protocol_id=uuid4(),
+        draft_id=uuid4(),
+        source_preview_id=uuid4(),
+        pulse_plan_id=uuid4(),
+        status="active",
+        settings_snapshot={"preset_code": "layered_pulse", "duration_weeks": 8, "weekly_target_total_mg": "250"},
+        protocol_input_mode="total_target",
+        summary_metrics={"flatness_stability_score": 88.2},
+        warning_flags=[],
+    )
+
+
+def _sample_estimate(source_type: str) -> CourseEstimate:
+    return CourseEstimate(
+        source_type=source_type,
+        protocol_id=uuid4() if source_type == "active_protocol" else None,
+        preview_id=uuid4() if source_type == "preview" else None,
+        draft_id=uuid4(),
+        protocol_input_mode="inventory_constrained",
+        duration_weeks=10,
+        total_products_count=1,
+        has_inventory_comparison=True,
+        generated_at=datetime.now(timezone.utc),
+        lines=[
+            CourseEstimateLine(
+                product_id=uuid4(),
+                product_name="Test Vial",
+                required_active_mg_total=Decimal("300.0000"),
+                required_volume_ml_total=Decimal("3.0000"),
+                required_unit_count_total=None,
+                package_kind="vial",
+                package_count_required=Decimal("3.0000"),
+                package_count_required_rounded=3,
+                available_active_mg=Decimal("100.0000"),
+                available_package_count=Decimal("1.0000"),
+                inventory_sufficiency_status="insufficient",
+                shortfall_active_mg=Decimal("200.0000"),
+                shortfall_package_count=Decimal("2.0000"),
+                estimation_status="ok",
+                estimation_warnings=[],
+            )
+        ],
+    )
+
+
 def test_build_draft_shortcut_button() -> None:
     keyboard = build_draft_shortcut()
     assert keyboard.inline_keyboard[0][0].text == "Draft"
@@ -311,60 +414,18 @@ def test_build_readiness_and_preview_actions() -> None:
 
 
 def test_render_preview_summary_smoke() -> None:
-    preview = PulsePlanPreviewView(
-        preview_id=uuid4(),
-        draft_id=uuid4(),
-        protocol_input_mode="auto_pulse",
-        preset_requested="golden_pulse",
-        preset_applied="layered_pulse",
-        status="degraded_fallback",
-        degraded_fallback=True,
-        summary_metrics={
-            "flatness_stability_score": 88.2,
-            "estimated_injections_per_week": 4,
-            "max_volume_per_event_ml": 1.1,
-            "allocation_mode": "guidance_weighted",
-            "guidance_coverage_score": 92.0,
-            "allocation_warning_flags": [],
-        },
-        warning_flags=["golden_pulse_fallback_to_layered"],
-        allocation_mode="guidance_weighted",
-        guidance_coverage_score=Decimal("92.0"),
-        calculation_quality_flags=[],
-        entries=[
-            PulsePlanEntry(
-                day_offset=0,
-                scheduled_day=None,
-                product_id=uuid4(),
-                ingredient_context="Test",
-                volume_ml=Decimal("1.0"),
-                computed_mg=Decimal("100"),
-                injection_event_key="evt_d0",
-                sequence_no=0,
-            )
-        ],
-    )
+    preview = _sample_preview()
     text = _render_preview_summary(preview)
-    assert "degraded_fallback" in text
-    assert "Warnings:" in text
-    assert "allocation mode" in text
+    assert "Preview • Pulse Plan" in text
+    assert "Важные предупреждения" in text
+    assert "protocol_input_mode" not in text
 
 
 def test_render_active_protocol_summary_smoke() -> None:
-    active = ActiveProtocolView(
-        protocol_id=uuid4(),
-        draft_id=uuid4(),
-        source_preview_id=uuid4(),
-        pulse_plan_id=uuid4(),
-        status="active",
-        settings_snapshot={"preset_code": "layered_pulse", "duration_weeks": 8, "weekly_target_total_mg": "250"},
-        protocol_input_mode="total_target",
-        summary_metrics={"flatness_stability_score": 88.2},
-        warning_flags=[],
-    )
+    active = _sample_active_protocol()
     text = _render_active_protocol_summary(active)
-    assert "Protocol activated" in text
-    assert "Protocol is active" in text
+    assert "Протокол активирован" in text
+    assert "Ключевые метрики" in text
 
 
 def test_build_input_mode_actions_smoke() -> None:
@@ -397,39 +458,10 @@ def test_inventory_input_parser_and_render_smoke() -> None:
 
 
 def test_pre_start_estimate_visibility_with_insufficiency_warning() -> None:
-    estimate = CourseEstimate(
-        source_type="preview",
-        protocol_id=None,
-        preview_id=uuid4(),
-        draft_id=uuid4(),
-        protocol_input_mode="inventory_constrained",
-        duration_weeks=10,
-        total_products_count=1,
-        has_inventory_comparison=True,
-        generated_at=datetime.now(timezone.utc),
-        lines=[
-            CourseEstimateLine(
-                product_id=uuid4(),
-                product_name="Test Vial",
-                required_active_mg_total=Decimal("300.0000"),
-                required_volume_ml_total=Decimal("3.0000"),
-                required_unit_count_total=None,
-                package_kind="vial",
-                package_count_required=Decimal("3.0000"),
-                package_count_required_rounded=3,
-                available_active_mg=Decimal("100.0000"),
-                available_package_count=Decimal("1.0000"),
-                inventory_sufficiency_status="insufficient",
-                shortfall_active_mg=Decimal("200.0000"),
-                shortfall_package_count=Decimal("2.0000"),
-                estimation_status="ok",
-                estimation_warnings=[],
-            )
-        ],
-    )
+    estimate = _sample_estimate(source_type="preview")
     text = _render_pre_start_estimate_snapshot(estimate)
-    assert "Pre-start course estimate snapshot" in text
-    assert "insufficient for full duration" in text
+    assert "Pre-start checkpoint" in text
+    assert "Старт не заблокирован" in text
 
 
 def test_course_estimate_rendering_insufficiency_and_unsupported_semantics() -> None:
@@ -481,9 +513,9 @@ def test_course_estimate_rendering_insufficiency_and_unsupported_semantics() -> 
         ],
     )
     text = _render_course_estimate(estimate)
-    assert "insufficient for full duration" in text
-    assert "estimation unavailable" in text
-    assert "source: preview-based" in text
+    assert "недостаточно на полный курс" in text
+    assert "оценка недоступна" in text
+    assert "Источник: <b>по preview</b>" in text
 
 
 def test_course_estimate_source_distinction_preview_vs_active_protocol() -> None:
@@ -532,8 +564,55 @@ def test_course_estimate_source_distinction_preview_vs_active_protocol() -> None
             lines=[base_line],
         )
     )
-    assert "source: preview-based" in preview_text
-    assert "source: active-protocol-based" in active_text
+    assert "Источник: <b>по preview</b>" in preview_text
+    assert "Источник: <b>по активному протоколу</b>" in active_text
+
+
+def test_post_calculation_transitions_use_single_panel() -> None:
+    async def runner() -> None:
+        service = FakeDraftService(_draft_with_item())
+        estimator = FakeEstimatorService()
+        state = FakeFSMContext()
+        message = FakeMessage()
+
+        await draft_entrypoint(message=message, state=state, draft_service=service)
+        panel_id = message.answers[0]["sent"].message_id
+
+        preview_id = uuid4()
+        await on_prepare_activation(
+            callback=FakeCallback(message, f"draft:activate:prepare:{preview_id}"),
+            state=state,
+            draft_service=service,
+            estimator_service=estimator,
+        )
+        assert message.bot.edits[-1]["message_id"] == panel_id
+        assert "Pre-start checkpoint" in message.bot.edits[-1]["text"]
+
+        await on_activate_latest_preview(
+            callback=FakeCallback(message, f"draft:activate:confirm:{preview_id}"),
+            state=state,
+            draft_service=service,
+        )
+        assert message.bot.edits[-1]["message_id"] == panel_id
+        assert "Протокол активирован" in message.bot.edits[-1]["text"]
+
+        await on_active_protocol_estimate(
+            callback=FakeCallback(message, "draft:estimate:active:latest"),
+            state=state,
+            draft_service=service,
+            estimator_service=estimator,
+        )
+        assert message.bot.edits[-1]["message_id"] == panel_id
+        assert "Course estimate" in message.bot.edits[-1]["text"]
+
+        await on_preview_estimate(
+            callback=FakeCallback(message, f"draft:estimate:preview:{preview_id}"),
+            state=state,
+            estimator_service=estimator,
+        )
+        assert message.bot.edits[-1]["message_id"] == panel_id
+
+    asyncio.run(runner())
 
 
 def test_draft_open_uses_single_panel_container_semantics() -> None:
