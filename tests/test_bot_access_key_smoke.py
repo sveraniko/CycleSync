@@ -32,4 +32,4 @@ def test_access_key_success_render_smoke() -> None:
     )
     text = _render_success(result)
     assert "Ключ активирован" in text
-    assert "reminders_access" in text
+    assert "Reminders Access" in text

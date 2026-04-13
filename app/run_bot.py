@@ -97,6 +97,11 @@ async def run_bot() -> None:
     bot = Bot(token=settings.bot_token)
     dispatcher = Dispatcher()
     dispatcher.include_router(get_root_router())
+    admin_ids = tuple(
+        int(token.strip())
+        for token in settings.bot_admin_ids.split(",")
+        if token.strip().isdigit()
+    )
 
     logger.info("bot_startup", env=settings.app_env)
     try:
@@ -112,6 +117,8 @@ async def run_bot() -> None:
             access_key_service=access_key_service,
             access_service=access_service,
             checkout_service=checkout_service,
+            admin_ids=admin_ids,
+            debug_enabled=settings.bot_debug_enabled,
         )
     finally:
         await bot.session.close()
