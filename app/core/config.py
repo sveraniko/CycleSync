@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     commerce_stars_bot_username: str = Field(default="")
     bot_debug_enabled: bool = Field(default=False)
     bot_admin_ids: str = Field(default="")
-    pulse_engine_version: str = Field(default="v1")
+    pulse_engine_version: str = Field(default="v2")
 
 
 @lru_cache(maxsize=1)

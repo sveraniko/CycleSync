@@ -300,9 +300,9 @@ def generate_validation_payload(workbook_path: str) -> dict:
     pulse_rows = [row for row in asyncio.run(_load("PulseScenarios")) if _row_is_data(row)]
     search_rows = asyncio.run(_load("SearchCases"))
 
-    scenarios_by_engine = {"v1": [], "v2": []}
+    scenarios_by_engine = {"v2": [], "v1": []}
     for row in pulse_rows:
-        for engine_version in ("v1", "v2"):
+        for engine_version in ("v2", "v1"):
             scenarios_by_engine[engine_version].append(
                 _run_single_scenario(
                     scenario_row=row,
@@ -338,6 +338,8 @@ def generate_validation_payload(workbook_path: str) -> dict:
     return {
         "workbook_path": workbook_path,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "primary_engine_version": "v2",
+        "rollback_engine_version": "v1",
         "ingest_validation": {
             "status": "ok" if not issue_payload else "issues_detected",
             "issue_count": len(issue_payload),
@@ -426,7 +428,7 @@ def main(workbook_path: str, output_path: str, summary_path: str) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run V2 workbook pulse/search regression and V1-vs-V2 comparison")
+    parser = argparse.ArgumentParser(description="Run V2-default workbook pulse/search regression with V1 rollback comparison")
     parser.add_argument("workbook_path", nargs="?", default="docs/medical_v2.xlsx")
     parser.add_argument("--out", default="docs/medical_v2_validation_report.json")
     parser.add_argument("--summary", default="docs/medical_v2_validation_summary.md")

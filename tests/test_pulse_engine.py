@@ -412,10 +412,10 @@ def test_v2_evaluation_populates_simulated_metrics_and_traceability() -> None:
     assert "variability_cv_pct" in summary
 
 
-def test_default_engine_version_remains_v1() -> None:
+def test_default_engine_version_is_v2() -> None:
     summary = PulseCalculationEngine().calculate(settings=_settings("layered_pulse"), products=_products()).summary_metrics or {}
-    assert summary.get("pulse_engine_version_used") == "v1"
-    assert summary.get("evaluation_source") == "v1_heuristic"
+    assert summary.get("pulse_engine_version_used") == "v2"
+    assert summary.get("evaluation_source") == "pk_v2_simulated"
 
 
 def test_v2_changes_flatness_source_vs_v1() -> None:

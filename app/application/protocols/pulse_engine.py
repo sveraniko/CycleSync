@@ -38,7 +38,7 @@ class _HalfLifeResolution:
 
 
 class PulseCalculationEngine:
-    def __init__(self, *, pulse_engine_version: str = "v1", pk_engine_v2: FirstOrderPKEngineV2 | None = None) -> None:
+    def __init__(self, *, pulse_engine_version: str = "v2", pk_engine_v2: FirstOrderPKEngineV2 | None = None) -> None:
         self.pulse_engine_version = pulse_engine_version
         self.pk_engine_v2 = pk_engine_v2 or FirstOrderPKEngineV2()
 
