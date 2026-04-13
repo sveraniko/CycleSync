@@ -307,9 +307,17 @@ class SqlAlchemyDraftRepository:
                     CompoundProduct.units_per_package,
                     CompoundProduct.volume_per_package_ml,
                     CompoundProduct.unit_strength_mg,
+                    CompoundIngredient.parent_substance,
                     CompoundIngredient.ingredient_name,
+                    CompoundIngredient.ester_name,
+                    CompoundIngredient.basis,
                     CompoundIngredient.half_life_days,
                     CompoundIngredient.amount,
+                    CompoundIngredient.amount_per_ml_mg,
+                    CompoundIngredient.amount_per_unit_mg,
+                    CompoundIngredient.active_fraction,
+                    CompoundIngredient.tmax_hours,
+                    CompoundIngredient.release_model,
                     CompoundIngredient.is_pulse_driver,
                     CompoundIngredient.dose_guidance_min_mg_week,
                     CompoundIngredient.dose_guidance_max_mg_week,
@@ -334,16 +342,24 @@ class SqlAlchemyDraftRepository:
                         unit_strength_mg=row[7],
                         ingredients=[],
                     )
-                if row[8]:
+                if row[9]:
                     grouped[row[0]].ingredients.append(
                         PulseIngredientProfile(
-                            ingredient_name=row[8],
-                            half_life_days=row[9],
-                            amount_mg=row[10],
-                            is_pulse_driver=row[11],
-                            dose_guidance_min_mg_week=row[12],
-                            dose_guidance_max_mg_week=row[13],
-                            dose_guidance_typical_mg_week=row[14],
+                            parent_substance=row[8],
+                            ingredient_name=row[9],
+                            ester_name=row[10],
+                            basis=row[11],
+                            half_life_days=row[12],
+                            amount_mg=row[13],
+                            amount_per_ml_mg=row[14],
+                            amount_per_unit_mg=row[15],
+                            active_fraction=row[16],
+                            tmax_hours=row[17],
+                            release_model=row[18],
+                            is_pulse_driver=row[19],
+                            dose_guidance_min_mg_week=row[20],
+                            dose_guidance_max_mg_week=row[21],
+                            dose_guidance_typical_mg_week=row[22],
                         )
                     )
             return list(grouped.values())

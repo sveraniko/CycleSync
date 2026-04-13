@@ -23,6 +23,7 @@ class Brand(SchemaTableMixin, BaseModel):
     __tablename__ = "brands"
     __schema_name__ = "compound_catalog"
 
+    product_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     normalized_name: Mapped[str] = mapped_column(String(255), nullable=False)
     source: Mapped[str] = mapped_column(String(64), nullable=False, default="google_sheets")
@@ -45,6 +46,7 @@ class CompoundProduct(SchemaTableMixin, BaseModel):
     brand_id: Mapped[UUID] = mapped_column(
         ForeignKey("compound_catalog.brands.id", ondelete="RESTRICT"), nullable=False
     )
+    product_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     normalized_display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     trade_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -85,6 +87,7 @@ class CompoundProduct(SchemaTableMixin, BaseModel):
             "concentration_raw",
             name="uq_catalog_product_identity",
         ),
+        UniqueConstraint("product_key", name="uq_catalog_product_key"),
         UniqueConstraint("source", "source_ref", name="uq_catalog_product_source_ref"),
         Index("ix_catalog_compound_products_is_active", "is_active"),
         Index("ix_catalog_compound_products_brand_id", "brand_id"),
@@ -120,13 +123,21 @@ class CompoundIngredient(SchemaTableMixin, BaseModel):
     product_id: Mapped[UUID] = mapped_column(
         ForeignKey("compound_catalog.compound_products.id", ondelete="CASCADE"), nullable=False
     )
+    parent_substance: Mapped[str | None] = mapped_column(String(255), nullable=True)
     ingredient_name: Mapped[str] = mapped_column(String(255), nullable=False)
     normalized_ingredient_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    ester_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     qualifier: Mapped[str | None] = mapped_column(String(255), nullable=True)
     amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
     basis: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    amount_per_ml_mg: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    amount_per_unit_mg: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     half_life_days: Mapped[Decimal | None] = mapped_column(Numeric(8, 3), nullable=True)
+    active_fraction: Mapped[Decimal | None] = mapped_column(Numeric(8, 5), nullable=True)
+    tmax_hours: Mapped[Decimal | None] = mapped_column(Numeric(8, 3), nullable=True)
+    release_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    pk_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     dose_guidance_min_mg_week: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     dose_guidance_max_mg_week: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     dose_guidance_typical_mg_week: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
@@ -140,6 +151,7 @@ class CompoundIngredient(SchemaTableMixin, BaseModel):
         UniqueConstraint(
             "product_id",
             "normalized_ingredient_name",
+            "ester_name",
             "qualifier",
             "amount",
             "unit",

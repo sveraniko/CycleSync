@@ -14,11 +14,20 @@ class IngredientInput:
     dose_guidance_max_mg_week: Decimal | None
     dose_guidance_typical_mg_week: Decimal | None
     is_pulse_driver: bool | None
+    parent_substance: str | None = None
+    ester_name: str | None = None
+    amount_per_ml_mg: Decimal | None = None
+    amount_per_unit_mg: Decimal | None = None
+    active_fraction: Decimal | None = None
+    tmax_hours: Decimal | None = None
+    release_model: str | None = None
+    pk_notes: str | None = None
 
 
 @dataclass(slots=True)
 class CatalogProductInput:
     source_row_key: str
+    product_key: str | None
     brand_name: str
     display_name: str
     trade_name: str
