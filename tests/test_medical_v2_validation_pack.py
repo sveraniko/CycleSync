@@ -21,6 +21,8 @@ def test_v2_workbook_validation_smoke() -> None:
 def test_scenario_runner_smoke() -> None:
     payload = generate_validation_payload("docs/medical_v2.xlsx")
 
+    assert payload["primary_engine_version"] == "v2"
+    assert payload["rollback_engine_version"] == "v1"
     v1 = payload["scenario_results"]["v1"]
     v2 = payload["scenario_results"]["v2"]
     assert v1 and v2

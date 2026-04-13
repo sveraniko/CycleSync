@@ -214,12 +214,18 @@ def test_parent_substance_grouping() -> None:
     assert grouped["Testosterone"] == Decimal("160")
 
 
-def test_engine_config_defaults_to_v1() -> None:
+def test_engine_config_defaults_to_v2() -> None:
     settings = Settings()
-    assert resolve_pulse_engine_version(settings) == "v1"
+    assert resolve_pulse_engine_version(settings) == "v2"
 
 
 def test_engine_selector_wires_requested_version() -> None:
     settings = Settings(pulse_engine_version="v2")
     engine = build_live_pulse_engine(settings)
     assert engine.pulse_engine_version == "v2"
+
+
+def test_engine_selector_supports_explicit_rollback_to_v1() -> None:
+    settings = Settings(pulse_engine_version="v1")
+    engine = build_live_pulse_engine(settings)
+    assert engine.pulse_engine_version == "v1"

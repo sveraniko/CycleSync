@@ -130,6 +130,8 @@ def test_preview_then_activation_events_flow() -> None:
     assert "protocol_activated" in repo.events
     assert "pulse_plan_activated" in repo.events
     assert "reminder_schedule_requested" in repo.events
+    assert repo.preview_payloads[0].summary_metrics.get("pulse_engine_version_used") == "v2"
+    assert repo.preview_payloads[0].summary_metrics.get("evaluation_source") == "pk_v2_simulated"
 
 
 def test_stack_smoothing_mode_is_carried_to_activation() -> None:
