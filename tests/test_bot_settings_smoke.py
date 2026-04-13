@@ -66,5 +66,5 @@ def test_render_protocol_status_smoke() -> None:
         summary=summary,
     )
     rendered = _render_protocol_status(status)
-    assert "integrity: watch" in rendered
+    assert "integrity: Watch" in rendered
     assert "completion_rate" in rendered
