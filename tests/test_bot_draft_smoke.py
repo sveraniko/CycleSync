@@ -27,6 +27,8 @@ from app.bots.handlers.draft import (
     on_duration_input,
     on_max_injections_input,
     on_mode_selected,
+    on_inventory_count_input,
+    on_stack_target_input,
     on_weekly_target_input,
     on_wizard_back,
     on_wizard_cancel,
@@ -108,6 +110,8 @@ class FakeCallback:
 class FakeDraftService:
     def __init__(self, draft: DraftView) -> None:
         self.draft = draft
+        self.stack_targets: dict[str, object] = {}
+        self.inventory_constraints: dict[str, object] = {}
 
     async def list_draft(self, user_id: str) -> DraftView:
         return self.draft
@@ -163,15 +167,19 @@ class FakeDraftService:
         return self.draft.settings
 
     async def get_stack_input_targets(self, user_id: str, protocol_input_mode: str):
-        return []
+        return list(self.stack_targets.values())
 
     async def save_stack_input_targets(self, user_id: str, payload):
+        for item in payload:
+            self.stack_targets[str(item.product_id)] = item
         return payload
 
     async def get_inventory_constraints(self, user_id: str, protocol_input_mode: str):
-        return []
+        return list(self.inventory_constraints.values())
 
     async def save_inventory_constraints(self, user_id: str, payload):
+        for item in payload:
+            self.inventory_constraints[str(item.product_id)] = item
         return payload
 
     async def get_draft_readiness(self, user_id: str):
@@ -205,6 +213,30 @@ def _draft_with_item() -> DraftView:
                 notes=None,
                 created_at=now,
             )
+        ],
+    )
+
+
+def _draft_with_items(count: int) -> DraftView:
+    now = datetime.now(timezone.utc)
+    draft_id = uuid4()
+    return DraftView(
+        draft_id=draft_id,
+        user_id="u1",
+        status="active",
+        created_at=now,
+        updated_at=now,
+        items=[
+            DraftItemView(
+                item_id=uuid4(),
+                draft_id=draft_id,
+                product_id=uuid4(),
+                selected_brand="Brand",
+                selected_product_name=f"Product {idx}",
+                notes=None,
+                created_at=now,
+            )
+            for idx in range(1, count + 1)
         ],
     )
 
@@ -622,8 +654,10 @@ def test_weekly_target_input_cleans_user_message() -> None:
         message.text = "350"
         await on_continue_to_calculation(FakeCallback(message, "draft:calculate"), state, service)
         await on_mode_selected(FakeCallback(message, "draft:calc:mode:total_target"), state, service, FakeAccessService())
+        answers_before = len(message.answers)
         await on_weekly_target_input(message=message, state=state, draft_service=service)
         assert message.deleted is True
+        assert len(message.answers) == answers_before
     asyncio.run(runner())
 
 
@@ -675,3 +709,49 @@ def test_readiness_panel_rendering_smoke() -> None:
     text = _render_readiness_summary(SimpleNamespace(summary="ok", issues=[]), settings=_draft_with_item_and_settings().settings)
     assert "Readiness" in text
     assert "Режим" in text
+
+
+def test_stack_input_back_navigates_to_previous_product_in_same_panel() -> None:
+    async def runner() -> None:
+        service = FakeDraftService(_draft_with_items(2))
+        state = FakeFSMContext()
+        message = FakeMessage()
+
+        await on_continue_to_calculation(FakeCallback(message, "draft:calculate"), state, service)
+        await on_mode_selected(FakeCallback(message, "draft:calc:mode:stack_smoothing"), state, service, FakeAccessService())
+        first_prompt = message.bot.edits[-1]["text"]
+        message.text = "120"
+        await on_stack_target_input(message=message, state=state, draft_service=service)
+        second_prompt = message.bot.edits[-1]["text"]
+        assert first_prompt != second_prompt
+
+        answers_before = len(message.answers)
+        await on_wizard_back(FakeCallback(message, "draft:wizard:back"), state, service, FakeAccessService())
+        assert "Product 1" in message.bot.edits[-1]["text"]
+        assert "Calculation setup" not in message.bot.edits[-1]["text"]
+        assert len(message.answers) == answers_before
+
+    asyncio.run(runner())
+
+
+def test_inventory_input_back_navigates_to_previous_product_in_same_panel() -> None:
+    async def runner() -> None:
+        service = FakeDraftService(_draft_with_items(2))
+        state = FakeFSMContext()
+        message = FakeMessage()
+
+        await on_continue_to_calculation(FakeCallback(message, "draft:calculate"), state, service)
+        await on_mode_selected(FakeCallback(message, "draft:calc:mode:inventory_constrained"), state, service, FakeAccessService())
+        first_prompt = message.bot.edits[-1]["text"]
+        message.text = "20 vial"
+        await on_inventory_count_input(message=message, state=state, draft_service=service)
+        second_prompt = message.bot.edits[-1]["text"]
+        assert first_prompt != second_prompt
+
+        answers_before = len(message.answers)
+        await on_wizard_back(FakeCallback(message, "draft:wizard:back"), state, service, FakeAccessService())
+        assert "Product 1" in message.bot.edits[-1]["text"]
+        assert "Calculation setup" not in message.bot.edits[-1]["text"]
+        assert len(message.answers) == answers_before
+
+    asyncio.run(runner())

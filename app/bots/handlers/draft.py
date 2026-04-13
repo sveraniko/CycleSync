@@ -220,6 +220,58 @@ async def on_wizard_back(
 ) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     data = await state.get_data()
+    current_step = data.get(WIZARD_STEP_KEY)
+
+    if current_step == "stack_target":
+        completed = list(data.get("stack_completed_product_ids", []))
+        current_product_id = data.get("stack_current_product_id")
+        pending = list(data.get("stack_pending_product_ids", []))
+        if completed:
+            previous_product_id = completed.pop()
+            if current_product_id:
+                pending.insert(0, current_product_id)
+            await state.update_data(
+                stack_current_product_id=previous_product_id,
+                stack_pending_product_ids=pending,
+                stack_completed_product_ids=completed,
+            )
+            await _goto_wizard_step(
+                message=callback.message,
+                state=state,
+                draft_service=draft_service,
+                access_service=access_service,
+                user_id=user_id,
+                step="stack_target",
+                push_history=False,
+            )
+            await callback.answer()
+            return
+
+    if current_step == "inventory_count":
+        completed = list(data.get("inventory_completed_product_ids", []))
+        current_product_id = data.get("inventory_current_product_id")
+        pending = list(data.get("inventory_pending_product_ids", []))
+        if completed:
+            previous_product_id = completed.pop()
+            if current_product_id:
+                pending.insert(0, current_product_id)
+            await state.update_data(
+                inventory_current_product_id=previous_product_id,
+                inventory_pending_product_ids=pending,
+                inventory_completed_product_ids=completed,
+            )
+            await _goto_wizard_step(
+                message=callback.message,
+                state=state,
+                draft_service=draft_service,
+                access_service=access_service,
+                user_id=user_id,
+                step="inventory_count",
+                push_history=False,
+            )
+            await callback.answer()
+            return
+
     history = list(data.get(WIZARD_HISTORY_KEY, []))
     if not history:
         await _cancel_wizard(callback.message, state, draft_service, user_id)
@@ -340,6 +392,7 @@ async def on_active_protocol_estimate(
 async def on_weekly_target_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
     value = _parse_decimal(message.text)
     if value is None or value <= Decimal("0"):
+        await delete_user_input_message(message)
         await _render_wizard_panel(
             message=message,
             state=state,
@@ -365,6 +418,7 @@ async def on_weekly_target_input(message: Message, state: FSMContext, draft_serv
 async def on_duration_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
     value = _parse_positive_int(message.text)
     if value is None:
+        await delete_user_input_message(message)
         await _render_wizard_panel(
             message=message,
             state=state,
@@ -410,6 +464,7 @@ async def on_preset_selected(callback: CallbackQuery, state: FSMContext, draft_s
 async def on_max_volume_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
     value = _parse_decimal(message.text)
     if value is None or value <= Decimal("0"):
+        await delete_user_input_message(message)
         await _render_wizard_panel(
             message=message,
             state=state,
@@ -435,6 +490,7 @@ async def on_max_volume_input(message: Message, state: FSMContext, draft_service
 async def on_max_injections_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
     value = _parse_positive_int(message.text)
     if value is None:
+        await delete_user_input_message(message)
         await _render_wizard_panel(
             message=message,
             state=state,
@@ -460,6 +516,7 @@ async def on_max_injections_input(message: Message, state: FSMContext, draft_ser
 async def on_stack_target_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
     value = _parse_decimal(message.text)
     if value is None or value <= Decimal("0"):
+        await delete_user_input_message(message)
         await _render_wizard_panel(
             message=message,
             state=state,
@@ -472,8 +529,7 @@ async def on_stack_target_input(message: Message, state: FSMContext, draft_servi
     pending = list(data.get("stack_pending_product_ids", []))
     current_product_id = data.get("stack_current_product_id")
     if current_product_id is None:
-        await state.clear()
-        await message.answer("Не удалось продолжить stack input. Нажмите «К расчету» и выберите режим заново.")
+        await _cancel_wizard(message, state, draft_service, _resolve_user_id(message.from_user.id if message.from_user else None))
         return
 
     user_id = _resolve_user_id(message.from_user.id if message.from_user else None)
@@ -488,9 +544,15 @@ async def on_stack_target_input(message: Message, state: FSMContext, draft_servi
         ],
     )
     await delete_user_input_message(message)
+    completed = list(data.get("stack_completed_product_ids", []))
+    completed.append(current_product_id)
     if pending:
         next_product_id = pending.pop(0)
-        await state.update_data(stack_pending_product_ids=pending, stack_current_product_id=next_product_id)
+        await state.update_data(
+            stack_pending_product_ids=pending,
+            stack_current_product_id=next_product_id,
+            stack_completed_product_ids=completed,
+        )
         await _goto_wizard_step(
             message=message,
             state=state,
@@ -516,6 +578,7 @@ async def on_stack_target_input(message: Message, state: FSMContext, draft_servi
 async def on_inventory_count_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
     parsed = _parse_inventory_input(message.text)
     if parsed is None:
+        await delete_user_input_message(message)
         await _render_wizard_panel(
             message=message,
             state=state,
@@ -529,8 +592,7 @@ async def on_inventory_count_input(message: Message, state: FSMContext, draft_se
     pending = list(data.get("inventory_pending_product_ids", []))
     current_product_id = data.get("inventory_current_product_id")
     if current_product_id is None:
-        await state.clear()
-        await message.answer("Не удалось продолжить inventory input. Выберите режим заново.")
+        await _cancel_wizard(message, state, draft_service, _resolve_user_id(message.from_user.id if message.from_user else None))
         return
 
     user_id = _resolve_user_id(message.from_user.id if message.from_user else None)
@@ -546,9 +608,15 @@ async def on_inventory_count_input(message: Message, state: FSMContext, draft_se
         ],
     )
     await delete_user_input_message(message)
+    completed = list(data.get("inventory_completed_product_ids", []))
+    completed.append(current_product_id)
     if pending:
         next_product_id = pending.pop(0)
-        await state.update_data(inventory_pending_product_ids=pending, inventory_current_product_id=next_product_id)
+        await state.update_data(
+            inventory_pending_product_ids=pending,
+            inventory_current_product_id=next_product_id,
+            inventory_completed_product_ids=completed,
+        )
         await _goto_wizard_step(
             message=message,
             state=state,
@@ -766,8 +834,10 @@ async def _cancel_wizard(message: Message, state: FSMContext, draft_service: Dra
             WIZARD_MODE_KEY: None,
             "stack_current_product_id": None,
             "stack_pending_product_ids": [],
+            "stack_completed_product_ids": [],
             "inventory_current_product_id": None,
             "inventory_pending_product_ids": [],
+            "inventory_completed_product_ids": [],
         }
     )
     draft = await draft_service.list_draft(user_id)
@@ -1178,6 +1248,7 @@ async def _start_stack_input_flow(
     draft_service: DraftApplicationService,
     user_id: str,
 ) -> None:
+    data = await state.get_data()
     draft = await draft_service.list_draft(user_id)
     existing_targets = await draft_service.get_stack_input_targets(user_id, protocol_input_mode="stack_smoothing")
     existing_by_product = {str(target.product_id): target.desired_weekly_mg for target in existing_targets}
@@ -1193,6 +1264,7 @@ async def _start_stack_input_flow(
         await state.update_data(
             stack_current_product_id=current,
             stack_pending_product_ids=pending,
+            stack_completed_product_ids=list(data.get("stack_completed_product_ids", [])),
             stack_product_names=product_names,
         )
         await _render_wizard_panel(
@@ -1220,6 +1292,7 @@ async def _start_inventory_input_flow(
     draft_service: DraftApplicationService,
     user_id: str,
 ) -> None:
+    data = await state.get_data()
     draft = await draft_service.list_draft(user_id)
     existing_constraints = await draft_service.get_inventory_constraints(user_id, protocol_input_mode="inventory_constrained")
     existing_by_product = {str(item.product_id): item for item in existing_constraints}
@@ -1234,6 +1307,7 @@ async def _start_inventory_input_flow(
         await state.update_data(
             inventory_current_product_id=current,
             inventory_pending_product_ids=pending,
+            inventory_completed_product_ids=list(data.get("inventory_completed_product_ids", [])),
             inventory_product_names=product_names,
         )
         await _render_wizard_panel(
