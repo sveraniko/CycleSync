@@ -45,14 +45,24 @@ async def on_open_card(callback: CallbackQuery, search_service: SearchApplicatio
             f"{card.product_name}\n"
             f"Бренд: {card.brand}\n"
             f"Состав: {card.composition_summary or '—'}\n"
-            f"Форма: {card.form_factor or '—'}\n"
-            f"Official: {card.official_url or '—'}\n"
-            f"Authenticity: {card.authenticity_notes or '—'}"
+            f"Форма: {card.form_factor or '—'}"
         )
+        if card.authenticity_notes:
+            text += f"\nAuthenticity: {card.authenticity_notes}"
         if card.media_refs:
             text += "\nMedia: " + ", ".join(card.media_refs[:3])
-        await callback.message.answer(text)
+        await callback.message.answer(text, reply_markup=build_card_actions(product_id, card.official_url))
     await callback.answer()
+
+
+def build_card_actions(product_id: str, official_url: str | None) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if official_url:
+        rows.append([InlineKeyboardButton(text="Official source", url=official_url)])
+    rows.append([
+        InlineKeyboardButton(text="+Draft", callback_data=f"search:draft:{product_id}"),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def build_result_actions(product_id: str) -> InlineKeyboardMarkup:

@@ -112,9 +112,7 @@ def build_checkout_actions(checkout_id) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="Apply coupon", callback_data=f"checkout:coupon:ask:{checkout_id}")],
             [InlineKeyboardButton(text="Pay with Stars", callback_data=f"checkout:provider:init:stars:{checkout_id}")],
             [InlineKeyboardButton(text="Confirm Stars paid", callback_data=f"checkout:provider:confirm:stars:{checkout_id}")],
-            [InlineKeyboardButton(text="Fail Stars payment", callback_data=f"checkout:provider:fail:stars:{checkout_id}")],
             [InlineKeyboardButton(text="Complete gift checkout", callback_data=f"checkout:gift:{checkout_id}")],
-            [InlineKeyboardButton(text="Settle free (test)", callback_data=f"checkout:free:{checkout_id}")],
             [InlineKeyboardButton(text="Refresh checkout status", callback_data=f"checkout:status:{checkout_id}")],
         ]
     )

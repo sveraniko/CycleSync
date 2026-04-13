@@ -617,11 +617,13 @@ def _render_preview_summary(preview: PulsePlanPreviewView) -> str:
     if preview.entries:
         lines.append("\nSchedule preview (first 8):")
         for entry in preview.entries[:8]:
+            mg = round(float(entry.computed_mg), 1) if entry.computed_mg is not None else "—"
+            ml = round(float(entry.volume_ml), 2) if entry.volume_ml is not None else "—"
             lines.append(
-                f"- day+{entry.day_offset} | mg={entry.computed_mg} | ml={entry.volume_ml} | event={entry.injection_event_key}"
+                f"- day+{entry.day_offset} | {mg} mg | {ml} ml"
             )
         if len(preview.entries) > 8:
-            lines.append(f"… еще {len(preview.entries) - 8} entries")
+            lines.append(f"… and {len(preview.entries) - 8} more")
 
     lines.append("\nЕсли план устраивает — подтвердите activation.")
     return "\n".join(lines)
@@ -630,17 +632,12 @@ def _render_preview_summary(preview: PulsePlanPreviewView) -> str:
 def _render_active_protocol_summary(active: ActiveProtocolView) -> str:
     lines = [
         "✅ Protocol activated",
-        f"- protocol_id: {active.protocol_id}",
-        f"- pulse_plan_id: {active.pulse_plan_id}",
-        f"- status: {active.status}",
+        f"- mode: {INPUT_MODE_LABELS.get(active.protocol_input_mode or '', active.protocol_input_mode or '—')}",
+        f"- preset: {PRESET_LABELS.get(active.settings_snapshot.get('preset_code') or '', active.settings_snapshot.get('preset_code') or '—')}",
+        f"- duration: {active.settings_snapshot.get('duration_weeks') or '—'} weeks",
+        f"- weekly target: {active.settings_snapshot.get('weekly_target_total_mg') or '—'} mg",
         "",
-        "Коротко по active truth:",
-        f"- protocol_input_mode: {INPUT_MODE_LABELS.get(active.protocol_input_mode or '', active.protocol_input_mode or '—')}",
-        f"- preset: {active.settings_snapshot.get('preset_code')}",
-        f"- duration_weeks: {active.settings_snapshot.get('duration_weeks')}",
-        f"- weekly_target_total_mg: {active.settings_snapshot.get('weekly_target_total_mg')}",
-        "",
-        "Execution/reminders слой продолжается отсюда (Wave 3 расширит delivery/adherence).",
+        "Protocol is active. Check Settings for reminders or open Labs to log results.",
     ]
     return "\n".join(lines)
 
