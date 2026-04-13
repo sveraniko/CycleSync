@@ -42,6 +42,8 @@ def parse_ingredient_token(token: str) -> IngredientInput:
         dose_guidance_max_mg_week=parse_decimal(dose_max_raw),
         dose_guidance_typical_mg_week=parse_decimal(dose_typical_raw),
         is_pulse_driver=parse_bool(pulse_raw),
+        amount_per_ml_mg=parse_decimal(amount_raw) if (normalize_text(basis) if basis else None) == "per_ml" else None,
+        amount_per_unit_mg=parse_decimal(amount_raw) if (normalize_text(basis) if basis else None) == "per_unit" else None,
     )
 
 
@@ -64,6 +66,7 @@ def map_sheet_row(row: dict[str, str], row_number: int) -> tuple[CatalogProductI
 
     product = CatalogProductInput(
         source_row_key=row_key,
+        product_key=None,
         brand_name=brand,
         display_name=display_name,
         trade_name=trade_name,

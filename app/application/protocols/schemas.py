@@ -100,6 +100,14 @@ class PulseIngredientProfile:
     dose_guidance_min_mg_week: Decimal | None = None
     dose_guidance_max_mg_week: Decimal | None = None
     dose_guidance_typical_mg_week: Decimal | None = None
+    parent_substance: str | None = None
+    ester_name: str | None = None
+    basis: str | None = None
+    amount_per_ml_mg: Decimal | None = None
+    amount_per_unit_mg: Decimal | None = None
+    active_fraction: Decimal | None = None
+    tmax_hours: Decimal | None = None
+    release_model: str | None = None
 
 
 @dataclass(slots=True)

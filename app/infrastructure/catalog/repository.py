@@ -68,6 +68,7 @@ class SqlAlchemyCatalogRepository:
             action = "created"
             existing = CompoundProduct(
                 brand_id=brand.id,
+                product_key=product.product_key,
                 display_name=product.display_name,
                 normalized_display_name=normalized_display_name,
                 trade_name=product.trade_name,
@@ -94,6 +95,7 @@ class SqlAlchemyCatalogRepository:
             self.session.add(existing)
             await self.session.flush()
         else:
+            existing.product_key = product.product_key or existing.product_key
             existing.display_name = product.display_name
             existing.normalized_display_name = normalized_display_name
             existing.trade_name = product.trade_name
@@ -142,13 +144,21 @@ class SqlAlchemyCatalogRepository:
             self.session.add(
                 CompoundIngredient(
                     product_id=product_id,
+                    parent_substance=ingredient.parent_substance,
                     ingredient_name=ingredient.ingredient_name,
                     normalized_ingredient_name=normalize_lookup(ingredient.ingredient_name),
+                    ester_name=ingredient.ester_name,
                     qualifier=ingredient.qualifier,
                     amount=ingredient.amount,
                     unit=ingredient.unit,
                     basis=ingredient.basis,
+                    amount_per_ml_mg=ingredient.amount_per_ml_mg,
+                    amount_per_unit_mg=ingredient.amount_per_unit_mg,
                     half_life_days=ingredient.half_life_days,
+                    active_fraction=ingredient.active_fraction,
+                    tmax_hours=ingredient.tmax_hours,
+                    release_model=ingredient.release_model,
+                    pk_notes=ingredient.pk_notes,
                     dose_guidance_min_mg_week=ingredient.dose_guidance_min_mg_week,
                     dose_guidance_max_mg_week=ingredient.dose_guidance_max_mg_week,
                     dose_guidance_typical_mg_week=ingredient.dose_guidance_typical_mg_week,

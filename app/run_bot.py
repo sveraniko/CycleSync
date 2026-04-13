@@ -7,9 +7,9 @@ from app.application.protocols import (
     CourseEstimatorService,
     DraftApplicationService,
     ProtocolDraftReadinessService,
-    PulseCalculationEngine,
 )
 from app.application.access import AccessEvaluationService, AccessKeyService
+from app.application.protocols.engine_selector import build_live_pulse_engine
 from app.application.reminders import ReminderApplicationService
 from app.application.labs import LabsApplicationService, LabsTriageService
 from app.application.expert_cases import SpecialistCaseAssemblyService
@@ -58,7 +58,7 @@ async def run_bot() -> None:
     labs_triage_gateway = build_labs_triage_gateway(settings)
     logger.info("labs_triage_gateway_configured", **labs_triage_gateway.diagnostics())
     readiness_service = ProtocolDraftReadinessService(repository=draft_repository)
-    pulse_engine = PulseCalculationEngine()
+    pulse_engine = build_live_pulse_engine(settings)
     draft_service = DraftApplicationService(
         repository=draft_repository,
         readiness_validator=readiness_service,
