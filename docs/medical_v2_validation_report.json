@@ -1,0 +1,1795 @@
+{
+  "workbook_path": "docs/medical_v2.xlsx",
+  "generated_at_utc": "2026-04-13T22:54:12.892395+00:00",
+  "ingest_validation": {
+    "status": "ok",
+    "issue_count": 0,
+    "issues": [],
+    "sheet_counts": {
+      "Products": 7,
+      "Ingredients": 12,
+      "PulseScenarios": 5,
+      "SearchCases": 11
+    }
+  },
+  "scenario_results": {
+    "v1": [
+      {
+        "scenario_id": "PKV2-A1",
+        "scenario_input_mode": "auto_pulse",
+        "scenario_preset": "unified_rhythm",
+        "scenario_product_keys": [
+          "pharma_bold_300"
+        ],
+        "status": "success",
+        "expected_status": "success",
+        "preset_applied": "unified_rhythm",
+        "warning_flags": [],
+        "allocation_mode": "auto_pulse_guidance_driven",
+        "summary_metrics": {
+          "flatness_stability_score": 90.11,
+          "pulse_engine_version_used": "v1",
+          "evaluation_source": "v1_heuristic",
+          "estimated_injections_per_week": 1,
+          "max_volume_per_event_ml": 1.0,
+          "allocation_mode": "auto_pulse_guidance_driven",
+          "per_product_weekly_target_mg": {
+            "ae999295-6486-583c-9ebb-4c6097665926": 300.0
+          },
+          "guidance_coverage_score": 100.0,
+          "guidance_band_fit_score": 100.0,
+          "effective_half_life_mode": "amount_weighted",
+          "half_life_resolution_quality": 1.0,
+          "optimization_applied": false,
+          "optimization_gain": 0.0,
+          "optimization_flatness_before": null,
+          "optimization_flatness_after": null,
+          "allocation_warning_flags": [],
+          "warning_flags": [],
+          "degraded_fallback": false
+        },
+        "entry_count": 8,
+        "entries": [
+          {
+            "day_offset": 0,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          },
+          {
+            "day_offset": 7,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          },
+          {
+            "day_offset": 14,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          },
+          {
+            "day_offset": 21,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          },
+          {
+            "day_offset": 28,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          },
+          {
+            "day_offset": 35,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          },
+          {
+            "day_offset": 42,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          },
+          {
+            "day_offset": 49,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          }
+        ],
+        "flatness_stability_score": 90.11,
+        "estimated_injections_per_week": 1,
+        "max_volume_per_event_ml": 1.0,
+        "derived_total_weekly_mg": 300.0,
+        "pulse_engine_version_used": "v1",
+        "evaluation_source": "v1_heuristic",
+        "validation_issues": []
+      },
+      {
+        "scenario_id": "PKV2-S1",
+        "scenario_input_mode": "stack_smoothing",
+        "scenario_preset": "golden_pulse",
+        "scenario_product_keys": [
+          "pharmacom_mix1_vial",
+          "pharma_dro_e_200"
+        ],
+        "status": "success",
+        "expected_status": "success_with_warnings",
+        "preset_applied": "golden_pulse",
+        "warning_flags": [],
+        "allocation_mode": "stack_input_fixed",
+        "summary_metrics": {
+          "flatness_stability_score": 92.54,
+          "pulse_engine_version_used": "v1",
+          "evaluation_source": "v1_heuristic",
+          "estimated_injections_per_week": 4,
+          "max_volume_per_event_ml": 0.75,
+          "allocation_mode": "stack_input_fixed",
+          "per_product_weekly_target_mg": {
+            "407426d4-dcc2-505d-aa91-876dfce87677": 500.0,
+            "497828c5-197c-5a52-8827-7da34bf08405": 300.0
+          },
+          "guidance_coverage_score": 100.0,
+          "guidance_band_fit_score": 100.0,
+          "effective_half_life_mode": "amount_weighted",
+          "half_life_resolution_quality": 1.0,
+          "optimization_applied": false,
+          "optimization_gain": 0.0,
+          "optimization_flatness_before": 92.54,
+          "optimization_flatness_after": 92.54,
+          "allocation_warning_flags": [],
+          "warning_flags": [],
+          "degraded_fallback": false
+        },
+        "entry_count": 36,
+        "entries": [
+          {
+            "day_offset": 0,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 1,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 4,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 5,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 8,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 9,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 12,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 13,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 16,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 17,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 20,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 21,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 24,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 25,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 28,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 29,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 32,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 33,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 36,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 37,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 40,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 41,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 44,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 45,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 48,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 49,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 52,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 53,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 56,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 57,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 60,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 61,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 64,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 65,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 68,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 69,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          }
+        ],
+        "flatness_stability_score": 92.54,
+        "estimated_injections_per_week": 4,
+        "max_volume_per_event_ml": 0.75,
+        "derived_total_weekly_mg": 800.0,
+        "pulse_engine_version_used": "v1",
+        "evaluation_source": "v1_heuristic",
+        "validation_issues": []
+      },
+      {
+        "scenario_id": "PKV2-T1",
+        "scenario_input_mode": "total_target",
+        "scenario_preset": "layered_pulse",
+        "scenario_product_keys": [
+          "pharmacom_mix1_vial",
+          "pharma_bold_300",
+          "pharma_tren_h_mix"
+        ],
+        "status": "success_with_warnings",
+        "expected_status": "success",
+        "preset_applied": "layered_pulse",
+        "warning_flags": [
+          "volume_cap_exceeded"
+        ],
+        "allocation_mode": "guidance_weighted",
+        "summary_metrics": {
+          "flatness_stability_score": 88.01,
+          "pulse_engine_version_used": "v1",
+          "evaluation_source": "v1_heuristic",
+          "estimated_injections_per_week": 2,
+          "max_volume_per_event_ml": 1.2,
+          "allocation_mode": "guidance_weighted",
+          "per_product_weekly_target_mg": {
+            "407426d4-dcc2-505d-aa91-876dfce87677": 540.0,
+            "ae999295-6486-583c-9ebb-4c6097665926": 360.0
+          },
+          "guidance_coverage_score": 100.0,
+          "guidance_band_fit_score": 100.0,
+          "effective_half_life_mode": "amount_weighted",
+          "half_life_resolution_quality": 1.0,
+          "optimization_applied": false,
+          "optimization_gain": 0.0,
+          "optimization_flatness_before": null,
+          "optimization_flatness_after": null,
+          "allocation_warning_flags": [],
+          "warning_flags": [
+            "volume_cap_exceeded"
+          ],
+          "degraded_fallback": false
+        },
+        "entry_count": 24,
+        "entries": [
+          {
+            "day_offset": 0,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 1,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 7,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 8,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 14,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 15,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 21,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 22,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 28,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 29,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 35,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 36,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 42,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 43,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 49,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 50,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 56,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 57,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 63,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 64,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 70,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 71,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 77,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 78,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          }
+        ],
+        "flatness_stability_score": 88.01,
+        "estimated_injections_per_week": 2,
+        "max_volume_per_event_ml": 1.2,
+        "derived_total_weekly_mg": 900.0,
+        "pulse_engine_version_used": "v1",
+        "evaluation_source": "v1_heuristic",
+        "validation_issues": []
+      },
+      {
+        "scenario_id": "PKV2-I1",
+        "scenario_input_mode": "inventory_constrained",
+        "scenario_preset": "unified_rhythm",
+        "scenario_product_keys": [
+          "pharma_sust_250_ampules",
+          "oxandrolonos"
+        ],
+        "status": "failed_validation",
+        "expected_status": "warning",
+        "preset_applied": "unified_rhythm",
+        "warning_flags": [],
+        "allocation_mode": null,
+        "summary_metrics": null,
+        "entry_count": 0,
+        "entries": [],
+        "flatness_stability_score": null,
+        "estimated_injections_per_week": null,
+        "max_volume_per_event_ml": null,
+        "derived_total_weekly_mg": null,
+        "pulse_engine_version_used": null,
+        "evaluation_source": null,
+        "validation_issues": [
+          "inventory_metadata_insufficient:119ce19c-09a6-5038-87b3-9d9f73859277"
+        ]
+      },
+      {
+        "scenario_id": "PKV2-M1",
+        "scenario_input_mode": "auto_pulse",
+        "scenario_preset": "golden_pulse",
+        "scenario_product_keys": [
+          "pharma_sust_250_ampules"
+        ],
+        "status": "success",
+        "expected_status": "success_with_warnings",
+        "preset_applied": "golden_pulse",
+        "warning_flags": [],
+        "allocation_mode": "auto_pulse_guidance_driven",
+        "summary_metrics": {
+          "flatness_stability_score": 90.67,
+          "pulse_engine_version_used": "v1",
+          "evaluation_source": "v1_heuristic",
+          "estimated_injections_per_week": 2,
+          "max_volume_per_event_ml": 0.5,
+          "allocation_mode": "auto_pulse_guidance_driven",
+          "per_product_weekly_target_mg": {
+            "119ce19c-09a6-5038-87b3-9d9f73859277": 250.0
+          },
+          "guidance_coverage_score": 100.0,
+          "guidance_band_fit_score": 100.0,
+          "effective_half_life_mode": "amount_weighted",
+          "half_life_resolution_quality": 1.0,
+          "optimization_applied": false,
+          "optimization_gain": 0.0,
+          "optimization_flatness_before": 90.67,
+          "optimization_flatness_after": 90.67,
+          "allocation_warning_flags": [],
+          "warning_flags": [],
+          "degraded_fallback": false
+        },
+        "entry_count": 11,
+        "entries": [
+          {
+            "day_offset": 0,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 4,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 8,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 12,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 16,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 20,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 24,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 28,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 32,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 36,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 40,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          }
+        ],
+        "flatness_stability_score": 90.67,
+        "estimated_injections_per_week": 2,
+        "max_volume_per_event_ml": 0.5,
+        "derived_total_weekly_mg": 250.0,
+        "pulse_engine_version_used": "v1",
+        "evaluation_source": "v1_heuristic",
+        "validation_issues": []
+      }
+    ],
+    "v2": [
+      {
+        "scenario_id": "PKV2-A1",
+        "scenario_input_mode": "auto_pulse",
+        "scenario_preset": "unified_rhythm",
+        "scenario_product_keys": [
+          "pharma_bold_300"
+        ],
+        "status": "success_with_warnings",
+        "expected_status": "success",
+        "preset_applied": "unified_rhythm",
+        "warning_flags": [
+          "flatness_below_target",
+          "peak_trough_spread_high"
+        ],
+        "allocation_mode": "auto_pulse_guidance_driven",
+        "summary_metrics": {
+          "flatness_stability_score": 32.91,
+          "pulse_engine_version_used": "v2",
+          "evaluation_source": "pk_v2_simulated",
+          "estimated_injections_per_week": 1,
+          "max_volume_per_event_ml": 1.0,
+          "allocation_mode": "auto_pulse_guidance_driven",
+          "per_product_weekly_target_mg": {
+            "ae999295-6486-583c-9ebb-4c6097665926": 300.0
+          },
+          "guidance_coverage_score": 100.0,
+          "guidance_band_fit_score": 100.0,
+          "effective_half_life_mode": "amount_weighted",
+          "half_life_resolution_quality": 1.0,
+          "optimization_applied": false,
+          "optimization_gain": 0.0,
+          "optimization_flatness_before": null,
+          "optimization_flatness_after": null,
+          "allocation_warning_flags": [],
+          "warning_flags": [
+            "peak_trough_spread_high",
+            "flatness_below_target"
+          ],
+          "degraded_fallback": false,
+          "peak_concentration": 539.23,
+          "trough_concentration": 0.0,
+          "peak_trough_spread_pct": 100.0,
+          "variability_cv_pct": 32.09
+        },
+        "entry_count": 8,
+        "entries": [
+          {
+            "day_offset": 0,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          },
+          {
+            "day_offset": 7,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          },
+          {
+            "day_offset": 14,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          },
+          {
+            "day_offset": 21,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          },
+          {
+            "day_offset": 28,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          },
+          {
+            "day_offset": 35,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          },
+          {
+            "day_offset": 42,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          },
+          {
+            "day_offset": 49,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.0,
+            "computed_mg": 300.0
+          }
+        ],
+        "flatness_stability_score": 32.91,
+        "estimated_injections_per_week": 1,
+        "max_volume_per_event_ml": 1.0,
+        "derived_total_weekly_mg": 300.0,
+        "pulse_engine_version_used": "v2",
+        "evaluation_source": "pk_v2_simulated",
+        "validation_issues": []
+      },
+      {
+        "scenario_id": "PKV2-S1",
+        "scenario_input_mode": "stack_smoothing",
+        "scenario_preset": "golden_pulse",
+        "scenario_product_keys": [
+          "pharmacom_mix1_vial",
+          "pharma_dro_e_200"
+        ],
+        "status": "success_with_warnings",
+        "expected_status": "success_with_warnings",
+        "preset_applied": "golden_pulse",
+        "warning_flags": [
+          "flatness_below_target",
+          "peak_trough_spread_high"
+        ],
+        "allocation_mode": "stack_input_fixed",
+        "summary_metrics": {
+          "flatness_stability_score": 35.23,
+          "pulse_engine_version_used": "v2",
+          "evaluation_source": "pk_v2_simulated",
+          "estimated_injections_per_week": 4,
+          "max_volume_per_event_ml": 0.75,
+          "allocation_mode": "stack_input_fixed",
+          "per_product_weekly_target_mg": {
+            "407426d4-dcc2-505d-aa91-876dfce87677": 500.0,
+            "497828c5-197c-5a52-8827-7da34bf08405": 300.0
+          },
+          "guidance_coverage_score": 100.0,
+          "guidance_band_fit_score": 100.0,
+          "effective_half_life_mode": "amount_weighted",
+          "half_life_resolution_quality": 1.0,
+          "optimization_applied": false,
+          "optimization_gain": 0.0,
+          "optimization_flatness_before": 92.54,
+          "optimization_flatness_after": 92.54,
+          "allocation_warning_flags": [],
+          "warning_flags": [
+            "peak_trough_spread_high",
+            "flatness_below_target"
+          ],
+          "degraded_fallback": false,
+          "peak_concentration": 979.45,
+          "trough_concentration": 0.0,
+          "peak_trough_spread_pct": 100.0,
+          "variability_cv_pct": 29.77
+        },
+        "entry_count": 36,
+        "entries": [
+          {
+            "day_offset": 0,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 1,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 4,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 5,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 8,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 9,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 12,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 13,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 16,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 17,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 20,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 21,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 24,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 25,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 28,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 29,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 32,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 33,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 36,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 37,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 40,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 41,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 44,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 45,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 48,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 49,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 52,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 53,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 56,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 57,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 60,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 61,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 64,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 65,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          },
+          {
+            "day_offset": 68,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 0.5556,
+            "computed_mg": 250.0
+          },
+          {
+            "day_offset": 69,
+            "product_id": "497828c5-197c-5a52-8827-7da34bf08405",
+            "ingredient_context": "Drostanolone Enanthate",
+            "volume_ml": 0.75,
+            "computed_mg": 150.0
+          }
+        ],
+        "flatness_stability_score": 35.23,
+        "estimated_injections_per_week": 4,
+        "max_volume_per_event_ml": 0.75,
+        "derived_total_weekly_mg": 800.0,
+        "pulse_engine_version_used": "v2",
+        "evaluation_source": "pk_v2_simulated",
+        "validation_issues": []
+      },
+      {
+        "scenario_id": "PKV2-T1",
+        "scenario_input_mode": "total_target",
+        "scenario_preset": "layered_pulse",
+        "scenario_product_keys": [
+          "pharmacom_mix1_vial",
+          "pharma_bold_300",
+          "pharma_tren_h_mix"
+        ],
+        "status": "success_with_warnings",
+        "expected_status": "success",
+        "preset_applied": "layered_pulse",
+        "warning_flags": [
+          "flatness_below_target",
+          "peak_trough_spread_high",
+          "volume_cap_exceeded"
+        ],
+        "allocation_mode": "guidance_weighted",
+        "summary_metrics": {
+          "flatness_stability_score": 35.95,
+          "pulse_engine_version_used": "v2",
+          "evaluation_source": "pk_v2_simulated",
+          "estimated_injections_per_week": 2,
+          "max_volume_per_event_ml": 1.2,
+          "allocation_mode": "guidance_weighted",
+          "per_product_weekly_target_mg": {
+            "407426d4-dcc2-505d-aa91-876dfce87677": 540.0,
+            "ae999295-6486-583c-9ebb-4c6097665926": 360.0
+          },
+          "guidance_coverage_score": 100.0,
+          "guidance_band_fit_score": 100.0,
+          "effective_half_life_mode": "amount_weighted",
+          "half_life_resolution_quality": 1.0,
+          "optimization_applied": false,
+          "optimization_gain": 0.0,
+          "optimization_flatness_before": null,
+          "optimization_flatness_after": null,
+          "allocation_warning_flags": [],
+          "warning_flags": [
+            "volume_cap_exceeded",
+            "peak_trough_spread_high",
+            "flatness_below_target"
+          ],
+          "degraded_fallback": false,
+          "peak_concentration": 1436.42,
+          "trough_concentration": 0.0,
+          "peak_trough_spread_pct": 100.0,
+          "variability_cv_pct": 29.05
+        },
+        "entry_count": 24,
+        "entries": [
+          {
+            "day_offset": 0,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 1,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 7,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 8,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 14,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 15,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 21,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 22,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 28,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 29,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 35,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 36,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 42,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 43,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 49,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 50,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 56,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 57,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 63,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 64,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 70,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 71,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          },
+          {
+            "day_offset": 77,
+            "product_id": "407426d4-dcc2-505d-aa91-876dfce87677",
+            "ingredient_context": "Testosterone Phenylpropionate, Testosterone Cypionate",
+            "volume_ml": 1.2,
+            "computed_mg": 540.0
+          },
+          {
+            "day_offset": 78,
+            "product_id": "ae999295-6486-583c-9ebb-4c6097665926",
+            "ingredient_context": "Boldenone Undecylenate",
+            "volume_ml": 1.2,
+            "computed_mg": 360.0
+          }
+        ],
+        "flatness_stability_score": 35.95,
+        "estimated_injections_per_week": 2,
+        "max_volume_per_event_ml": 1.2,
+        "derived_total_weekly_mg": 900.0,
+        "pulse_engine_version_used": "v2",
+        "evaluation_source": "pk_v2_simulated",
+        "validation_issues": []
+      },
+      {
+        "scenario_id": "PKV2-I1",
+        "scenario_input_mode": "inventory_constrained",
+        "scenario_preset": "unified_rhythm",
+        "scenario_product_keys": [
+          "pharma_sust_250_ampules",
+          "oxandrolonos"
+        ],
+        "status": "failed_validation",
+        "expected_status": "warning",
+        "preset_applied": "unified_rhythm",
+        "warning_flags": [],
+        "allocation_mode": null,
+        "summary_metrics": null,
+        "entry_count": 0,
+        "entries": [],
+        "flatness_stability_score": null,
+        "estimated_injections_per_week": null,
+        "max_volume_per_event_ml": null,
+        "derived_total_weekly_mg": null,
+        "pulse_engine_version_used": null,
+        "evaluation_source": null,
+        "validation_issues": [
+          "inventory_metadata_insufficient:119ce19c-09a6-5038-87b3-9d9f73859277"
+        ]
+      },
+      {
+        "scenario_id": "PKV2-M1",
+        "scenario_input_mode": "auto_pulse",
+        "scenario_preset": "golden_pulse",
+        "scenario_product_keys": [
+          "pharma_sust_250_ampules"
+        ],
+        "status": "success_with_warnings",
+        "expected_status": "success_with_warnings",
+        "preset_applied": "golden_pulse",
+        "warning_flags": [
+          "flatness_below_target",
+          "mixed_ester_short_component_spikes",
+          "peak_trough_spread_high"
+        ],
+        "allocation_mode": "auto_pulse_guidance_driven",
+        "summary_metrics": {
+          "flatness_stability_score": 33.44,
+          "pulse_engine_version_used": "v2",
+          "evaluation_source": "pk_v2_simulated",
+          "estimated_injections_per_week": 2,
+          "max_volume_per_event_ml": 0.5,
+          "allocation_mode": "auto_pulse_guidance_driven",
+          "per_product_weekly_target_mg": {
+            "119ce19c-09a6-5038-87b3-9d9f73859277": 250.0
+          },
+          "guidance_coverage_score": 100.0,
+          "guidance_band_fit_score": 100.0,
+          "effective_half_life_mode": "amount_weighted",
+          "half_life_resolution_quality": 1.0,
+          "optimization_applied": false,
+          "optimization_gain": 0.0,
+          "optimization_flatness_before": 90.67,
+          "optimization_flatness_after": 90.67,
+          "allocation_warning_flags": [],
+          "warning_flags": [
+            "mixed_ester_short_component_spikes",
+            "peak_trough_spread_high",
+            "flatness_below_target"
+          ],
+          "degraded_fallback": false,
+          "peak_concentration": 223.26,
+          "trough_concentration": 0.0,
+          "peak_trough_spread_pct": 100.0,
+          "variability_cv_pct": 31.56
+        },
+        "entry_count": 11,
+        "entries": [
+          {
+            "day_offset": 0,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 4,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 8,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 12,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 16,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 20,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 24,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 28,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 32,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 36,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          },
+          {
+            "day_offset": 40,
+            "product_id": "119ce19c-09a6-5038-87b3-9d9f73859277",
+            "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+            "volume_ml": 0.5,
+            "computed_mg": 125.0
+          }
+        ],
+        "flatness_stability_score": 33.44,
+        "estimated_injections_per_week": 2,
+        "max_volume_per_event_ml": 0.5,
+        "derived_total_weekly_mg": 250.0,
+        "pulse_engine_version_used": "v2",
+        "evaluation_source": "pk_v2_simulated",
+        "validation_issues": []
+      }
+    ]
+  },
+  "comparisons": [
+    {
+      "scenario_id": "PKV2-A1",
+      "engine_versions": [
+        "v1",
+        "v2"
+      ],
+      "flatness_score_delta": -57.2,
+      "peak_trough_spread_delta": 100.0,
+      "warning_flags_added_in_v2": [
+        "flatness_below_target",
+        "peak_trough_spread_high"
+      ],
+      "warning_flags_removed_in_v2": [],
+      "schedule_same_but_evaluation_changed": true,
+      "strictness_change": "more_strict",
+      "status_v1": "success",
+      "status_v2": "success_with_warnings"
+    },
+    {
+      "scenario_id": "PKV2-S1",
+      "engine_versions": [
+        "v1",
+        "v2"
+      ],
+      "flatness_score_delta": -57.31000000000001,
+      "peak_trough_spread_delta": 100.0,
+      "warning_flags_added_in_v2": [
+        "flatness_below_target",
+        "peak_trough_spread_high"
+      ],
+      "warning_flags_removed_in_v2": [],
+      "schedule_same_but_evaluation_changed": true,
+      "strictness_change": "more_strict",
+      "status_v1": "success",
+      "status_v2": "success_with_warnings"
+    },
+    {
+      "scenario_id": "PKV2-T1",
+      "engine_versions": [
+        "v1",
+        "v2"
+      ],
+      "flatness_score_delta": -52.06,
+      "peak_trough_spread_delta": 100.0,
+      "warning_flags_added_in_v2": [
+        "flatness_below_target",
+        "peak_trough_spread_high"
+      ],
+      "warning_flags_removed_in_v2": [],
+      "schedule_same_but_evaluation_changed": true,
+      "strictness_change": "same",
+      "status_v1": "success_with_warnings",
+      "status_v2": "success_with_warnings"
+    },
+    {
+      "scenario_id": "PKV2-I1",
+      "engine_versions": [
+        "v1",
+        "v2"
+      ],
+      "flatness_score_delta": 0,
+      "peak_trough_spread_delta": 0,
+      "warning_flags_added_in_v2": [],
+      "warning_flags_removed_in_v2": [],
+      "schedule_same_but_evaluation_changed": false,
+      "strictness_change": "same",
+      "status_v1": "failed_validation",
+      "status_v2": "failed_validation"
+    },
+    {
+      "scenario_id": "PKV2-M1",
+      "engine_versions": [
+        "v1",
+        "v2"
+      ],
+      "flatness_score_delta": -57.230000000000004,
+      "peak_trough_spread_delta": 100.0,
+      "warning_flags_added_in_v2": [
+        "flatness_below_target",
+        "mixed_ester_short_component_spikes",
+        "peak_trough_spread_high"
+      ],
+      "warning_flags_removed_in_v2": [],
+      "schedule_same_but_evaluation_changed": true,
+      "strictness_change": "more_strict",
+      "status_v1": "success",
+      "status_v2": "success_with_warnings"
+    }
+  ],
+  "search_results": [
+    {
+      "query": "фарма микс 1",
+      "expected_primary_trade_name": "PHARMA MIX 1",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "PHARMA MIX 1"
+      ],
+      "matched": true,
+      "notes": "RU alias for mixed injectable."
+    },
+    {
+      "query": "mix 1 450",
+      "expected_primary_trade_name": "PHARMA MIX 1",
+      "expected_hit": "yes",
+      "actual_hits": [],
+      "matched": false,
+      "notes": "Trade + concentration shortcut."
+    },
+    {
+      "query": "sust 250",
+      "expected_primary_trade_name": "PHARMA SUST 250 Ampules",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "PHARMA SUST 250 Ampules"
+      ],
+      "matched": true,
+      "notes": "Slang query for ampoule blend."
+    },
+    {
+      "query": "phenylpropionate",
+      "expected_primary_trade_name": "PHARMA SUST 250 Ampules",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "PHARMA MIX 1",
+        "PHARMA SUST 250 Ampules"
+      ],
+      "matched": false,
+      "notes": "Ingredient-level hit via ester/component."
+    },
+    {
+      "query": "boldenone undecylenate",
+      "expected_primary_trade_name": "PHARMA BOLD 300",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "PHARMA BOLD 300",
+        "PHARMA MIX 1"
+      ],
+      "matched": true,
+      "notes": "Ingredient-level injectable query."
+    },
+    {
+      "query": "мастерон энантат",
+      "expected_primary_trade_name": "PHARMA DRO E 200",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "PHARMA DRO E 200"
+      ],
+      "matched": true,
+      "notes": "RU slang query for drostanolone enanthate."
+    },
+    {
+      "query": "parabolan",
+      "expected_primary_trade_name": "PHARMA TREN H 100 Ampules",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "PHARMA TREN H 100 Ampules"
+      ],
+      "matched": true,
+      "notes": "Common slang for tren hex."
+    },
+    {
+      "query": "anavar 10",
+      "expected_primary_trade_name": "OXANDROLONOS",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "OXANDROLONOS"
+      ],
+      "matched": true,
+      "notes": "Tablet slang query."
+    },
+    {
+      "query": "оксандролон 10",
+      "expected_primary_trade_name": "OXANDROLONOS",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "OXANDROLONOS"
+      ],
+      "matched": true,
+      "notes": "RU oral query."
+    },
+    {
+      "query": "bolddenon 300",
+      "expected_primary_trade_name": "PHARMA BOLD 300",
+      "expected_hit": "no",
+      "actual_hits": [],
+      "matched": true,
+      "notes": "Negative typo control unless fuzzy search upgraded."
+    },
+    {
+      "query": "Hint: use dropdown cells for enums/booleans. See 'Lookups' sheet for full option lists.",
+      "expected_primary_trade_name": "",
+      "expected_hit": "",
+      "actual_hits": [],
+      "matched": false,
+      "notes": ""
+    }
+  ]
+}
