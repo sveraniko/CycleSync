@@ -2,6 +2,7 @@ from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
 from aiogram import F, Router
+from aiogram.enums import ParseMode
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -18,8 +19,11 @@ from app.application.protocols.schemas import (
     StackInputTargetInput,
 )
 from app.application.access import AccessEvaluationService
+from app.bots.core.flow import safe_edit_or_send
+from app.bots.core.formatting import escape_html_text, format_decimal_human
 
 router = Router(name="draft")
+_DRAFT_CLEAR_CONFIRM_KEY = "draft_clear_confirm"
 
 PRESET_LABELS = {
     "unified_rhythm": "Unified Rhythm",
@@ -53,10 +57,10 @@ class CalculationInputState(StatesGroup):
 
 
 @router.message(F.text.func(lambda value: (value or "").strip().lower() == "draft"))
-async def draft_entrypoint(message: Message, draft_service: DraftApplicationService) -> None:
+async def draft_entrypoint(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
     user_id = _resolve_user_id(message.from_user.id if message.from_user else None)
     draft = await draft_service.list_draft(user_id)
-    await message.answer(_render_draft_summary(draft), reply_markup=build_draft_actions(draft))
+    await _render_draft_panel(message=message, state=state, draft=draft)
 
 
 @router.callback_query(F.data.startswith("search:draft:"))
@@ -76,51 +80,54 @@ async def on_add_to_draft(callback: CallbackQuery, draft_service: DraftApplicati
 
 
 @router.callback_query(F.data == "draft:open")
-async def on_open_draft(callback: CallbackQuery, draft_service: DraftApplicationService) -> None:
+async def on_open_draft(callback: CallbackQuery, state: FSMContext, draft_service: DraftApplicationService) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     draft = await draft_service.list_draft(user_id)
-    await callback.message.answer(_render_draft_summary(draft), reply_markup=build_draft_actions(draft))
+    await state.update_data(**{_DRAFT_CLEAR_CONFIRM_KEY: False})
+    await _render_draft_panel(message=callback.message, state=state, draft=draft)
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("draft:remove:"))
-async def on_remove_item(callback: CallbackQuery, draft_service: DraftApplicationService) -> None:
+async def on_remove_item(callback: CallbackQuery, state: FSMContext, draft_service: DraftApplicationService) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     item_id = UUID(callback.data.split(":", 2)[2])
     draft = await draft_service.remove_item_from_draft(user_id=user_id, item_id=item_id)
     if draft is None:
-        await callback.message.answer("Черновик не найден. Напишите `Draft`, чтобы создать новый.")
+        await safe_edit_or_send(
+            state=state,
+            source_message=callback.message,
+            text="Черновик не найден. Напишите <code>Draft</code>, чтобы создать новый.",
+            parse_mode=ParseMode.HTML,
+        )
     else:
-        await callback.message.answer("Позиция удалена из черновика.")
-        await callback.message.answer(_render_draft_summary(draft), reply_markup=build_draft_actions(draft))
+        await state.update_data(**{_DRAFT_CLEAR_CONFIRM_KEY: False})
+        await _render_draft_panel(message=callback.message, state=state, draft=draft)
     await callback.answer()
 
 
 @router.callback_query(F.data == "draft:clear:confirm")
-async def on_clear_confirm(callback: CallbackQuery) -> None:
-    await callback.message.answer(
-        "Очистить весь черновик протокола?",
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="Да, очистить", callback_data="draft:clear:yes"),
-                    InlineKeyboardButton(text="Отмена", callback_data="draft:open"),
-                ]
-            ]
-        ),
-    )
+async def on_clear_confirm(callback: CallbackQuery, state: FSMContext, draft_service: DraftApplicationService) -> None:
+    user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+    draft = await draft_service.list_draft(user_id)
+    await state.update_data(**{_DRAFT_CLEAR_CONFIRM_KEY: True})
+    await _render_draft_panel(message=callback.message, state=state, draft=draft, clear_confirm=True)
     await callback.answer()
 
 
 @router.callback_query(F.data == "draft:clear:yes")
-async def on_clear_yes(callback: CallbackQuery, draft_service: DraftApplicationService) -> None:
+async def on_clear_yes(callback: CallbackQuery, state: FSMContext, draft_service: DraftApplicationService) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     draft = await draft_service.clear_draft(user_id)
     if draft is None:
-        await callback.message.answer("Активный черновик не найден.")
+        await safe_edit_or_send(
+            state=state,
+            source_message=callback.message,
+            text="Активный Draft не найден.",
+        )
     else:
-        await callback.message.answer("Черновик очищен.")
-        await callback.message.answer(_render_draft_summary(draft), reply_markup=build_draft_actions(draft))
+        await state.update_data(**{_DRAFT_CLEAR_CONFIRM_KEY: False})
+        await _render_draft_panel(message=callback.message, state=state, draft=draft)
     await callback.answer()
 
 
@@ -496,46 +503,83 @@ def build_active_protocol_actions() -> InlineKeyboardMarkup:
     )
 
 
-def build_draft_actions(draft: DraftView) -> InlineKeyboardMarkup:
+def build_draft_actions(draft: DraftView, *, clear_confirm: bool = False) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
-    rows.append([InlineKeyboardButton(text="Обновить Draft", callback_data="draft:open")])
+    rows.append(
+        [
+            InlineKeyboardButton(text="К расчету", callback_data="draft:calculate"),
+            InlineKeyboardButton(text="Обновить Draft", callback_data="draft:open"),
+        ]
+    )
 
     for idx, item in enumerate(draft.items, start=1):
-        title = item.selected_product_name or item.selected_brand or f"Позиция {idx}"
-        rows.append([InlineKeyboardButton(text=f"Удалить: {title[:24]}", callback_data=f"draft:remove:{item.item_id}")])
+        rows.append([InlineKeyboardButton(text=f"🗑 Удалить #{idx}", callback_data=f"draft:remove:{item.item_id}")])
 
     if draft.items:
-        rows.append([InlineKeyboardButton(text="Очистить Draft", callback_data="draft:clear:confirm")])
-        rows.append([InlineKeyboardButton(text="К расчету", callback_data="draft:calculate")])
+        if clear_confirm:
+            rows.append(
+                [
+                    InlineKeyboardButton(text="✅ Да, очистить", callback_data="draft:clear:yes"),
+                    InlineKeyboardButton(text="↩️ Отмена", callback_data="draft:open"),
+                ]
+            )
+        else:
+            rows.append([InlineKeyboardButton(text="Очистить Draft", callback_data="draft:clear:confirm")])
+    rows.append([InlineKeyboardButton(text="◀️ К поиску", callback_data="search:back")])
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _render_draft_summary(draft: DraftView) -> str:
     if not draft.items:
-        return "Черновик протокола пуст. Добавьте препараты из поиска через `+Draft`."
+        return (
+            "<b>Draft • Рабочая панель</b>\n"
+            "Позиции: <b>0</b>\n\n"
+            "Добавьте продукты через <b>+Draft</b> в карточке поиска.\n"
+            "Следующий шаг: соберите состав и нажмите <b>К расчету</b>."
+        )
 
-    lines = ["Черновик протокола:"]
+    lines = ["<b>Draft • Рабочая панель</b>", f"Позиции: <b>{len(draft.items)}</b>", "", "<b>Состав</b>"]
     for idx, item in enumerate(draft.items, start=1):
-        label = item.selected_product_name or "Без названия"
-        brand = f" ({item.selected_brand})" if item.selected_brand else ""
-        lines.append(f"{idx}. {label}{brand}")
+        label = escape_html_text(item.selected_product_name or "Без названия")
+        lines.append(f"{idx}. {label}")
+        if item.selected_brand:
+            lines.append(f"   ↳ {escape_html_text(item.selected_brand)}")
 
     if draft.settings:
+        mode = INPUT_MODE_LABELS.get(draft.settings.protocol_input_mode or "", "—")
+        preset = PRESET_LABELS.get(draft.settings.preset_code or "", "—")
         lines.extend(
             [
-                "\nПараметры подготовки:",
-                f"- protocol input mode: {INPUT_MODE_LABELS.get(draft.settings.protocol_input_mode or '', '—')}",
-                f"- target mg/week: {draft.settings.weekly_target_total_mg or '—'}",
-                f"- duration weeks: {draft.settings.duration_weeks or '—'}",
-                f"- preset: {PRESET_LABELS.get(draft.settings.preset_code or '', '—')}",
-                f"- max volume ml: {draft.settings.max_injection_volume_ml or '—'}",
-                f"- max injections/week: {draft.settings.max_injections_per_week or '—'}",
+                "",
+                "<b>Параметры</b>",
+                f"• Режим ввода: {mode}",
+                f"• Пресет: {preset}",
+                f"• Длительность: {draft.settings.duration_weeks or '—'} нед.",
+                f"• Цель, мг/нед: {format_decimal_human(draft.settings.weekly_target_total_mg)}",
+                f"• Макс. объем инъекции: {format_decimal_human(draft.settings.max_injection_volume_ml)} мл",
+                f"• Макс. инъекций/нед: {draft.settings.max_injections_per_week or '—'}",
             ]
         )
 
-    lines.append("\nСледующий шаг: protocol preparation и readiness check перед pulse calculation.")
+    lines.extend(["", "Следующий шаг: проверьте состав и нажмите <b>К расчету</b>."])
     return "\n".join(lines)
+
+
+async def _render_draft_panel(
+    *,
+    message: Message,
+    state: FSMContext,
+    draft: DraftView,
+    clear_confirm: bool = False,
+) -> None:
+    await safe_edit_or_send(
+        state=state,
+        source_message=message,
+        text=_render_draft_summary(draft),
+        reply_markup=build_draft_actions(draft, clear_confirm=clear_confirm),
+        parse_mode=ParseMode.HTML,
+    )
 
 
 def _render_readiness_summary(readiness) -> str:

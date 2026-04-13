@@ -1,5 +1,7 @@
+import asyncio
 from datetime import datetime, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from uuid import uuid4
 
 from app.bots.handlers.draft import (
@@ -12,22 +14,107 @@ from app.bots.handlers.draft import (
     build_preview_actions,
     build_readiness_actions,
     _render_active_protocol_summary,
+    _render_draft_summary,
     _render_stack_composition,
     _render_inventory_composition,
     _parse_inventory_input,
     _render_course_estimate,
     _render_pre_start_estimate_snapshot,
     _render_preview_summary,
+    draft_entrypoint,
+    on_clear_confirm,
+    on_clear_yes,
+    on_open_draft,
+    on_remove_item,
 )
 from app.application.protocols.schemas import (
     ActiveProtocolView,
     CourseEstimate,
     CourseEstimateLine,
     DraftItemView,
+    DraftSettingsView,
     DraftView,
     PulsePlanEntry,
     PulsePlanPreviewView,
 )
+
+
+class FakeFSMContext:
+    def __init__(self) -> None:
+        self.data: dict[str, object] = {}
+
+    async def update_data(self, **kwargs):
+        self.data.update(kwargs)
+
+    async def get_data(self):
+        return dict(self.data)
+
+
+class FakeBot:
+    def __init__(self) -> None:
+        self.edits: list[dict[str, object]] = []
+
+    async def edit_message_text(self, **kwargs):
+        self.edits.append(kwargs)
+        return SimpleNamespace(message_id=kwargs["message_id"])
+
+
+class FakeMessage:
+    def __init__(self, *, bot: FakeBot | None = None) -> None:
+        self.bot = bot or FakeBot()
+        self.chat = SimpleNamespace(id=42)
+        self.from_user = SimpleNamespace(id=7)
+        self.message_id = 501
+        self.answers: list[dict[str, object]] = []
+
+    async def answer(self, text, reply_markup=None, parse_mode=None):
+        sent = FakeMessage(bot=self.bot)
+        sent.message_id = 1000 + len(self.answers)
+        self.answers.append({"text": text, "reply_markup": reply_markup, "parse_mode": parse_mode, "sent": sent})
+        return sent
+
+
+class FakeCallback:
+    def __init__(self, message: FakeMessage, data: str) -> None:
+        self.message = message
+        self.data = data
+        self.from_user = SimpleNamespace(id=7)
+        self.answers: list[dict[str, object]] = []
+
+    async def answer(self, text=None, show_alert=False):
+        self.answers.append({"text": text, "show_alert": show_alert})
+
+
+class FakeDraftService:
+    def __init__(self, draft: DraftView) -> None:
+        self.draft = draft
+
+    async def list_draft(self, user_id: str) -> DraftView:
+        return self.draft
+
+    async def remove_item_from_draft(self, user_id: str, item_id):
+        self.draft = DraftView(
+            draft_id=self.draft.draft_id,
+            user_id=self.draft.user_id,
+            status=self.draft.status,
+            created_at=self.draft.created_at,
+            updated_at=self.draft.updated_at,
+            settings=self.draft.settings,
+            items=[],
+        )
+        return self.draft
+
+    async def clear_draft(self, user_id: str):
+        self.draft = DraftView(
+            draft_id=self.draft.draft_id,
+            user_id=self.draft.user_id,
+            status=self.draft.status,
+            created_at=self.draft.created_at,
+            updated_at=self.draft.updated_at,
+            settings=self.draft.settings,
+            items=[],
+        )
+        return self.draft
 
 
 def _draft_with_item() -> DraftView:
@@ -53,6 +140,30 @@ def _draft_with_item() -> DraftView:
     )
 
 
+def _draft_with_item_and_settings() -> DraftView:
+    draft = _draft_with_item()
+    now = datetime.now(timezone.utc)
+    return DraftView(
+        draft_id=draft.draft_id,
+        user_id=draft.user_id,
+        status=draft.status,
+        created_at=now,
+        updated_at=now,
+        items=draft.items,
+        settings=DraftSettingsView(
+            draft_id=draft.draft_id,
+            protocol_input_mode="total_target",
+            weekly_target_total_mg=Decimal("350.0"),
+            duration_weeks=12,
+            preset_code="layered_pulse",
+            max_injection_volume_ml=Decimal("2.0"),
+            max_injections_per_week=3,
+            planned_start_date=None,
+            updated_at=now,
+        ),
+    )
+
+
 def test_build_draft_shortcut_button() -> None:
     keyboard = build_draft_shortcut()
     assert keyboard.inline_keyboard[0][0].text == "Draft"
@@ -65,11 +176,12 @@ def test_build_draft_actions_contains_remove_clear_and_calculation() -> None:
     callbacks = [button.callback_data for row in keyboard.inline_keyboard for button in row]
 
     assert "Обновить Draft" in labels
-    assert any(label.startswith("Удалить:") for label in labels)
+    assert any(label.startswith("🗑 Удалить #") for label in labels)
     assert "Очистить Draft" in labels
     assert "К расчету" in labels
     assert "draft:clear:confirm" in callbacks
     assert "draft:calculate" in callbacks
+    assert "search:back" in callbacks
 
 
 def test_build_preset_actions_contains_all_presets() -> None:
@@ -151,7 +263,7 @@ def test_render_active_protocol_summary_smoke() -> None:
     )
     text = _render_active_protocol_summary(active)
     assert "Protocol activated" in text
-    assert "Wave 3" in text
+    assert "Protocol is active" in text
 
 
 def test_build_input_mode_actions_smoke() -> None:
@@ -321,3 +433,77 @@ def test_course_estimate_source_distinction_preview_vs_active_protocol() -> None
     )
     assert "source: preview-based" in preview_text
     assert "source: active-protocol-based" in active_text
+
+
+def test_draft_open_uses_single_panel_container_semantics() -> None:
+    async def runner() -> None:
+        draft = _draft_with_item()
+        service = FakeDraftService(draft)
+        state = FakeFSMContext()
+        message = FakeMessage()
+
+        await draft_entrypoint(message=message, state=state, draft_service=service)
+        assert len(message.answers) == 1
+        sent = message.answers[0]["sent"]
+
+        await on_open_draft(callback=FakeCallback(message, "draft:open"), state=state, draft_service=service)
+        assert message.bot.edits[-1]["message_id"] == sent.message_id
+
+    asyncio.run(runner())
+
+
+def test_remove_item_updates_existing_draft_panel() -> None:
+    async def runner() -> None:
+        draft = _draft_with_item()
+        service = FakeDraftService(draft)
+        state = FakeFSMContext()
+        message = FakeMessage()
+        await draft_entrypoint(message=message, state=state, draft_service=service)
+        panel_id = message.answers[0]["sent"].message_id
+
+        await on_remove_item(
+            callback=FakeCallback(message, f"draft:remove:{draft.items[0].item_id}"),
+            state=state,
+            draft_service=service,
+        )
+        assert message.bot.edits[-1]["message_id"] == panel_id
+        assert "Позиции: <b>0</b>" in message.bot.edits[-1]["text"]
+
+    asyncio.run(runner())
+
+
+def test_clear_draft_confirmation_and_apply_work_in_same_panel() -> None:
+    async def runner() -> None:
+        draft = _draft_with_item()
+        service = FakeDraftService(draft)
+        state = FakeFSMContext()
+        message = FakeMessage()
+        await draft_entrypoint(message=message, state=state, draft_service=service)
+        panel_id = message.answers[0]["sent"].message_id
+
+        await on_clear_confirm(
+            callback=FakeCallback(message, "draft:clear:confirm"),
+            state=state,
+            draft_service=service,
+        )
+        assert message.bot.edits[-1]["message_id"] == panel_id
+        buttons = [b.text for row in message.bot.edits[-1]["reply_markup"].inline_keyboard for b in row]
+        assert "✅ Да, очистить" in buttons
+
+        await on_clear_yes(
+            callback=FakeCallback(message, "draft:clear:yes"),
+            state=state,
+            draft_service=service,
+        )
+        assert message.bot.edits[-1]["message_id"] == panel_id
+        assert "Позиции: <b>0</b>" in message.bot.edits[-1]["text"]
+
+    asyncio.run(runner())
+
+
+def test_draft_summary_uses_human_readable_labels() -> None:
+    text = _render_draft_summary(_draft_with_item_and_settings())
+    assert "Режим ввода" in text
+    assert "Цель, мг/нед" in text
+    assert "protocol_input_mode" not in text
+    assert "weekly_target_total_mg" not in text
