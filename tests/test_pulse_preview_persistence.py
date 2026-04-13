@@ -198,3 +198,16 @@ def test_preview_summary_has_derived_total_weekly_mg_for_stack_smoothing() -> No
     assert preview.summary_metrics is not None
     per_product = preview.summary_metrics.get("per_product_weekly_target_mg") or {}
     assert sum(per_product.values()) == 180.0
+
+
+def test_preview_persistence_stores_v2_engine_traceability_and_metrics() -> None:
+    repo = FakePulseRepository()
+    service = DraftApplicationService(repository=repo, pulse_engine=PulseCalculationEngine(pulse_engine_version="v2"))
+
+    preview = asyncio.run(service.generate_pulse_plan_preview("u1"))
+
+    assert preview.summary_metrics is not None
+    assert preview.summary_metrics.get("pulse_engine_version_used") == "v2"
+    assert "peak_trough_spread_pct" in preview.summary_metrics
+    assert repo.last_payload is not None
+    assert repo.last_payload.summary_metrics.get("pulse_engine_version_used") == "v2"

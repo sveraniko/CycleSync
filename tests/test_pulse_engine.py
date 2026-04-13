@@ -400,3 +400,131 @@ def test_inventory_constrained_fails_when_packaging_metadata_missing() -> None:
     )
     assert result.status == "failed_validation"
     assert any(code.startswith("inventory_metadata_insufficient") for code in result.validation_issues)
+
+
+def test_v2_evaluation_populates_simulated_metrics_and_traceability() -> None:
+    result = PulseCalculationEngine(pulse_engine_version="v2").calculate(settings=_settings("layered_pulse"), products=_products())
+    summary = result.summary_metrics or {}
+
+    assert summary.get("pulse_engine_version_used") == "v2"
+    assert summary.get("evaluation_source") == "pk_v2_simulated"
+    assert "peak_trough_spread_pct" in summary
+    assert "variability_cv_pct" in summary
+
+
+def test_default_engine_version_remains_v1() -> None:
+    summary = PulseCalculationEngine().calculate(settings=_settings("layered_pulse"), products=_products()).summary_metrics or {}
+    assert summary.get("pulse_engine_version_used") == "v1"
+    assert summary.get("evaluation_source") == "v1_heuristic"
+
+
+def test_v2_changes_flatness_source_vs_v1() -> None:
+    settings = _settings("layered_pulse")
+    v1_summary = PulseCalculationEngine(pulse_engine_version="v1").calculate(settings=settings, products=_products()).summary_metrics or {}
+    v2_summary = PulseCalculationEngine(pulse_engine_version="v2").calculate(settings=settings, products=_products()).summary_metrics or {}
+
+    assert v1_summary.get("flatness_stability_score") != v2_summary.get("flatness_stability_score")
+
+
+def test_v2_mixed_product_emits_pk_semantic_warning_flags() -> None:
+    settings = _settings("layered_pulse", max_inj=1)
+    settings.protocol_input_mode = "total_target"
+    settings.weekly_target_total_mg = Decimal("250")
+    mixed_product = PulseProductProfile(
+        product_id=uuid4(),
+        product_name="Sustanon-like Mix",
+        concentration_mg_ml=Decimal("250"),
+        max_injection_volume_ml=Decimal("2.5"),
+        ingredients=[
+            PulseIngredientProfile(
+                "TPP",
+                Decimal("2"),
+                Decimal("100"),
+                True,
+                parent_substance="Testosterone",
+                basis="per_ml",
+                amount_per_ml_mg=Decimal("100"),
+            ),
+            PulseIngredientProfile(
+                "TU",
+                Decimal("12"),
+                Decimal("150"),
+                True,
+                parent_substance="Testosterone",
+                basis="per_ml",
+                amount_per_ml_mg=Decimal("150"),
+            ),
+        ],
+    )
+
+    result = PulseCalculationEngine(pulse_engine_version="v2").calculate(settings=settings, products=[mixed_product])
+
+    assert "mixed_ester_short_component_spikes" in result.warning_flags
+
+
+def test_all_input_modes_work_under_v2() -> None:
+    products = _products()
+    engine = PulseCalculationEngine(pulse_engine_version="v2")
+
+    auto = _settings("layered_pulse")
+    auto.protocol_input_mode = "auto_pulse"
+    auto.weekly_target_total_mg = None
+    assert engine.calculate(settings=auto, products=products).status in {"success", "success_with_warnings", "degraded_fallback"}
+
+    total = _settings("layered_pulse")
+    total.protocol_input_mode = "total_target"
+    assert engine.calculate(settings=total, products=products).status in {"success", "success_with_warnings", "degraded_fallback"}
+
+    stack = _settings("layered_pulse")
+    stack.protocol_input_mode = "stack_smoothing"
+    stack.weekly_target_total_mg = None
+    stack_targets = [
+        StackInputTargetView(
+            id=uuid4(),
+            draft_id=stack.draft_id,
+            product_id=products[0].product_id,
+            protocol_input_mode="stack_smoothing",
+            desired_weekly_mg=Decimal("180"),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        ),
+        StackInputTargetView(
+            id=uuid4(),
+            draft_id=stack.draft_id,
+            product_id=products[1].product_id,
+            protocol_input_mode="stack_smoothing",
+            desired_weekly_mg=Decimal("120"),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        ),
+    ]
+    assert engine.calculate(settings=stack, products=products, stack_targets=stack_targets).status in {
+        "success",
+        "success_with_warnings",
+        "degraded_fallback",
+    }
+
+    for product in products:
+        product.package_kind = "vial"
+        product.volume_per_package_ml = Decimal("1")
+    constrained = _settings("layered_pulse")
+    constrained.protocol_input_mode = "inventory_constrained"
+    constrained.weekly_target_total_mg = None
+    constraints = [
+        InventoryConstraintView(
+            id=uuid4(),
+            draft_id=constrained.draft_id,
+            product_id=product.product_id,
+            protocol_input_mode="inventory_constrained",
+            available_count=Decimal("2"),
+            count_unit="vial",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        for product in products
+    ]
+    assert engine.calculate(settings=constrained, products=products, inventory_constraints=constraints).status in {
+        "success",
+        "success_with_warnings",
+        "degraded_fallback",
+    }
