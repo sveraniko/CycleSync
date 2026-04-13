@@ -12,7 +12,7 @@ from aiogram.types.callback_query import CallbackQuery
 
 from app.application.search.schemas import OpenCard, SearchResponse, SearchResultItem
 from app.application.search.service import SearchApplicationService
-from app.bots.core.flow import safe_edit_or_send
+from app.bots.core.flow import delete_user_input_message, safe_edit_or_send
 from app.bots.core.formatting import escape_html_text
 
 router = Router(name="search")
@@ -35,6 +35,7 @@ async def search_entrypoint(message: Message, state: FSMContext, search_service:
         query=text,
         page=0,
     )
+    await delete_user_input_message(message)
 
 
 @router.callback_query(F.data.startswith("search:open:"))
