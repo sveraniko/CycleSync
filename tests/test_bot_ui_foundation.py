@@ -47,10 +47,10 @@ class FakeMessage:
         self.message_id = message_id
         self.answers: list[dict[str, object]] = []
 
-    async def answer(self, text, reply_markup=None):
+    async def answer(self, text, reply_markup=None, parse_mode=None):
         sent_id = 1000 + len(self.answers)
         sent = FakeMessage(bot=self.bot, message_id=sent_id)
-        self.answers.append({"text": text, "reply_markup": reply_markup, "sent": sent})
+        self.answers.append({"text": text, "reply_markup": reply_markup, "parse_mode": parse_mode, "sent": sent})
         return sent
 
 

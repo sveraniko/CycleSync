@@ -66,23 +66,13 @@ async def on_add_to_draft(callback: CallbackQuery, draft_service: DraftApplicati
     try:
         result = await draft_service.add_product_to_draft(user_id=user_id, product_id=product_id)
     except ValueError:
-        await callback.message.answer("Не удалось добавить препарат: карточка недоступна в каталоге.")
-        await callback.answer()
+        await callback.answer("Карточка недоступна в каталоге.", show_alert=True)
         return
 
-    if result.added:
-        await callback.message.answer(
-            "Позиция добавлена в черновик протокола. "
-            "Откройте `Draft`, чтобы продолжить подготовку к расчету.",
-            reply_markup=build_draft_shortcut(),
-        )
-    else:
-        await callback.message.answer(
-            "Эта позиция уже есть в текущем черновике. "
-            "Мы сохраняем по одной записи на продукт.",
-            reply_markup=build_draft_shortcut(),
-        )
-    await callback.answer()
+    await callback.answer(
+        "Добавлено в Draft." if result.added else "Уже есть в Draft.",
+        show_alert=False,
+    )
 
 
 @router.callback_query(F.data == "draft:open")

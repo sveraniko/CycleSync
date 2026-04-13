@@ -3,6 +3,7 @@ from __future__ import annotations
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
+from aiogram.enums.parse_mode import ParseMode
 from aiogram.types.inline_keyboard_markup import InlineKeyboardMarkup
 
 CONTAINER_MESSAGE_ID_KEY = "ui_container_message_id"
@@ -35,10 +36,11 @@ async def send_or_edit(
     source_message: Message,
     text: str,
     reply_markup: InlineKeyboardMarkup | None = None,
+    parse_mode: str | ParseMode | None = None,
 ) -> Message:
     container_message_id = await get_container_message_id(state)
     if container_message_id is None:
-        sent = await source_message.answer(text, reply_markup=reply_markup)
+        sent = await source_message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
         await remember_container(state, sent.message_id)
         return sent
 
@@ -47,6 +49,7 @@ async def send_or_edit(
         message_id=container_message_id,
         text=text,
         reply_markup=reply_markup,
+        parse_mode=parse_mode,
     )
     if isinstance(edited, Message):
         return edited
@@ -59,6 +62,7 @@ async def safe_edit_or_send(
     source_message: Message,
     text: str,
     reply_markup: InlineKeyboardMarkup | None = None,
+    parse_mode: str | ParseMode | None = None,
 ) -> Message:
     try:
         return await send_or_edit(
@@ -66,9 +70,10 @@ async def safe_edit_or_send(
             source_message=source_message,
             text=text,
             reply_markup=reply_markup,
+            parse_mode=parse_mode,
         )
     except TelegramBadRequest:
-        sent = await source_message.answer(text, reply_markup=reply_markup)
+        sent = await source_message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
         await remember_container(state, sent.message_id)
         return sent
 
