@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
-from app.application.protocols.engine_selector import resolve_pulse_engine_version
+from app.application.protocols.engine_selector import build_live_pulse_engine, resolve_pulse_engine_version
 from app.application.protocols.pk_v2 import (
     FirstOrderPKEngineV2,
     IngredientPKProfile,
@@ -217,3 +217,9 @@ def test_parent_substance_grouping() -> None:
 def test_engine_config_defaults_to_v1() -> None:
     settings = Settings()
     assert resolve_pulse_engine_version(settings) == "v1"
+
+
+def test_engine_selector_wires_requested_version() -> None:
+    settings = Settings(pulse_engine_version="v2")
+    engine = build_live_pulse_engine(settings)
+    assert engine.pulse_engine_version == "v2"

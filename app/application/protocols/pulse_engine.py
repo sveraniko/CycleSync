@@ -3,6 +3,12 @@ from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from math import exp
 
+from app.application.protocols.pk_v2 import (
+    FirstOrderPKEngineV2,
+    IngredientPKProfile,
+    ProductPKProfile,
+    build_simulation_input_from_pulse_plan,
+)
 from app.application.protocols.schemas import (
     DraftSettingsView,
     InventoryConstraintView,
@@ -32,6 +38,10 @@ class _HalfLifeResolution:
 
 
 class PulseCalculationEngine:
+    def __init__(self, *, pulse_engine_version: str = "v1", pk_engine_v2: FirstOrderPKEngineV2 | None = None) -> None:
+        self.pulse_engine_version = pulse_engine_version
+        self.pk_engine_v2 = pk_engine_v2 or FirstOrderPKEngineV2()
+
     def calculate(
         self,
         *,
@@ -152,11 +162,28 @@ class PulseCalculationEngine:
             warning_flags.append("injections_above_preference")
 
         flatness_score = self._calculate_flatness(settings, plans)
+        simulated_metrics: dict[str, float] = {}
+        if self.pulse_engine_version == "v2":
+            pk_evaluation = self._evaluate_with_pk_v2(
+                settings=settings,
+                products=products,
+                entries=entries,
+                allocation_quality_flags=allocation_context["quality_flags"],
+                planning_warning_flags=warning_flags,
+            )
+            flatness_score = pk_evaluation["flatness_stability_score"]
+            simulated_metrics = pk_evaluation["simulated_metrics"]
+            warning_flags.extend(pk_evaluation["warning_flags"])
+            allocation_context["allocation_details"] = allocation_context.get("allocation_details") or {}
+            allocation_context["allocation_details"]["pk_v2_evaluation"] = pk_evaluation["details"]
+
         if flatness_score < Decimal("65"):
             warning_flags.append("flatness_below_target")
 
         summary_metrics = {
             "flatness_stability_score": float(flatness_score),
+            "pulse_engine_version_used": self.pulse_engine_version,
+            "evaluation_source": "pk_v2_simulated" if self.pulse_engine_version == "v2" else "v1_heuristic",
             "estimated_injections_per_week": estimated_injections,
             "max_volume_per_event_ml": float(max_volume),
             "allocation_mode": allocation_context["allocation_mode"],
@@ -173,6 +200,7 @@ class PulseCalculationEngine:
             "warning_flags": warning_flags,
             "degraded_fallback": degraded_fallback,
         }
+        summary_metrics.update(simulated_metrics)
         if protocol_input_mode == "inventory_constrained":
             allocation_details = allocation_context.get("allocation_details") or {}
             summary_metrics["inventory_entered_counts_by_product"] = allocation_details.get("inventory_entered_counts", {})
@@ -204,6 +232,92 @@ class PulseCalculationEngine:
             entries=entries,
             validation_issues=[],
         )
+
+    def _evaluate_with_pk_v2(
+        self,
+        *,
+        settings: DraftSettingsView,
+        products: list[PulseProductProfile],
+        entries: list[PulsePlanEntry],
+        allocation_quality_flags: list[str],
+        planning_warning_flags: list[str],
+    ) -> dict:
+        product_profiles = self._build_pk_product_profiles(products)
+        simulation_input = build_simulation_input_from_pulse_plan(
+            draft_id=settings.draft_id,
+            planned_start_date=settings.planned_start_date,
+            product_profiles=product_profiles,
+            plan_entries=entries,
+            horizon_days=max((settings.duration_weeks or 1) * 7 + 14, 14),
+            resolution_hours=1,
+            constraint_forced_longer_interval="injections_above_preference" in planning_warning_flags,
+            inventory_forced_degradation="inventory_forced_degraded_layout" in allocation_quality_flags,
+        )
+        result = self.pk_engine_v2.calculate(simulation_input)
+        metrics = result.metrics
+        return {
+            "flatness_stability_score": metrics.flatness_stability_score,
+            "simulated_metrics": {
+                "peak_concentration": float(metrics.peak_concentration),
+                "trough_concentration": float(metrics.trough_concentration),
+                "peak_trough_spread_pct": float(metrics.peak_trough_spread_pct),
+                "variability_cv_pct": float(metrics.variability_cv_pct),
+            },
+            "warning_flags": result.warning_flags,
+            "details": {
+                "metrics": {
+                    "flatness_stability_score": float(metrics.flatness_stability_score),
+                    "peak_concentration": float(metrics.peak_concentration),
+                    "trough_concentration": float(metrics.trough_concentration),
+                    "peak_trough_spread_pct": float(metrics.peak_trough_spread_pct),
+                    "variability_cv_pct": float(metrics.variability_cv_pct),
+                },
+                "warning_flags": result.warning_flags,
+                "ingredient_curve_keys": sorted(result.ingredient_curves.keys()),
+                "substance_curve_keys": sorted(result.substance_curves.keys()),
+            },
+        }
+
+    def _build_pk_product_profiles(self, products: list[PulseProductProfile]) -> list[ProductPKProfile]:
+        output: list[ProductPKProfile] = []
+        for product in products:
+            total_known_amount = sum((item.amount_mg or Decimal("0")) for item in product.ingredients)
+            ingredients = []
+            for ingredient in product.ingredients:
+                basis = ingredient.basis or "per_ml"
+                amount_per_ml = ingredient.amount_per_ml_mg
+                amount_per_unit = ingredient.amount_per_unit_mg
+                if basis == "per_ml" and amount_per_ml is None:
+                    if product.concentration_mg_ml and ingredient.amount_mg and total_known_amount > 0:
+                        amount_per_ml = (
+                            product.concentration_mg_ml * ingredient.amount_mg / total_known_amount
+                        ).quantize(Decimal("0.0001"))
+                    elif ingredient.amount_mg:
+                        amount_per_ml = ingredient.amount_mg
+                ingredients.append(
+                    IngredientPKProfile(
+                        ingredient_name=ingredient.ingredient_name,
+                        parent_substance=ingredient.parent_substance or ingredient.ingredient_name,
+                        basis=basis,
+                        amount_per_ml_mg=amount_per_ml,
+                        amount_per_unit_mg=amount_per_unit,
+                        half_life_days=ingredient.half_life_days or Decimal("3"),
+                        active_fraction=ingredient.active_fraction or Decimal("1"),
+                        ester_name=ingredient.ester_name,
+                        tmax_hours=ingredient.tmax_hours,
+                        release_model=ingredient.release_model,
+                        is_pulse_driver=ingredient.is_pulse_driver or False,
+                    )
+                )
+            output.append(
+                ProductPKProfile(
+                    product_id=product.product_id,
+                    product_key=(product.product_name or str(product.product_id)).lower().replace(" ", "_"),
+                    release_form=(product.package_kind or "injectable").lower(),
+                    ingredients=ingredients,
+                )
+            )
+        return output
 
     def _resolve_stack_smoothing_allocation(
         self, products: list[PulseProductProfile], stack_targets: list[StackInputTargetView]

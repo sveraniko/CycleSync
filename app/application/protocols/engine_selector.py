@@ -11,6 +11,4 @@ def resolve_pulse_engine_version(settings: Settings) -> str:
 
 
 def build_live_pulse_engine(settings: Settings) -> PulseCalculationEngine:
-    # Wave 14 / PR1: keep v1 as active live engine; v2 switch is a seam only.
-    _ = resolve_pulse_engine_version(settings)
-    return PulseCalculationEngine()
+    return PulseCalculationEngine(pulse_engine_version=resolve_pulse_engine_version(settings))
