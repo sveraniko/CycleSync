@@ -21,7 +21,15 @@ from app.bots.handlers.draft import (
     _render_course_estimate,
     _render_pre_start_estimate_snapshot,
     _render_preview_summary,
+    _render_readiness_summary,
     draft_entrypoint,
+    on_continue_to_calculation,
+    on_duration_input,
+    on_max_injections_input,
+    on_mode_selected,
+    on_weekly_target_input,
+    on_wizard_back,
+    on_wizard_cancel,
     on_clear_confirm,
     on_clear_yes,
     on_open_draft,
@@ -42,12 +50,20 @@ from app.application.protocols.schemas import (
 class FakeFSMContext:
     def __init__(self) -> None:
         self.data: dict[str, object] = {}
+        self.current_state = None
 
     async def update_data(self, **kwargs):
         self.data.update(kwargs)
 
     async def get_data(self):
         return dict(self.data)
+
+    async def set_state(self, value):
+        self.current_state = value
+
+    async def clear(self):
+        self.data = {}
+        self.current_state = None
 
 
 class FakeBot:
@@ -66,12 +82,16 @@ class FakeMessage:
         self.from_user = SimpleNamespace(id=7)
         self.message_id = 501
         self.answers: list[dict[str, object]] = []
+        self.deleted = False
 
     async def answer(self, text, reply_markup=None, parse_mode=None):
         sent = FakeMessage(bot=self.bot)
         sent.message_id = 1000 + len(self.answers)
         self.answers.append({"text": text, "reply_markup": reply_markup, "parse_mode": parse_mode, "sent": sent})
         return sent
+
+    async def delete(self):
+        self.deleted = True
 
 
 class FakeCallback:
@@ -115,6 +135,55 @@ class FakeDraftService:
             items=[],
         )
         return self.draft
+
+    async def get_draft_settings(self, user_id: str):
+        return self.draft.settings
+
+    async def save_draft_settings(self, user_id: str, payload):
+        now = datetime.now(timezone.utc)
+        self.draft = DraftView(
+            draft_id=self.draft.draft_id,
+            user_id=self.draft.user_id,
+            status=self.draft.status,
+            created_at=self.draft.created_at,
+            updated_at=now,
+            settings=DraftSettingsView(
+                draft_id=self.draft.draft_id,
+                protocol_input_mode=payload.protocol_input_mode,
+                weekly_target_total_mg=payload.weekly_target_total_mg,
+                duration_weeks=payload.duration_weeks,
+                preset_code=payload.preset_code,
+                max_injection_volume_ml=payload.max_injection_volume_ml,
+                max_injections_per_week=payload.max_injections_per_week,
+                planned_start_date=payload.planned_start_date,
+                updated_at=now,
+            ),
+            items=self.draft.items,
+        )
+        return self.draft.settings
+
+    async def get_stack_input_targets(self, user_id: str, protocol_input_mode: str):
+        return []
+
+    async def save_stack_input_targets(self, user_id: str, payload):
+        return payload
+
+    async def get_inventory_constraints(self, user_id: str, protocol_input_mode: str):
+        return []
+
+    async def save_inventory_constraints(self, user_id: str, payload):
+        return payload
+
+    async def get_draft_readiness(self, user_id: str):
+        return SimpleNamespace(summary="ready", issues=[])
+
+
+class FakeAccessService:
+    def __init__(self, *, allowed: bool = True) -> None:
+        self.allowed = allowed
+
+    async def evaluate(self, user_id: str, entitlement_code: str):
+        return SimpleNamespace(allowed=self.allowed)
 
 
 def _draft_with_item() -> DraftView:
@@ -203,7 +272,7 @@ def test_build_readiness_and_preview_actions() -> None:
     readiness_callbacks = [b.callback_data for row in readiness.inline_keyboard for b in row]
     preview_callbacks = [b.callback_data for row in preview.inline_keyboard for b in row]
     assert "draft:calculate:run" in readiness_callbacks
-    assert "draft:stack:edit" in readiness_callbacks
+    assert "draft:wizard:back" in readiness_callbacks
     assert "draft:calculate:run" in preview_callbacks
     assert any(callback.startswith("draft:activate:prepare:") for callback in preview_callbacks)
     assert any(callback.startswith("draft:estimate:preview:") for callback in preview_callbacks)
@@ -274,7 +343,7 @@ def test_build_input_mode_actions_smoke() -> None:
     assert "draft:calc:mode:total_target" in callbacks
     assert "draft:calc:mode:stack_smoothing" in callbacks
     assert "draft:calc:mode:inventory_constrained" in callbacks
-    assert set(labels) == set(INPUT_MODE_LABELS.values())
+    assert set(INPUT_MODE_LABELS.values()).issubset(set(labels))
 
 
 def test_render_stack_composition_smoke() -> None:
@@ -507,3 +576,102 @@ def test_draft_summary_uses_human_readable_labels() -> None:
     assert "Цель, мг/нед" in text
     assert "protocol_input_mode" not in text
     assert "weekly_target_total_mg" not in text
+
+
+def test_wizard_mode_selection_updates_single_panel() -> None:
+    async def runner() -> None:
+        service = FakeDraftService(_draft_with_item())
+        state = FakeFSMContext()
+        message = FakeMessage()
+        await draft_entrypoint(message=message, state=state, draft_service=service)
+        callback = FakeCallback(message, "draft:calculate")
+        await on_continue_to_calculation(callback=callback, state=state, draft_service=service)
+        assert "protocol input mode" in message.bot.edits[-1]["text"]
+    asyncio.run(runner())
+
+
+def test_wizard_back_navigation_returns_previous_step() -> None:
+    async def runner() -> None:
+        service = FakeDraftService(_draft_with_item())
+        state = FakeFSMContext()
+        message = FakeMessage()
+        await on_continue_to_calculation(FakeCallback(message, "draft:calculate"), state, service)
+        await on_mode_selected(FakeCallback(message, "draft:calc:mode:total_target"), state, service, FakeAccessService())
+        await on_wizard_back(FakeCallback(message, "draft:wizard:back"), state, service, FakeAccessService())
+        assert "protocol input mode" in message.bot.edits[-1]["text"]
+    asyncio.run(runner())
+
+
+def test_wizard_cancel_returns_to_draft_panel() -> None:
+    async def runner() -> None:
+        draft = _draft_with_item()
+        service = FakeDraftService(draft)
+        state = FakeFSMContext()
+        message = FakeMessage()
+        await on_continue_to_calculation(FakeCallback(message, "draft:calculate"), state, service)
+        await on_wizard_cancel(FakeCallback(message, "draft:wizard:cancel"), state, service)
+        assert "Draft • Рабочая панель" in message.bot.edits[-1]["text"]
+    asyncio.run(runner())
+
+
+def test_weekly_target_input_cleans_user_message() -> None:
+    async def runner() -> None:
+        service = FakeDraftService(_draft_with_item())
+        state = FakeFSMContext()
+        message = FakeMessage()
+        message.text = "350"
+        await on_continue_to_calculation(FakeCallback(message, "draft:calculate"), state, service)
+        await on_mode_selected(FakeCallback(message, "draft:calc:mode:total_target"), state, service, FakeAccessService())
+        await on_weekly_target_input(message=message, state=state, draft_service=service)
+        assert message.deleted is True
+    asyncio.run(runner())
+
+
+def test_auto_pulse_flow_smoke() -> None:
+    async def runner() -> None:
+        service = FakeDraftService(_draft_with_item())
+        state = FakeFSMContext()
+        message = FakeMessage()
+        await on_continue_to_calculation(FakeCallback(message, "draft:calculate"), state, service)
+        await on_mode_selected(FakeCallback(message, "draft:calc:mode:auto_pulse"), state, service, FakeAccessService())
+        assert "длительность" in message.bot.edits[-1]["text"].lower()
+    asyncio.run(runner())
+
+
+def test_total_target_flow_smoke() -> None:
+    async def runner() -> None:
+        service = FakeDraftService(_draft_with_item())
+        state = FakeFSMContext()
+        message = FakeMessage()
+        await on_continue_to_calculation(FakeCallback(message, "draft:calculate"), state, service)
+        await on_mode_selected(FakeCallback(message, "draft:calc:mode:total_target"), state, service, FakeAccessService())
+        assert "weekly target" in message.bot.edits[-1]["text"].lower()
+    asyncio.run(runner())
+
+
+def test_stack_smoothing_flow_smoke() -> None:
+    async def runner() -> None:
+        service = FakeDraftService(_draft_with_item())
+        state = FakeFSMContext()
+        message = FakeMessage()
+        await on_continue_to_calculation(FakeCallback(message, "draft:calculate"), state, service)
+        await on_mode_selected(FakeCallback(message, "draft:calc:mode:stack_smoothing"), state, service, FakeAccessService())
+        assert "stack smoothing" in message.bot.edits[-1]["text"].lower()
+    asyncio.run(runner())
+
+
+def test_inventory_constrained_flow_smoke() -> None:
+    async def runner() -> None:
+        service = FakeDraftService(_draft_with_item())
+        state = FakeFSMContext()
+        message = FakeMessage()
+        await on_continue_to_calculation(FakeCallback(message, "draft:calculate"), state, service)
+        await on_mode_selected(FakeCallback(message, "draft:calc:mode:inventory_constrained"), state, service, FakeAccessService())
+        assert "inventory constrained" in message.bot.edits[-1]["text"].lower()
+    asyncio.run(runner())
+
+
+def test_readiness_panel_rendering_smoke() -> None:
+    text = _render_readiness_summary(SimpleNamespace(summary="ok", issues=[]), settings=_draft_with_item_and_settings().settings)
+    assert "Readiness" in text
+    assert "Режим" in text

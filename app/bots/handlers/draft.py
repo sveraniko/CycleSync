@@ -19,7 +19,7 @@ from app.application.protocols.schemas import (
     StackInputTargetInput,
 )
 from app.application.access import AccessEvaluationService
-from app.bots.core.flow import safe_edit_or_send
+from app.bots.core.flow import delete_user_input_message, safe_edit_or_send
 from app.bots.core.formatting import escape_html_text, format_decimal_human
 
 router = Router(name="draft")
@@ -54,6 +54,11 @@ class CalculationInputState(StatesGroup):
     max_injections_per_week = State()
     stack_product_target = State()
     inventory_product_count = State()
+
+
+WIZARD_STEP_KEY = "calc_wizard_step"
+WIZARD_HISTORY_KEY = "calc_wizard_history"
+WIZARD_MODE_KEY = "calc_wizard_mode"
 
 
 @router.message(F.text.func(lambda value: (value or "").strip().lower() == "draft"))
@@ -140,16 +145,27 @@ async def on_continue_to_calculation(
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     draft = await draft_service.list_draft(user_id)
     if not draft.items:
-        await callback.message.answer("Сначала добавьте хотя бы один продукт в Draft.")
+        await safe_edit_or_send(
+            state=state,
+            source_message=callback.message,
+            text="Сначала добавьте хотя бы один продукт в Draft.",
+            reply_markup=build_draft_shortcut(),
+        )
         await callback.answer()
         return
 
     settings = await draft_service.get_draft_settings(user_id)
-    current_mode = settings.protocol_input_mode if settings else None
     await state.set_state(CalculationInputState.mode)
-    await callback.message.answer("Выберите режим постановки задачи (protocol input mode).", reply_markup=build_input_mode_actions())
-    if current_mode:
-        await callback.message.answer(f"Текущий режим: {INPUT_MODE_LABELS.get(current_mode, current_mode)}.")
+    await _goto_wizard_step(
+        message=callback.message,
+        state=state,
+        draft_service=draft_service,
+        access_service=None,
+        user_id=user_id,
+        step="mode",
+        push_history=False,
+        current_mode=settings.protocol_input_mode if settings else None,
+    )
     await callback.answer()
 
 
@@ -167,54 +183,83 @@ async def on_mode_selected(
 
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     await _save_settings_patch(draft_service, user_id, protocol_input_mode=selected_mode)
+    await state.update_data(**{WIZARD_MODE_KEY: selected_mode})
     await callback.answer()
-
-    if selected_mode == "inventory_constrained":
-        decision = await access_service.evaluate(
-            user_id=user_id,
-            entitlement_code="inventory_constrained_access",
-        )
-        if not decision.allowed:
-            await state.clear()
-            await callback.message.answer(
-                "Inventory Constrained — advanced paid mode. Доступ не активирован.\n"
-                "Причина: inventory_constrained_access required.",
-                reply_markup=build_draft_shortcut(),
-            )
-            return
-        await _start_inventory_input_flow(callback.message, state, draft_service, user_id)
-        return
-
-    if selected_mode == "stack_smoothing":
-        await _start_stack_input_flow(callback.message, state, draft_service, user_id)
-        return
-
-    if selected_mode == "total_target":
-        settings = await draft_service.get_draft_settings(user_id)
-        current = settings.weekly_target_total_mg if settings else None
-        await state.set_state(CalculationInputState.weekly_target_total_mg)
-        await callback.message.answer(
-            "Режим Total Target: укажите общий weekly target (mg)."
-            + (f" Сейчас: {current}." if current is not None else ""),
-        )
-        return
-
-    await state.set_state(CalculationInputState.duration_weeks)
-    await callback.message.answer("Режим Auto Pulse: укажите длительность протокола в неделях (duration_weeks).")
+    await _goto_wizard_step(
+        message=callback.message,
+        state=state,
+        draft_service=draft_service,
+        access_service=access_service,
+        user_id=user_id,
+        step=_first_step_for_mode(selected_mode),
+    )
 
 
 @router.callback_query(F.data == "draft:stack:edit")
 async def on_stack_edit(callback: CallbackQuery, state: FSMContext, draft_service: DraftApplicationService) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
-    await _start_stack_input_flow(callback.message, state, draft_service, user_id)
+    await _save_settings_patch(draft_service, user_id, protocol_input_mode="stack_smoothing")
+    await state.update_data(**{WIZARD_MODE_KEY: "stack_smoothing"})
+    await _goto_wizard_step(
+        message=callback.message,
+        state=state,
+        draft_service=draft_service,
+        access_service=None,
+        user_id=user_id,
+        step="stack_target",
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "draft:wizard:back")
+async def on_wizard_back(
+    callback: CallbackQuery,
+    state: FSMContext,
+    draft_service: DraftApplicationService,
+    access_service: AccessEvaluationService,
+) -> None:
+    user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+    data = await state.get_data()
+    history = list(data.get(WIZARD_HISTORY_KEY, []))
+    if not history:
+        await _cancel_wizard(callback.message, state, draft_service, user_id)
+        await callback.answer()
+        return
+    previous_step = history.pop()
+    await state.update_data(**{WIZARD_HISTORY_KEY: history})
+    await _goto_wizard_step(
+        message=callback.message,
+        state=state,
+        draft_service=draft_service,
+        access_service=access_service,
+        user_id=user_id,
+        step=previous_step,
+        push_history=False,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "draft:wizard:cancel")
+async def on_wizard_cancel(callback: CallbackQuery, state: FSMContext, draft_service: DraftApplicationService) -> None:
+    user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
+    await _cancel_wizard(callback.message, state, draft_service, user_id)
     await callback.answer()
 
 
 @router.callback_query(F.data == "draft:calculate:run")
-async def on_run_pulse_calculation(callback: CallbackQuery, draft_service: DraftApplicationService) -> None:
+async def on_run_pulse_calculation(
+    callback: CallbackQuery,
+    state: FSMContext,
+    draft_service: DraftApplicationService,
+) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     preview = await draft_service.generate_pulse_plan_preview(user_id)
-    await callback.message.answer(_render_preview_summary(preview), reply_markup=build_preview_actions(preview.preview_id))
+    await safe_edit_or_send(
+        state=state,
+        source_message=callback.message,
+        text=_render_preview_summary(preview),
+        reply_markup=build_preview_actions(preview.preview_id),
+    )
     await callback.answer()
 
 
@@ -295,28 +340,49 @@ async def on_active_protocol_estimate(
 async def on_weekly_target_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
     value = _parse_decimal(message.text)
     if value is None or value <= Decimal("0"):
-        await message.answer("Введите число больше 0, например `350`.")
+        await _render_wizard_panel(
+            message=message,
+            state=state,
+            text="Введите число больше 0, например <code>350</code>.",
+            reply_markup=build_wizard_navigation_actions(step="weekly_target"),
+        )
         return
 
     user_id = _resolve_user_id(message.from_user.id if message.from_user else None)
     await _save_settings_patch(draft_service, user_id, weekly_target_total_mg=value)
-    await state.set_state(CalculationInputState.duration_weeks)
-    await message.answer("Укажите длительность протокола в неделях (duration_weeks).")
+    await delete_user_input_message(message)
+    await _goto_wizard_step(
+        message=message,
+        state=state,
+        draft_service=draft_service,
+        access_service=None,
+        user_id=user_id,
+        step="duration",
+    )
 
 
 @router.message(CalculationInputState.duration_weeks)
 async def on_duration_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
     value = _parse_positive_int(message.text)
     if value is None:
-        await message.answer("Введите целое число недель, например `12`.")
+        await _render_wizard_panel(
+            message=message,
+            state=state,
+            text="Введите целое число недель, например <code>12</code>.",
+            reply_markup=build_wizard_navigation_actions(step="duration"),
+        )
         return
 
     user_id = _resolve_user_id(message.from_user.id if message.from_user else None)
     await _save_settings_patch(draft_service, user_id, duration_weeks=value)
-    await state.clear()
-    await message.answer(
-        "Выберите preset стратегии.",
-        reply_markup=build_preset_actions(),
+    await delete_user_input_message(message)
+    await _goto_wizard_step(
+        message=message,
+        state=state,
+        draft_service=draft_service,
+        access_service=None,
+        user_id=user_id,
+        step="preset",
     )
 
 
@@ -329,8 +395,14 @@ async def on_preset_selected(callback: CallbackQuery, state: FSMContext, draft_s
 
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     await _save_settings_patch(draft_service, user_id, preset_code=preset_code)
-    await state.set_state(CalculationInputState.max_injection_volume_ml)
-    await callback.message.answer("Введите max injection volume (ml), например `2.5`.")
+    await _goto_wizard_step(
+        message=callback.message,
+        state=state,
+        draft_service=draft_service,
+        access_service=None,
+        user_id=user_id,
+        step="max_volume",
+    )
     await callback.answer()
 
 
@@ -338,34 +410,62 @@ async def on_preset_selected(callback: CallbackQuery, state: FSMContext, draft_s
 async def on_max_volume_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
     value = _parse_decimal(message.text)
     if value is None or value <= Decimal("0"):
-        await message.answer("Введите объем в ml больше 0, например `2`.")
+        await _render_wizard_panel(
+            message=message,
+            state=state,
+            text="Введите объем в ml больше 0, например <code>2</code>.",
+            reply_markup=build_wizard_navigation_actions(step="max_volume"),
+        )
         return
 
     user_id = _resolve_user_id(message.from_user.id if message.from_user else None)
     await _save_settings_patch(draft_service, user_id, max_injection_volume_ml=value)
-    await state.set_state(CalculationInputState.max_injections_per_week)
-    await message.answer("Введите max injections per week (целое число).")
+    await delete_user_input_message(message)
+    await _goto_wizard_step(
+        message=message,
+        state=state,
+        draft_service=draft_service,
+        access_service=None,
+        user_id=user_id,
+        step="max_injections",
+    )
 
 
 @router.message(CalculationInputState.max_injections_per_week)
 async def on_max_injections_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
     value = _parse_positive_int(message.text)
     if value is None:
-        await message.answer("Введите целое число больше 0, например `3`.")
+        await _render_wizard_panel(
+            message=message,
+            state=state,
+            text="Введите целое число больше 0, например <code>3</code>.",
+            reply_markup=build_wizard_navigation_actions(step="max_injections"),
+        )
         return
 
     user_id = _resolve_user_id(message.from_user.id if message.from_user else None)
     await _save_settings_patch(draft_service, user_id, max_injections_per_week=value)
-    readiness = await draft_service.get_draft_readiness(user_id)
-    await state.clear()
-    await message.answer(_render_readiness_summary(readiness), reply_markup=build_readiness_actions())
+    await delete_user_input_message(message)
+    await _goto_wizard_step(
+        message=message,
+        state=state,
+        draft_service=draft_service,
+        access_service=None,
+        user_id=user_id,
+        step="readiness",
+    )
 
 
 @router.message(CalculationInputState.stack_product_target)
 async def on_stack_target_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
     value = _parse_decimal(message.text)
     if value is None or value <= Decimal("0"):
-        await message.answer("Введите desired weekly mg > 0, например `125`.")
+        await _render_wizard_panel(
+            message=message,
+            state=state,
+            text="Введите desired weekly mg > 0, например <code>125</code>.",
+            reply_markup=build_wizard_navigation_actions(step="stack_target"),
+        )
         return
 
     data = await state.get_data()
@@ -373,7 +473,7 @@ async def on_stack_target_input(message: Message, state: FSMContext, draft_servi
     current_product_id = data.get("stack_current_product_id")
     if current_product_id is None:
         await state.clear()
-        await message.answer("Не удалось продолжить stack input. Нажмите `К расчету` и выберите режим заново.")
+        await message.answer("Не удалось продолжить stack input. Нажмите «К расчету» и выберите режим заново.")
         return
 
     user_id = _resolve_user_id(message.from_user.id if message.from_user else None)
@@ -387,15 +487,28 @@ async def on_stack_target_input(message: Message, state: FSMContext, draft_servi
             ),
         ],
     )
+    await delete_user_input_message(message)
     if pending:
         next_product_id = pending.pop(0)
         await state.update_data(stack_pending_product_ids=pending, stack_current_product_id=next_product_id)
-        await message.answer(_stack_target_prompt(data["stack_product_names"][next_product_id]))
+        await _goto_wizard_step(
+            message=message,
+            state=state,
+            draft_service=draft_service,
+            access_service=None,
+            user_id=user_id,
+            step="stack_target",
+            push_history=False,
+        )
         return
 
-    await state.set_state(CalculationInputState.duration_weeks)
-    await message.answer(
-        "Stack composition сохранен. Теперь укажите длительность протокола в неделях (duration_weeks)."
+    await _goto_wizard_step(
+        message=message,
+        state=state,
+        draft_service=draft_service,
+        access_service=None,
+        user_id=user_id,
+        step="duration",
     )
 
 
@@ -403,7 +516,12 @@ async def on_stack_target_input(message: Message, state: FSMContext, draft_servi
 async def on_inventory_count_input(message: Message, state: FSMContext, draft_service: DraftApplicationService) -> None:
     parsed = _parse_inventory_input(message.text)
     if parsed is None:
-        await message.answer("Введите в формате `<count> <unit>`, например `20 vial` или `120 tablet`.")
+        await _render_wizard_panel(
+            message=message,
+            state=state,
+            text="Введите в формате <code>&lt;count&gt; &lt;unit&gt;</code>, например <code>20 vial</code>.",
+            reply_markup=build_wizard_navigation_actions(step="inventory_count"),
+        )
         return
     available_count, count_unit = parsed
 
@@ -427,14 +545,29 @@ async def on_inventory_count_input(message: Message, state: FSMContext, draft_se
             ),
         ],
     )
+    await delete_user_input_message(message)
     if pending:
         next_product_id = pending.pop(0)
         await state.update_data(inventory_pending_product_ids=pending, inventory_current_product_id=next_product_id)
-        await message.answer(_inventory_prompt(data["inventory_product_names"][next_product_id]))
+        await _goto_wizard_step(
+            message=message,
+            state=state,
+            draft_service=draft_service,
+            access_service=None,
+            user_id=user_id,
+            step="inventory_count",
+            push_history=False,
+        )
         return
 
-    await state.set_state(CalculationInputState.duration_weeks)
-    await message.answer("Inventory composition сохранен. Теперь укажите длительность протокола в неделях (duration_weeks).")
+    await _goto_wizard_step(
+        message=message,
+        state=state,
+        draft_service=draft_service,
+        access_service=None,
+        user_id=user_id,
+        step="duration",
+    )
 
 
 def build_draft_shortcut() -> InlineKeyboardMarkup:
@@ -444,12 +577,12 @@ def build_draft_shortcut() -> InlineKeyboardMarkup:
 
 
 def build_input_mode_actions() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
+    rows = [
             [InlineKeyboardButton(text=INPUT_MODE_LABELS[mode], callback_data=f"draft:calc:mode:{mode}")]
             for mode in ("auto_pulse", "total_target", "stack_smoothing", "inventory_constrained")
         ]
-    )
+    rows.append([InlineKeyboardButton(text="✖️ Отмена", callback_data="draft:wizard:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def build_preset_actions() -> InlineKeyboardMarkup:
@@ -461,11 +594,27 @@ def build_preset_actions() -> InlineKeyboardMarkup:
     )
 
 
+def build_preset_actions_with_navigation() -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(text=label, callback_data=f"draft:calc:preset:{code}")] for code, label in PRESET_LABELS.items()]
+    rows.append([InlineKeyboardButton(text="◀️ Назад", callback_data="draft:wizard:back")])
+    rows.append([InlineKeyboardButton(text="✖️ Отмена", callback_data="draft:wizard:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def build_wizard_navigation_actions(step: str) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if step not in {"mode"}:
+        rows.append([InlineKeyboardButton(text="◀️ Назад", callback_data="draft:wizard:back")])
+    rows.append([InlineKeyboardButton(text="✖️ Отмена", callback_data="draft:wizard:cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def build_readiness_actions() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Рассчитать preview pulse plan", callback_data="draft:calculate:run")],
-            [InlineKeyboardButton(text="Редактировать stack composition", callback_data="draft:stack:edit")],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="draft:wizard:back")],
+            [InlineKeyboardButton(text="✖️ Отмена", callback_data="draft:wizard:cancel")],
             [InlineKeyboardButton(text="Сменить preset", callback_data="draft:calculate")],
             [InlineKeyboardButton(text="Draft", callback_data="draft:open")],
         ]
@@ -582,11 +731,211 @@ async def _render_draft_panel(
     )
 
 
-def _render_readiness_summary(readiness) -> str:
-    lines = [readiness.summary]
+async def _render_wizard_panel(
+    *,
+    message: Message,
+    state: FSMContext,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
+    await safe_edit_or_send(
+        state=state,
+        source_message=message,
+        text=text,
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.HTML,
+    )
+
+
+def _first_step_for_mode(mode: str) -> str:
+    if mode == "auto_pulse":
+        return "duration"
+    if mode == "total_target":
+        return "weekly_target"
+    if mode == "stack_smoothing":
+        return "stack_target"
+    return "inventory_gate"
+
+
+async def _cancel_wizard(message: Message, state: FSMContext, draft_service: DraftApplicationService, user_id: str) -> None:
+    await state.set_state(None)
+    await state.update_data(
+        **{
+            WIZARD_STEP_KEY: None,
+            WIZARD_HISTORY_KEY: [],
+            WIZARD_MODE_KEY: None,
+            "stack_current_product_id": None,
+            "stack_pending_product_ids": [],
+            "inventory_current_product_id": None,
+            "inventory_pending_product_ids": [],
+        }
+    )
+    draft = await draft_service.list_draft(user_id)
+    await _render_draft_panel(message=message, state=state, draft=draft)
+
+
+async def _goto_wizard_step(
+    *,
+    message: Message,
+    state: FSMContext,
+    draft_service: DraftApplicationService,
+    access_service: AccessEvaluationService | None,
+    user_id: str,
+    step: str,
+    push_history: bool = True,
+    current_mode: str | None = None,
+) -> None:
+    data = await state.get_data()
+    if push_history:
+        current = data.get(WIZARD_STEP_KEY)
+        history = list(data.get(WIZARD_HISTORY_KEY, []))
+        if isinstance(current, str):
+            history.append(current)
+        await state.update_data(**{WIZARD_HISTORY_KEY: history})
+    await state.update_data(**{WIZARD_STEP_KEY: step})
+
+    settings = await draft_service.get_draft_settings(user_id)
+    mode = current_mode or data.get(WIZARD_MODE_KEY) or (settings.protocol_input_mode if settings else None)
+
+    if step == "mode":
+        await state.set_state(CalculationInputState.mode)
+        mode_hint = f"\nТекущий режим: <b>{INPUT_MODE_LABELS.get(mode, '—')}</b>." if mode else ""
+        await _render_wizard_panel(
+            message=message,
+            state=state,
+            text=f"<b>Calculation setup</b>\nВыберите protocol input mode.{mode_hint}",
+            reply_markup=build_input_mode_actions(),
+        )
+        return
+
+    if mode is None:
+        await _goto_wizard_step(
+            message=message,
+            state=state,
+            draft_service=draft_service,
+            access_service=access_service,
+            user_id=user_id,
+            step="mode",
+            push_history=False,
+        )
+        return
+    await state.update_data(**{WIZARD_MODE_KEY: mode})
+
+    if step == "inventory_gate":
+        if access_service is None:
+            await _render_wizard_panel(
+                message=message,
+                state=state,
+                text="Inventory Constrained требует проверки доступа.",
+                reply_markup=build_wizard_navigation_actions(step="inventory_gate"),
+            )
+            return
+        decision = await access_service.evaluate(user_id=user_id, entitlement_code="inventory_constrained_access")
+        if not decision.allowed:
+            await _render_wizard_panel(
+                message=message,
+                state=state,
+                text="Inventory Constrained — advanced paid mode.\nДоступ не активирован.",
+                reply_markup=build_wizard_navigation_actions(step="inventory_gate"),
+            )
+            return
+        await _goto_wizard_step(
+            message=message,
+            state=state,
+            draft_service=draft_service,
+            access_service=access_service,
+            user_id=user_id,
+            step="inventory_count",
+            push_history=False,
+        )
+        return
+
+    if step == "weekly_target":
+        await state.set_state(CalculationInputState.weekly_target_total_mg)
+        current = format_decimal_human(settings.weekly_target_total_mg if settings else None)
+        await _render_wizard_panel(
+            message=message,
+            state=state,
+            text=f"<b>Total Target</b>\nУкажите weekly target (mg).\nТекущее значение: <b>{current}</b>.",
+            reply_markup=build_wizard_navigation_actions(step="weekly_target"),
+        )
+        return
+
+    if step == "stack_target":
+        await _start_stack_input_flow(message, state, draft_service, user_id)
+        return
+
+    if step == "inventory_count":
+        await _start_inventory_input_flow(message, state, draft_service, user_id)
+        return
+
+    if step == "duration":
+        await state.set_state(CalculationInputState.duration_weeks)
+        current = settings.duration_weeks if settings else None
+        await _render_wizard_panel(
+            message=message,
+            state=state,
+            text=f"<b>{INPUT_MODE_LABELS.get(mode, mode)}</b>\nУкажите длительность (weeks).\nТекущее: <b>{current or '—'}</b>.",
+            reply_markup=build_wizard_navigation_actions(step="duration"),
+        )
+        return
+
+    if step == "preset":
+        await state.set_state(CalculationInputState.mode)
+        await _render_wizard_panel(
+            message=message,
+            state=state,
+            text="<b>Preset</b>\nВыберите стратегию раскладки pulse plan.",
+            reply_markup=build_preset_actions_with_navigation(),
+        )
+        return
+
+    if step == "max_volume":
+        await state.set_state(CalculationInputState.max_injection_volume_ml)
+        current = format_decimal_human(settings.max_injection_volume_ml if settings else None)
+        await _render_wizard_panel(
+            message=message,
+            state=state,
+            text=f"<b>Ограничение объема</b>\nВведите max injection volume (ml).\nТекущее: <b>{current}</b>.",
+            reply_markup=build_wizard_navigation_actions(step="max_volume"),
+        )
+        return
+
+    if step == "max_injections":
+        await state.set_state(CalculationInputState.max_injections_per_week)
+        current = settings.max_injections_per_week if settings else None
+        await _render_wizard_panel(
+            message=message,
+            state=state,
+            text=f"<b>Ограничение частоты</b>\nВведите max injections per week.\nТекущее: <b>{current or '—'}</b>.",
+            reply_markup=build_wizard_navigation_actions(step="max_injections"),
+        )
+        return
+
+    readiness = await draft_service.get_draft_readiness(user_id)
+    await state.set_state(CalculationInputState.mode)
+    await _render_wizard_panel(
+        message=message,
+        state=state,
+        text=_render_readiness_summary(readiness, settings=settings),
+        reply_markup=build_readiness_actions(),
+    )
+
+
+def _render_readiness_summary(readiness, settings=None) -> str:
+    mode = INPUT_MODE_LABELS.get(settings.protocol_input_mode or "", "—") if settings else "—"
+    preset = PRESET_LABELS.get(settings.preset_code or "", "—") if settings else "—"
+    lines = [
+        "<b>Readiness</b>",
+        f"Режим: <b>{mode}</b>",
+        f"Preset: <b>{preset}</b>",
+        readiness.summary,
+    ]
+    if settings:
+        lines.append(f"Ограничения: {format_decimal_human(settings.max_injection_volume_ml)} ml / {settings.max_injections_per_week or '—'} inj/week")
     if not readiness.issues:
-        lines.append("✅ Все обязательные input-параметры заполнены.")
-        lines.append("Готово: можно запускать pulse plan preview.")
+        lines.append("✅ Все обязательные параметры заполнены.")
+        lines.append("Готово: можно запускать preview.")
         return "\n".join(lines)
 
     for issue in readiness.issues:
@@ -846,13 +1195,23 @@ async def _start_stack_input_flow(
             stack_pending_product_ids=pending,
             stack_product_names=product_names,
         )
-        await message.answer(_render_stack_composition(existing_by_product, product_names))
-        await message.answer(_stack_target_prompt(product_names[current]))
+        await _render_wizard_panel(
+            message=message,
+            state=state,
+            text=f"<b>Stack Smoothing</b>\n{_render_stack_composition(existing_by_product, product_names)}\n\n{_stack_target_prompt(product_names[current])}",
+            reply_markup=build_wizard_navigation_actions(step="stack_target"),
+        )
         return
 
-    await message.answer(_render_stack_composition(existing_by_product, product_names))
-    await state.set_state(CalculationInputState.duration_weeks)
-    await message.answer("Все продукты уже имеют desired weekly mg. Укажите duration_weeks.")
+    await _goto_wizard_step(
+        message=message,
+        state=state,
+        draft_service=draft_service,
+        access_service=None,
+        user_id=user_id,
+        step="duration",
+        push_history=False,
+    )
 
 
 async def _start_inventory_input_flow(
@@ -877,13 +1236,23 @@ async def _start_inventory_input_flow(
             inventory_pending_product_ids=pending,
             inventory_product_names=product_names,
         )
-        await message.answer(_render_inventory_composition(existing_by_product, product_names))
-        await message.answer(_inventory_prompt(product_names[current]))
+        await _render_wizard_panel(
+            message=message,
+            state=state,
+            text=f"<b>Inventory Constrained</b>\n{_render_inventory_composition(existing_by_product, product_names)}\n\n{_inventory_prompt(product_names[current])}",
+            reply_markup=build_wizard_navigation_actions(step="inventory_count"),
+        )
         return
 
-    await message.answer(_render_inventory_composition(existing_by_product, product_names))
-    await state.set_state(CalculationInputState.duration_weeks)
-    await message.answer("Для всех продуктов inventory уже задан. Укажите duration_weeks.")
+    await _goto_wizard_step(
+        message=message,
+        state=state,
+        draft_service=draft_service,
+        access_service=None,
+        user_id=user_id,
+        step="duration",
+        push_history=False,
+    )
 
 
 def _stack_target_prompt(product_name: str) -> str:
