@@ -1,0 +1,381 @@
+{
+  "workbook_path": "docs/medical.xlsx",
+  "generated_at_utc": "2026-04-13T00:23:14.173744+00:00",
+  "scenario_results": [
+    {
+      "scenario_id": "MED-U1",
+      "preset": "unified_rhythm",
+      "status": "success",
+      "preset_applied": "unified_rhythm",
+      "warning_flags": [],
+      "allocation_mode": "guidance_weighted",
+      "summary_metrics": {
+        "flatness_stability_score": 85.44,
+        "estimated_injections_per_week": 4,
+        "max_volume_per_event_ml": 0.7368,
+        "allocation_mode": "guidance_weighted",
+        "per_product_weekly_target_mg": {
+          "3024b4e7-5005-5130-b88b-6857840e5aa9": 73.6842,
+          "72171e93-083a-55f0-ac09-a6762f8900f8": 110.5263,
+          "85d4e295-2c43-5617-b22d-a216d7a7d805": 368.4211,
+          "96b5c0f8-32d6-5336-a2d2-bec54463ffa5": 147.3684
+        },
+        "guidance_coverage_score": 100.0,
+        "guidance_band_fit_score": 100.0,
+        "effective_half_life_mode": "amount_weighted",
+        "half_life_resolution_quality": 1.0,
+        "optimization_applied": false,
+        "optimization_gain": 0.0,
+        "optimization_flatness_before": null,
+        "optimization_flatness_after": null,
+        "allocation_warning_flags": [],
+        "warning_flags": [],
+        "degraded_fallback": false
+      },
+      "entry_count": 32,
+      "first_entries": [
+        {
+          "day_offset": 0,
+          "product_id": "3024b4e7-5005-5130-b88b-6857840e5aa9",
+          "ingredient_context": "Trenbolone Hexahydrobenzylcarbonate",
+          "volume_ml": 0.7368,
+          "computed_mg": 73.6842
+        },
+        {
+          "day_offset": 1,
+          "product_id": "72171e93-083a-55f0-ac09-a6762f8900f8",
+          "ingredient_context": "Boldenone Undecylenate",
+          "volume_ml": 0.3684,
+          "computed_mg": 110.5263
+        },
+        {
+          "day_offset": 2,
+          "product_id": "85d4e295-2c43-5617-b22d-a216d7a7d805",
+          "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+          "volume_ml": 0.7368,
+          "computed_mg": 368.4211
+        },
+        {
+          "day_offset": 3,
+          "product_id": "96b5c0f8-32d6-5336-a2d2-bec54463ffa5",
+          "ingredient_context": "Drostanolone Enanthate",
+          "volume_ml": 0.7368,
+          "computed_mg": 147.3684
+        },
+        {
+          "day_offset": 7,
+          "product_id": "3024b4e7-5005-5130-b88b-6857840e5aa9",
+          "ingredient_context": "Trenbolone Hexahydrobenzylcarbonate",
+          "volume_ml": 0.7368,
+          "computed_mg": 73.6842
+        },
+        {
+          "day_offset": 8,
+          "product_id": "72171e93-083a-55f0-ac09-a6762f8900f8",
+          "ingredient_context": "Boldenone Undecylenate",
+          "volume_ml": 0.3684,
+          "computed_mg": 110.5263
+        },
+        {
+          "day_offset": 9,
+          "product_id": "85d4e295-2c43-5617-b22d-a216d7a7d805",
+          "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+          "volume_ml": 0.7368,
+          "computed_mg": 368.4211
+        },
+        {
+          "day_offset": 10,
+          "product_id": "96b5c0f8-32d6-5336-a2d2-bec54463ffa5",
+          "ingredient_context": "Drostanolone Enanthate",
+          "volume_ml": 0.7368,
+          "computed_mg": 147.3684
+        }
+      ]
+    },
+    {
+      "scenario_id": "MED-L1",
+      "preset": "layered_pulse",
+      "status": "success_with_warnings",
+      "preset_applied": "layered_pulse",
+      "warning_flags": [
+        "injections_above_preference"
+      ],
+      "allocation_mode": "guidance_weighted",
+      "summary_metrics": {
+        "flatness_stability_score": 92.48,
+        "estimated_injections_per_week": 5,
+        "max_volume_per_event_ml": 0.7368,
+        "allocation_mode": "guidance_weighted",
+        "per_product_weekly_target_mg": {
+          "3024b4e7-5005-5130-b88b-6857840e5aa9": 73.6842,
+          "72171e93-083a-55f0-ac09-a6762f8900f8": 110.5263,
+          "85d4e295-2c43-5617-b22d-a216d7a7d805": 368.4211,
+          "96b5c0f8-32d6-5336-a2d2-bec54463ffa5": 147.3684
+        },
+        "guidance_coverage_score": 100.0,
+        "guidance_band_fit_score": 100.0,
+        "effective_half_life_mode": "amount_weighted",
+        "half_life_resolution_quality": 1.0,
+        "optimization_applied": false,
+        "optimization_gain": 0.0,
+        "optimization_flatness_before": null,
+        "optimization_flatness_after": null,
+        "allocation_warning_flags": [],
+        "warning_flags": [
+          "injections_above_preference"
+        ],
+        "degraded_fallback": false
+      },
+      "entry_count": 38,
+      "first_entries": [
+        {
+          "day_offset": 0,
+          "product_id": "3024b4e7-5005-5130-b88b-6857840e5aa9",
+          "ingredient_context": "Trenbolone Hexahydrobenzylcarbonate",
+          "volume_ml": 0.7368,
+          "computed_mg": 73.6842
+        },
+        {
+          "day_offset": 1,
+          "product_id": "72171e93-083a-55f0-ac09-a6762f8900f8",
+          "ingredient_context": "Boldenone Undecylenate",
+          "volume_ml": 0.3684,
+          "computed_mg": 110.5263
+        },
+        {
+          "day_offset": 2,
+          "product_id": "85d4e295-2c43-5617-b22d-a216d7a7d805",
+          "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+          "volume_ml": 0.3684,
+          "computed_mg": 184.2106
+        },
+        {
+          "day_offset": 3,
+          "product_id": "96b5c0f8-32d6-5336-a2d2-bec54463ffa5",
+          "ingredient_context": "Drostanolone Enanthate",
+          "volume_ml": 0.7368,
+          "computed_mg": 147.3684
+        },
+        {
+          "day_offset": 6,
+          "product_id": "85d4e295-2c43-5617-b22d-a216d7a7d805",
+          "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+          "volume_ml": 0.3684,
+          "computed_mg": 184.2106
+        },
+        {
+          "day_offset": 7,
+          "product_id": "3024b4e7-5005-5130-b88b-6857840e5aa9",
+          "ingredient_context": "Trenbolone Hexahydrobenzylcarbonate",
+          "volume_ml": 0.7368,
+          "computed_mg": 73.6842
+        },
+        {
+          "day_offset": 8,
+          "product_id": "72171e93-083a-55f0-ac09-a6762f8900f8",
+          "ingredient_context": "Boldenone Undecylenate",
+          "volume_ml": 0.3684,
+          "computed_mg": 110.5263
+        },
+        {
+          "day_offset": 10,
+          "product_id": "85d4e295-2c43-5617-b22d-a216d7a7d805",
+          "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+          "volume_ml": 0.3684,
+          "computed_mg": 184.2106
+        }
+      ]
+    },
+    {
+      "scenario_id": "MED-G1",
+      "preset": "golden_pulse",
+      "status": "success_with_warnings",
+      "preset_applied": "golden_pulse",
+      "warning_flags": [
+        "injections_above_preference"
+      ],
+      "allocation_mode": "guidance_weighted",
+      "summary_metrics": {
+        "flatness_stability_score": 91.81,
+        "estimated_injections_per_week": 7,
+        "max_volume_per_event_ml": 0.3684,
+        "allocation_mode": "guidance_weighted",
+        "per_product_weekly_target_mg": {
+          "3024b4e7-5005-5130-b88b-6857840e5aa9": 73.6842,
+          "72171e93-083a-55f0-ac09-a6762f8900f8": 110.5263,
+          "85d4e295-2c43-5617-b22d-a216d7a7d805": 368.4211,
+          "96b5c0f8-32d6-5336-a2d2-bec54463ffa5": 147.3684
+        },
+        "guidance_coverage_score": 100.0,
+        "guidance_band_fit_score": 100.0,
+        "effective_half_life_mode": "amount_weighted",
+        "half_life_resolution_quality": 1.0,
+        "optimization_applied": false,
+        "optimization_gain": 0.0,
+        "optimization_flatness_before": 91.81,
+        "optimization_flatness_after": 91.81,
+        "allocation_warning_flags": [],
+        "warning_flags": [
+          "injections_above_preference"
+        ],
+        "degraded_fallback": false
+      },
+      "entry_count": 56,
+      "first_entries": [
+        {
+          "day_offset": 0,
+          "product_id": "3024b4e7-5005-5130-b88b-6857840e5aa9",
+          "ingredient_context": "Trenbolone Hexahydrobenzylcarbonate",
+          "volume_ml": 0.3684,
+          "computed_mg": 36.8421
+        },
+        {
+          "day_offset": 1,
+          "product_id": "72171e93-083a-55f0-ac09-a6762f8900f8",
+          "ingredient_context": "Boldenone Undecylenate",
+          "volume_ml": 0.1842,
+          "computed_mg": 55.2632
+        },
+        {
+          "day_offset": 2,
+          "product_id": "85d4e295-2c43-5617-b22d-a216d7a7d805",
+          "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+          "volume_ml": 0.3684,
+          "computed_mg": 184.2106
+        },
+        {
+          "day_offset": 3,
+          "product_id": "96b5c0f8-32d6-5336-a2d2-bec54463ffa5",
+          "ingredient_context": "Drostanolone Enanthate",
+          "volume_ml": 0.3684,
+          "computed_mg": 73.6842
+        },
+        {
+          "day_offset": 4,
+          "product_id": "3024b4e7-5005-5130-b88b-6857840e5aa9",
+          "ingredient_context": "Trenbolone Hexahydrobenzylcarbonate",
+          "volume_ml": 0.3684,
+          "computed_mg": 36.8421
+        },
+        {
+          "day_offset": 5,
+          "product_id": "72171e93-083a-55f0-ac09-a6762f8900f8",
+          "ingredient_context": "Boldenone Undecylenate",
+          "volume_ml": 0.1842,
+          "computed_mg": 55.2632
+        },
+        {
+          "day_offset": 6,
+          "product_id": "85d4e295-2c43-5617-b22d-a216d7a7d805",
+          "ingredient_context": "Testosterone Propionate, Testosterone Phenylpropionate",
+          "volume_ml": 0.3684,
+          "computed_mg": 184.2106
+        },
+        {
+          "day_offset": 7,
+          "product_id": "96b5c0f8-32d6-5336-a2d2-bec54463ffa5",
+          "ingredient_context": "Drostanolone Enanthate",
+          "volume_ml": 0.3684,
+          "computed_mg": 73.6842
+        }
+      ]
+    }
+  ],
+  "search_results": [
+    {
+      "query": "sustanon",
+      "expected_primary_trade_name": "SP Sustanon FORTE",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "SP Sustanon FORTE"
+      ],
+      "matched": true
+    },
+    {
+      "query": "pharma sust 500",
+      "expected_primary_trade_name": "SP Sustanon FORTE",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "SP Sustanon FORTE"
+      ],
+      "matched": true
+    },
+    {
+      "query": "сустанон форте",
+      "expected_primary_trade_name": "SP Sustanon FORTE",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "SP Sustanon FORTE"
+      ],
+      "matched": true
+    },
+    {
+      "query": "parabolan",
+      "expected_primary_trade_name": "SP Parabolan",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "SP Parabolan"
+      ],
+      "matched": true
+    },
+    {
+      "query": "параболан",
+      "expected_primary_trade_name": "SP Parabolan",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "SP Parabolan"
+      ],
+      "matched": true
+    },
+    {
+      "query": "masteron enanthate",
+      "expected_primary_trade_name": "Masteron Enanthate",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "Masteron Enanthate"
+      ],
+      "matched": true
+    },
+    {
+      "query": "мастерон энантат",
+      "expected_primary_trade_name": "Masteron Enanthate",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "Masteron Enanthate"
+      ],
+      "matched": true
+    },
+    {
+      "query": "bolddenon 300",
+      "expected_primary_trade_name": "PHARMA BOLD 300",
+      "expected_hit": "no",
+      "actual_hits": [],
+      "matched": true
+    },
+    {
+      "query": "boldenone undecylenate",
+      "expected_primary_trade_name": "PHARMA BOLD 300",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "PHARMA BOLD 300"
+      ],
+      "matched": true
+    },
+    {
+      "query": "testosterone phenylpropionate 120 mg",
+      "expected_primary_trade_name": "SP Sustanon FORTE",
+      "expected_hit": "yes",
+      "actual_hits": [
+        "SP Sustanon FORTE"
+      ],
+      "matched": true
+    },
+    {
+      "query": "фенилпропионат 60мг",
+      "expected_primary_trade_name": "—",
+      "expected_hit": "no",
+      "actual_hits": [],
+      "matched": true
+    }
+  ]
+}

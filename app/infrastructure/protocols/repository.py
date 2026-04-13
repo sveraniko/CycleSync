@@ -363,10 +363,12 @@ class SqlAlchemyDraftRepository:
                         draft_id=draft_id,
                         product_id=target.product_id,
                         protocol_input_mode=target.protocol_input_mode,
+                        desired_weekly_mg=target.desired_weekly_mg,
                     )
                     session.add(row)
                     await session.flush()
-                row.desired_weekly_mg = target.desired_weekly_mg
+                else:
+                    row.desired_weekly_mg = target.desired_weekly_mg
             await session.commit()
             rows = await session.scalars(
                 select(ProtocolInputTarget)
@@ -406,11 +408,14 @@ class SqlAlchemyDraftRepository:
                         draft_id=draft_id,
                         product_id=constraint.product_id,
                         protocol_input_mode=constraint.protocol_input_mode,
+                        available_count=constraint.available_count,
+                        count_unit=constraint.count_unit,
                     )
                     session.add(row)
                     await session.flush()
-                row.available_count = constraint.available_count
-                row.count_unit = constraint.count_unit
+                else:
+                    row.available_count = constraint.available_count
+                    row.count_unit = constraint.count_unit
             await session.commit()
             rows = await session.scalars(
                 select(ProtocolInventoryConstraint)

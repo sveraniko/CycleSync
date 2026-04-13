@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from time import perf_counter
 from typing import Any
 
@@ -56,7 +57,7 @@ class MeiliSearchGateway:
             raise SearchGatewayError(f"meili ensure index failed: {exc}") from exc
 
     async def upsert_documents(self, documents: list[SearchDocument]) -> None:
-        payload = [doc.__dict__ for doc in documents]
+        payload = [asdict(doc) for doc in documents]
         try:
             response = await self.client.post(f"/indexes/{self.index_name}/documents", json=payload)
             response.raise_for_status()
