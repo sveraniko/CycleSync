@@ -6,6 +6,7 @@ from app.domain.models.compound_catalog import (
     CompoundIngredient,
     CompoundProduct,
     ProductMediaRef,
+    ProductSourceRef,
 )
 from app.domain.models.ops import JobRun, OutboxEvent, ProjectionCheckpoint
 from app.domain.models.protocols import (
@@ -63,6 +64,7 @@ __all__ = [
     "CompoundAlias",
     "CompoundIngredient",
     "ProductMediaRef",
+    "ProductSourceRef",
     "CatalogIngestRun",
     "CatalogSourceRecord",
     "SearchProjectionState",

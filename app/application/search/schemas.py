@@ -51,7 +51,27 @@ class OpenCard:
     form_factor: str | None
     official_url: str | None
     authenticity_notes: str | None
-    media_refs: list[str]
+    source_links: list["CardSourceLink"] = field(default_factory=list)
+    media_items: list["CardMediaItem"] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class CardSourceLink:
+    kind: str
+    label: str
+    url: str
+    priority: int
+    is_active: bool
+
+
+@dataclass(slots=True)
+class CardMediaItem:
+    media_kind: str
+    ref: str
+    priority: int
+    is_cover: bool
+    source_layer: str | None
+    is_active: bool
 
 
 @dataclass(slots=True)

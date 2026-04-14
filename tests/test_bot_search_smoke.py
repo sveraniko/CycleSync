@@ -2,7 +2,7 @@ import asyncio
 from types import SimpleNamespace
 from uuid import UUID
 
-from app.application.search.schemas import OpenCard, SearchResponse, SearchResultItem
+from app.application.search.schemas import CardMediaItem, CardSourceLink, OpenCard, SearchResponse, SearchResultItem
 from app.bots.handlers.draft import on_add_to_draft
 from app.bots.handlers.search import (
     SEARCH_STATE_KEY,
@@ -57,6 +57,9 @@ class FakeMessage:
         )
         return sent
 
+    async def delete(self):
+        return None
+
 
 class FakeCallback:
     def __init__(self, message: FakeMessage, data: str) -> None:
@@ -99,6 +102,12 @@ class FakeDraftService:
     async def add_product_to_draft(self, user_id: str, product_id: UUID):
         return SimpleNamespace(added=self.added)
 
+    async def get_or_create_active_draft(self, user_id: str):
+        return SimpleNamespace(items=[])
+
+    async def list_draft(self, user_id: str):
+        return SimpleNamespace(items=[])
+
 
 def test_search_result_panel_rendering_smoke() -> None:
     items = [
@@ -126,7 +135,11 @@ def test_product_card_rendering_and_url_buttons() -> None:
         form_factor="oil",
         official_url="https://official.example",
         authenticity_notes="Check batch code",
-        media_refs=["https://src1.example", "https://src2.example"],
+        source_links=[
+            CardSourceLink(kind="source", label="Lab test", url="https://src1.example", priority=1, is_active=True),
+            CardSourceLink(kind="community", label="Community", url="https://src2.example", priority=2, is_active=True),
+        ],
+        media_items=[],
     )
     text = _render_product_card(card, show_auth=False, show_media=False, show_sources=False)
     assert "https://" not in text
@@ -134,7 +147,78 @@ def test_product_card_rendering_and_url_buttons() -> None:
     keyboard = build_card_actions(card, show_auth=False, show_media=False, show_sources=False)
     url_buttons = [b for row in keyboard.inline_keyboard for b in row if b.url]
     assert any(button.text == "Official" for button in url_buttons)
-    assert any(button.text == "Source 1" for button in url_buttons)
+    assert any(button.text == "Lab test" for button in url_buttons)
+    assert any(button.text == "Community" for button in url_buttons)
+
+
+def test_show_sources_does_not_claim_buttons_when_no_links() -> None:
+    card = OpenCard(
+        product_id=UUID("00000000-0000-0000-0000-000000000001"),
+        product_name="Prod",
+        brand="Brand",
+        composition_summary="Comp",
+        form_factor="oil",
+        official_url=None,
+        authenticity_notes=None,
+        source_links=[],
+        media_items=[],
+    )
+    text = _render_product_card(card, show_auth=False, show_media=False, show_sources=True)
+    assert "Нет данных." in text
+
+
+def test_media_section_renders_structured_media_items() -> None:
+    card = OpenCard(
+        product_id=UUID("00000000-0000-0000-0000-000000000001"),
+        product_name="Prod",
+        brand="Brand",
+        composition_summary="Comp",
+        form_factor="oil",
+        official_url=None,
+        authenticity_notes=None,
+        source_links=[],
+        media_items=[
+            CardMediaItem(
+                media_kind="image",
+                ref="https://cdn/x.png",
+                priority=1,
+                is_cover=True,
+                source_layer="import",
+                is_active=True,
+            )
+        ],
+    )
+    text = _render_product_card(card, show_auth=False, show_media=True, show_sources=False)
+    assert "image #1 • cover" in text
+
+
+def test_card_actions_preserve_official_source_media_separation_and_ordering() -> None:
+    card = OpenCard(
+        product_id=UUID("00000000-0000-0000-0000-000000000001"),
+        product_name="Prod",
+        brand="Brand",
+        composition_summary="Comp",
+        form_factor="oil",
+        official_url="https://official.example",
+        authenticity_notes=None,
+        source_links=[
+            CardSourceLink(kind="source", label="Source 2", url="https://s2.example", priority=2, is_active=True),
+            CardSourceLink(kind="source", label="Source 1", url="https://s1.example", priority=1, is_active=True),
+        ],
+        media_items=[
+            CardMediaItem(
+                media_kind="video",
+                ref="https://video.example",
+                priority=10,
+                is_cover=False,
+                source_layer="import",
+                is_active=True,
+            )
+        ],
+    )
+    keyboard = build_card_actions(card, show_auth=False, show_media=False, show_sources=False)
+    url_buttons = [b for row in keyboard.inline_keyboard for b in row if b.url]
+    assert [b.text for b in url_buttons] == ["Official", "Source 1", "Source 2"]
 
 
 def test_pagination_controls_smoke() -> None:
@@ -157,9 +241,14 @@ def test_draft_callback_uses_toast_without_spam_message() -> None:
     async def runner() -> None:
         message = FakeMessage()
         callback = FakeCallback(message, "search:draft:00000000-0000-0000-0000-000000000001")
-        await on_add_to_draft(callback=callback, draft_service=FakeDraftService(added=True))
+        await on_add_to_draft(
+            callback=callback,
+            state=FakeFSMContext(),
+            draft_service=FakeDraftService(added=True),
+            search_service=FakeSearchService(),
+        )
         assert len(message.answers) == 0
-        assert callback.answers[-1]["text"] == "Добавлено в Draft."
+        assert callback.answers[-1]["text"] is None
 
     asyncio.run(runner())
 
@@ -170,15 +259,15 @@ def test_back_to_results_navigation_smoke() -> None:
         message = FakeMessage()
         service = FakeSearchService(total=6)
 
-        await search_entrypoint(message=message, state=state, search_service=service)
+        await search_entrypoint(message=message, state=state, search_service=service, draft_service=FakeDraftService(added=True))
         assert len(message.answers) == 1
 
         open_page = FakeCallback(message, "search:page:1")
-        await on_search_page(callback=open_page, state=state, search_service=service)
+        await on_search_page(callback=open_page, state=state, search_service=service, draft_service=FakeDraftService(added=True))
         assert message.bot.edits[-1]["parse_mode"] == "HTML"
 
         back = FakeCallback(message, "search:back")
-        await on_back_to_results(callback=back, state=state)
+        await on_back_to_results(callback=back, state=state, draft_service=FakeDraftService(added=True))
         assert message.bot.edits[-1]["reply_markup"] is not None
 
         stored = (await state.get_data())[SEARCH_STATE_KEY]
@@ -194,11 +283,11 @@ def test_search_flow_uses_single_panel_container_semantics() -> None:
         message = FakeMessage()
         service = FakeSearchService(total=3)
 
-        await search_entrypoint(message=message, state=state, search_service=service)
+        await search_entrypoint(message=message, state=state, search_service=service, draft_service=FakeDraftService(added=True))
         assert len(message.answers) == 1
 
         callback = FakeCallback(message, "search:page:0")
-        await on_search_page(callback=callback, state=state, search_service=service)
+        await on_search_page(callback=callback, state=state, search_service=service, draft_service=FakeDraftService(added=True))
         assert len(message.bot.edits) == 1
 
     asyncio.run(runner())

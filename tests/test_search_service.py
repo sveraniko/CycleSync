@@ -29,7 +29,8 @@ class FakeRepository:
             form_factor=None,
             official_url=None,
             authenticity_notes=None,
-            media_refs=[],
+            source_links=[],
+            media_items=[],
         )
 
 

@@ -7,7 +7,13 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.application.search.repository import SearchQueryLogEntry
-from app.application.search.schemas import CatalogIngredientRow, CatalogProjectionRow, OpenCard
+from app.application.search.schemas import (
+    CardMediaItem,
+    CardSourceLink,
+    CatalogIngredientRow,
+    CatalogProjectionRow,
+    OpenCard,
+)
 from app.domain.models import CompoundProduct, SearchProjectionState, SearchQueryLog
 from app.domain.models.compound_catalog import ProductMediaRef
 
@@ -114,6 +120,7 @@ class SqlAlchemySearchRepository:
                     selectinload(CompoundProduct.brand),
                     selectinload(CompoundProduct.ingredients),
                     selectinload(CompoundProduct.media_refs),
+                    selectinload(CompoundProduct.source_refs),
                 )
                 .where(CompoundProduct.id == product_id)
             )
@@ -136,7 +143,29 @@ class SqlAlchemySearchRepository:
                 form_factor=product.release_form,
                 official_url=product.official_url,
                 authenticity_notes=product.authenticity_notes,
-                media_refs=[m.ref_url for m in sorted(product.media_refs, key=lambda x: x.sort_order) if m.is_active],
+                source_links=[
+                    CardSourceLink(
+                        kind=src.source_kind,
+                        label=src.label,
+                        url=src.url,
+                        priority=src.sort_order,
+                        is_active=src.is_active,
+                    )
+                    for src in sorted(product.source_refs, key=lambda x: x.sort_order)
+                    if src.is_active
+                ],
+                media_items=[
+                    CardMediaItem(
+                        media_kind=media.media_kind,
+                        ref=media.ref_url,
+                        priority=media.sort_order,
+                        is_cover=media.is_cover,
+                        source_layer=media.source_layer,
+                        is_active=media.is_active,
+                    )
+                    for media in sorted(product.media_refs, key=lambda x: x.sort_order)
+                    if media.is_active
+                ],
             )
 
     async def add_product_media_ref(self, product_id: UUID, ref_url: str, media_kind: str = "external") -> bool:
@@ -158,6 +187,7 @@ class SqlAlchemySearchRepository:
                     media_kind=media_kind,
                     ref_url=ref_url,
                     sort_order=max_sort + 1,
+                    source_layer="manual",
                 )
             )
             await session.commit()
