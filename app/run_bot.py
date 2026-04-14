@@ -106,6 +106,9 @@ async def run_bot() -> None:
     )
     admin_config = AdminRuntimeConfig(
         commerce_enabled=settings.commerce_mode != "disabled",
+        debug_enabled=settings.bot_debug_enabled,
+        pulse_engine_version=settings.pulse_engine_version,
+        app_env=settings.app_env,
     )
     catalog_admin_service = CatalogAdminSyncService(settings=settings)
 
@@ -126,7 +129,7 @@ async def run_bot() -> None:
             admin_ids=admin_ids,
             admin_config=admin_config,
             catalog_admin_service=catalog_admin_service,
-            debug_enabled=settings.bot_debug_enabled,
+            debug_enabled=admin_config.debug_enabled,
         )
     finally:
         await bot.session.close()
