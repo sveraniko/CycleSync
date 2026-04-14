@@ -35,7 +35,7 @@ def test_parse_time_and_render_settings_smoke() -> None:
         timezone_name="UTC",
     )
     text = _render_settings(view)
-    assert "reminders_enabled: off" in text
+    assert "Напоминания: ❌ выключены" in text
     assert "07:00" in text
 
 
@@ -66,5 +66,5 @@ def test_render_protocol_status_smoke() -> None:
         summary=summary,
     )
     rendered = _render_protocol_status(status)
-    assert "integrity: Watch" in rendered
-    assert "completion_rate" in rendered
+    assert "Целостность: Watch" in rendered
+    assert "Выполнение:" in rendered

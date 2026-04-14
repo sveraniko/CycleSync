@@ -29,23 +29,23 @@ router = Router(name="draft")
 _DRAFT_CLEAR_CONFIRM_KEY = "draft_clear_confirm"
 
 PRESET_LABELS = {
-    "unified_rhythm": "Unified Rhythm",
-    "layered_pulse": "Layered Pulse",
-    "golden_pulse": "Golden Pulse / Conveyor",
+    "unified_rhythm": "Единый ритм",
+    "layered_pulse": "Слоистый пульс",
+    "golden_pulse": "Golden Pulse / Конвейер",
 }
 
 STATUS_LABELS = {
-    "success": "✅ success",
-    "success_with_warnings": "⚠️ success_with_warnings",
-    "degraded_fallback": "⚠️ degraded_fallback",
-    "failed_validation": "❌ failed_validation",
+    "success": "✅ Успешно",
+    "success_with_warnings": "⚠️ Успешно с предупреждениями",
+    "degraded_fallback": "⚠️ Выполнено с упрощением",
+    "failed_validation": "❌ Ошибка валидации",
 }
 
 INPUT_MODE_LABELS = {
-    "auto_pulse": "Auto Pulse",
-    "total_target": "Total Target",
-    "stack_smoothing": "Stack Smoothing",
-    "inventory_constrained": "Inventory Constrained",
+    "auto_pulse": "Авто-пульс",
+    "total_target": "Целевая доза",
+    "stack_smoothing": "Сглаживание стека",
+    "inventory_constrained": "Ограничение по запасу",
 }
 
 
@@ -153,7 +153,7 @@ async def on_remove_item(callback: CallbackQuery, state: FSMContext, draft_servi
         await safe_edit_or_send(
             state=state,
             source_message=callback.message,
-            text="Черновик не найден. Напишите <code>Draft</code>, чтобы создать новый.",
+            text="Черновик не найден. Нажмите «Черновик» на главной, чтобы создать новый.",
             parse_mode=ParseMode.HTML,
         )
     else:
@@ -179,7 +179,7 @@ async def on_clear_yes(callback: CallbackQuery, state: FSMContext, draft_service
         await safe_edit_or_send(
             state=state,
             source_message=callback.message,
-            text="Активный Draft не найден.",
+            text="Активный черновик не найден.",
         )
     else:
         await state.update_data(**{_DRAFT_CLEAR_CONFIRM_KEY: False})
@@ -199,7 +199,7 @@ async def on_continue_to_calculation(
         await safe_edit_or_send(
             state=state,
             source_message=callback.message,
-            text="Сначала добавьте хотя бы один продукт в Draft.",
+            text="Сначала добавьте хотя бы один продукт в черновик.",
             reply_markup=build_draft_shortcut(),
         )
         await callback.answer()
@@ -804,7 +804,7 @@ async def on_inventory_count_input(message: Message, state: FSMContext, draft_se
 
 def build_draft_shortcut() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="Draft", callback_data="draft:open")]],
+        inline_keyboard=[[InlineKeyboardButton(text="Черновик", callback_data="draft:open")]],
     )
 
 
@@ -844,11 +844,11 @@ def build_wizard_navigation_actions(step: str) -> InlineKeyboardMarkup:
 def build_readiness_actions() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Рассчитать preview pulse plan", callback_data="draft:calculate:run")],
+            [InlineKeyboardButton(text="Рассчитать предпросмотр", callback_data="draft:calculate:run")],
             [InlineKeyboardButton(text="◀️ Назад", callback_data="draft:wizard:back")],
             [InlineKeyboardButton(text="✖️ Отмена", callback_data="draft:wizard:cancel")],
-            [InlineKeyboardButton(text="Сменить preset", callback_data="draft:calculate")],
-            [InlineKeyboardButton(text="Draft", callback_data="draft:open")],
+            [InlineKeyboardButton(text="Сменить пресет", callback_data="draft:calculate")],
+            [InlineKeyboardButton(text="Черновик", callback_data="draft:open")],
         ]
     )
 
@@ -856,11 +856,11 @@ def build_readiness_actions() -> InlineKeyboardMarkup:
 def build_preview_actions(preview_id: UUID) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Пересчитать preview", callback_data="draft:calculate:run")],
-            [InlineKeyboardButton(text="Course estimate", callback_data=f"draft:estimate:preview:{preview_id}")],
-            [InlineKeyboardButton(text="Сменить preset", callback_data="draft:calculate")],
-            [InlineKeyboardButton(text="Start protocol", callback_data=f"draft:activate:prepare:{preview_id}")],
-            [InlineKeyboardButton(text="Draft", callback_data="draft:open")],
+            [InlineKeyboardButton(text="🔄 Пересчитать", callback_data="draft:calculate:run")],
+            [InlineKeyboardButton(text="📊 Оценка курса", callback_data=f"draft:estimate:preview:{preview_id}")],
+            [InlineKeyboardButton(text="Сменить пресет", callback_data="draft:calculate")],
+            [InlineKeyboardButton(text="🚀 Запустить протокол", callback_data=f"draft:activate:prepare:{preview_id}")],
+            [InlineKeyboardButton(text="Черновик", callback_data="draft:open")],
         ]
     )
 
@@ -868,10 +868,10 @@ def build_preview_actions(preview_id: UUID) -> InlineKeyboardMarkup:
 def build_pre_start_actions(preview_id: UUID) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Confirm start", callback_data=f"draft:activate:confirm:{preview_id}")],
-            [InlineKeyboardButton(text="Course estimate", callback_data=f"draft:estimate:preview:{preview_id}")],
-            [InlineKeyboardButton(text="Back to preview", callback_data="draft:calculate:run")],
-            [InlineKeyboardButton(text="Draft", callback_data="draft:open")],
+            [InlineKeyboardButton(text="✅ Подтвердить запуск", callback_data=f"draft:activate:confirm:{preview_id}")],
+            [InlineKeyboardButton(text="📊 Оценка курса", callback_data=f"draft:estimate:preview:{preview_id}")],
+            [InlineKeyboardButton(text="◀️ К предпросмотру", callback_data="draft:calculate:run")],
+            [InlineKeyboardButton(text="Черновик", callback_data="draft:open")],
         ]
     )
 
@@ -879,8 +879,8 @@ def build_pre_start_actions(preview_id: UUID) -> InlineKeyboardMarkup:
 def build_active_protocol_actions() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Course estimate", callback_data="draft:estimate:active:latest")],
-            [InlineKeyboardButton(text="Draft", callback_data="draft:open")],
+            [InlineKeyboardButton(text="📊 Оценка курса", callback_data="draft:estimate:active:latest")],
+            [InlineKeyboardButton(text="Черновик", callback_data="draft:open")],
         ]
     )
 
@@ -890,7 +890,7 @@ def build_draft_actions(draft: DraftView, *, clear_confirm: bool = False) -> Inl
     rows.append(
         [
             InlineKeyboardButton(text="К расчету", callback_data="draft:calculate"),
-            InlineKeyboardButton(text="Обновить Draft", callback_data="draft:open"),
+            InlineKeyboardButton(text="Обновить черновик", callback_data="draft:open"),
         ]
     )
 
@@ -906,7 +906,7 @@ def build_draft_actions(draft: DraftView, *, clear_confirm: bool = False) -> Inl
                 ]
             )
         else:
-            rows.append([InlineKeyboardButton(text="Очистить Draft", callback_data="draft:clear:confirm")])
+            rows.append([InlineKeyboardButton(text="Очистить черновик", callback_data="draft:clear:confirm")])
     rows.append([InlineKeyboardButton(text="◀️ К поиску", callback_data="search:back"), InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")])
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -921,7 +921,7 @@ def _render_draft_summary(draft: DraftView) -> str:
             "Следующий шаг: соберите состав и нажмите <b>К расчету</b>."
         )
 
-    lines = ["<b>Draft • Рабочая панель</b>", f"Позиции: <b>{len(draft.items)}</b>", "", "<b>Состав</b>"]
+    lines = ["<b>Черновик • Рабочая панель</b>", f"Позиции: <b>{len(draft.items)}</b>", "", "<b>Состав</b>"]
     for idx, item in enumerate(draft.items, start=1):
         label = escape_html_text(item.selected_product_name or "Без названия")
         lines.append(f"{idx}. {label}")
@@ -1061,7 +1061,7 @@ async def _goto_wizard_step(
             await _render_wizard_panel(
                 message=message,
                 state=state,
-                text="Inventory Constrained требует проверки доступа.",
+                text="Режим «Ограничение по запасу» требует проверки доступа.",
                 reply_markup=build_wizard_navigation_actions(step="inventory_gate"),
             )
             return
@@ -1161,16 +1161,16 @@ def _render_readiness_summary(readiness, settings=None) -> str:
     mode = INPUT_MODE_LABELS.get(settings.protocol_input_mode or "", "—") if settings else "—"
     preset = PRESET_LABELS.get(settings.preset_code or "", "—") if settings else "—"
     lines = [
-        "<b>Readiness</b>",
+        "<b>Готовность</b>",
         f"Режим: <b>{mode}</b>",
-        f"Preset: <b>{preset}</b>",
+        f"Пресет: <b>{preset}</b>",
         readiness.summary,
     ]
     if settings:
         lines.append(f"Ограничения: {format_decimal_human(settings.max_injection_volume_ml)} ml / {settings.max_injections_per_week or '—'} inj/week")
     if not readiness.issues:
         lines.append("✅ Все обязательные параметры заполнены.")
-        lines.append("Готово: можно запускать preview.")
+        lines.append("Готово: можно запускать предпросмотр.")
         return "\n".join(lines)
 
     for issue in readiness.issues:
@@ -1282,13 +1282,13 @@ def _render_preview_summary(preview: PulsePlanPreviewView, product_names: dict[s
     max_volume = format_decimal_human(source_metrics.get("max_volume_per_event_ml"))
 
     lines = [
-        "<b>Preview • Pulse Plan</b>",
+        "<b>Предпросмотр • Pulse Plan</b>",
         f"Статус: <b>{STATUS_LABELS.get(preview.status, compact_status_label(preview.status))}</b>",
         f"Режим: <b>{INPUT_MODE_LABELS.get(preview.protocol_input_mode, preview.protocol_input_mode)}</b>",
         f"Пресет: <b>{PRESET_LABELS.get(preview.preset_applied, preview.preset_applied)}</b>",
         "",
         "<b>Параметры плана</b>",
-        f"• Flatness: {flatness}",
+        f"• Стабильность (flatness): {flatness}",
         f"• Инъекций/нед: {injections}",
         f"• Макс. объём: {max_volume} мл",
     ]
@@ -1308,7 +1308,7 @@ def _render_preview_summary(preview: PulsePlanPreviewView, product_names: dict[s
         lines.extend(f"• {compact_status_label(flag)}" for flag in preview.warning_flags[:3])
 
     if preview.entries:
-        lines.extend(["", "<b>Schedule preview</b>"])
+        lines.extend(["", "<b>Предпросмотр расписания</b>"])
         for entry in preview.entries[:8]:
             mg = format_decimal_human(entry.computed_mg, precision=1)
             ml = format_decimal_human(entry.volume_ml, precision=2)
@@ -1336,10 +1336,10 @@ def _render_active_protocol_summary(active: ActiveProtocolView) -> str:
         f"Цель: <b>{weekly_target} мг/нед</b>",
         "",
         "<b>Ключевые метрики</b>",
-        f"• Flatness: {flatness}",
+        f"• Стабильность (flatness): {flatness}",
         f"• Инъекций/нед: {injections}",
         "",
-        "Протокол запущен. Можно оценить покрытие курса и вернуться в Draft при необходимости.",
+        "Протокол запущен. Можно оценить покрытие курса и вернуться в черновик при необходимости.",
     ]
     return "\n".join(lines)
 
@@ -1356,7 +1356,7 @@ def _render_pre_start_estimate_snapshot(estimate: CourseEstimate) -> str:
         insufficient = [line for line in estimate.lines if line.inventory_sufficiency_status == "insufficient"]
         if insufficient:
             lines.append("⚠️ Запаса не хватает на полный курс по части позиций.")
-            lines.append("Проверьте детализацию в «Course estimate» перед стартом.")
+            lines.append("Проверьте детализацию в «Оценке курса» перед стартом.")
         else:
             lines.append("✅ Текущего запаса достаточно на курс.")
     else:
@@ -1375,7 +1375,7 @@ def _render_course_estimate(estimate: CourseEstimate) -> str:
     mode = INPUT_MODE_LABELS.get(estimate.protocol_input_mode or "", "—")
 
     lines = [
-        "<b>Course estimate</b>",
+        "<b>Оценка курса</b>",
         f"Источник: <b>{source_label}</b>",
         f"Режим: <b>{mode}</b>",
         f"Длительность: <b>{estimate.duration_weeks or '—'} нед.</b>",
@@ -1578,7 +1578,7 @@ async def _start_inventory_input_flow(
 
 
 def _stack_target_prompt(product_name: str) -> str:
-    return f"Stack smoothing: укажите desired weekly mg для '{product_name}'."
+    return f"Сглаживание стека: укажите целевые мг/нед для '{product_name}'."
 
 
 def _render_stack_composition(existing_by_product: dict[str, Decimal], product_names: dict[str, str]) -> str:
@@ -1596,7 +1596,7 @@ def _render_stack_composition(existing_by_product: dict[str, Decimal], product_n
 
 
 def _inventory_prompt(product_name: str) -> str:
-    return f"Inventory constrained: укажите остаток для '{product_name}' в формате `<count> <unit>`."
+    return f"Ограничение по запасу: укажите остаток для '{product_name}' в формате `<count> <unit>`."
 
 
 def _render_inventory_composition(existing_by_product: dict[str, object], product_names: dict[str, str]) -> str:

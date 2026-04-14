@@ -177,7 +177,7 @@ def test_search_result_panel_rendering_smoke() -> None:
         )
     ]
     text = _render_search_panel(query="sust", total=12, page=0, items=items)
-    assert "<b>Search</b>" in text
+    assert "<b>Поиск</b>" in text
     assert "Страница <b>1/3</b>" in text
     assert "Sustanon Forte" in text
 
@@ -202,7 +202,7 @@ def test_product_card_rendering_and_url_buttons() -> None:
 
     keyboard = build_card_actions(card, show_auth=False, show_media=False, show_sources=False)
     url_buttons = [b for row in keyboard.inline_keyboard for b in row if b.url]
-    assert any(button.text == "Official" for button in url_buttons)
+    assert any(button.text == "Официальный сайт" for button in url_buttons)
     assert any(button.text == "Lab test" for button in url_buttons)
     assert any(button.text == "Community" for button in url_buttons)
 
@@ -354,7 +354,7 @@ def test_card_actions_preserve_official_source_media_separation_and_ordering() -
     )
     keyboard = build_card_actions(card, show_auth=False, show_media=False, show_sources=False)
     url_buttons = [b for row in keyboard.inline_keyboard for b in row if b.url]
-    assert [b.text for b in url_buttons] == ["Official", "Source 1", "Source 2"]
+    assert [b.text for b in url_buttons] == ["Официальный сайт", "Source 1", "Source 2"]
     assert all(not text.startswith("Image") and not text.startswith("Video") for text in [b.text for b in url_buttons])
 
 
@@ -470,7 +470,7 @@ def test_product_card_media_toggle_smoke() -> None:
         await on_toggle_section(callback=callback, state=state, search_service=service)
         card_state = (await state.get_data())[CARD_STATE_KEY]
         assert card_state["show_media"] is True
-        assert "Media gallery" in message.answers[0]["text"]
+        assert "Галерея медиа" in message.answers[0]["text"]
 
     asyncio.run(runner())
 
@@ -528,12 +528,12 @@ def test_admin_sees_media_source_policy_controls() -> None:
         show_admin_media_controls=True,
     )
     labels = [b.text for row in keyboard.inline_keyboard for b in row]
-    assert "Admin: Media/Source policy status" in text
-    assert "Media policy: <code>merge</code>" in text
-    assert "Display mode: <code>on_demand</code>" in text
-    assert any("Sync images:" in label for label in labels)
-    assert any("Sync videos:" in label for label in labels)
-    assert any("Sync sources:" in label for label in labels)
+    assert "Админ: политика медиа и источников" in text
+    assert "Политика медиа: <code>merge</code>" in text
+    assert "Режим показа: <code>on_demand</code>" in text
+    assert any("Синк изображений:" in label for label in labels)
+    assert any("Синк видео:" in label for label in labels)
+    assert any("Синк источников:" in label for label in labels)
 
 
 def test_non_admin_does_not_see_media_source_controls() -> None:

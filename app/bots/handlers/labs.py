@@ -642,7 +642,7 @@ async def on_specialist_ops_menu(callback: CallbackQuery, state: FSMContext) -> 
         text="<b>Operator / Specialist</b>\nСтатусы и обработка кейсов без лишнего шума.",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="Awaiting cases", callback_data="labs:ops:awaiting")],
+                [InlineKeyboardButton(text="Ожидающие кейсы", callback_data="labs:ops:awaiting")],
                 [InlineKeyboardButton(text="← Labs", callback_data="labs:root")],
             ]
         ),
@@ -730,7 +730,7 @@ async def on_specialist_ops_answer_start(callback: CallbackQuery, state: FSMCont
         source_message=callback.message,
         text="<b>Ответ специалиста</b>\nВведите текст ответа одним сообщением.",
         reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="← Awaiting", callback_data="labs:ops:awaiting")]]
+            inline_keyboard=[[InlineKeyboardButton(text="← Ожидающие", callback_data="labs:ops:awaiting")]]
         ),
         parse_mode=ParseMode.HTML,
     )
@@ -765,7 +765,7 @@ async def on_specialist_ops_answer_submit(
             source_message=message,
             text=f"<b>Не удалось сохранить ответ</b>\n{escape_html_text(str(exc))}",
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="← Awaiting", callback_data="labs:ops:awaiting")]]
+                inline_keyboard=[[InlineKeyboardButton(text="← Ожидающие", callback_data="labs:ops:awaiting")]]
             ),
             parse_mode=ParseMode.HTML,
         )
@@ -778,7 +778,7 @@ async def on_specialist_ops_answer_submit(
         source_message=message,
         text=f"<b>Ответ сохранен</b>\nID: <code>{mask_human_id(response.response_id)}</code>",
         reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="← Awaiting", callback_data="labs:ops:awaiting")]]
+            inline_keyboard=[[InlineKeyboardButton(text="← Ожидающие", callback_data="labs:ops:awaiting")]]
         ),
         parse_mode=ParseMode.HTML,
     )
@@ -917,8 +917,8 @@ async def _render_marker_step(
 
 def build_labs_root_actions(can_access_operator: bool = False) -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(text="🆕 New report", callback_data="labs:new")],
-        [InlineKeyboardButton(text="📂 Report workspace", callback_data="labs:entry")],
+        [InlineKeyboardButton(text="🆕 Новый отчёт", callback_data="labs:new")],
+        [InlineKeyboardButton(text="📂 Рабочая зона отчёта", callback_data="labs:entry")],
         [InlineKeyboardButton(text="🕘 History", callback_data="labs:history")],
         [InlineKeyboardButton(text="🤖 Run AI triage", callback_data="labs:triage:run")],
         [InlineKeyboardButton(text="👩‍⚕️ Consult specialist", callback_data="labs:case:consult")],
@@ -933,10 +933,10 @@ def build_labs_root_actions(can_access_operator: bool = False) -> InlineKeyboard
 def build_report_entry_actions() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Panels", callback_data="labs:entry:panels")],
-            [InlineKeyboardButton(text="AI", callback_data="labs:entry:ai")],
-            [InlineKeyboardButton(text="Actions", callback_data="labs:entry:actions")],
-            [InlineKeyboardButton(text="← Back to Labs", callback_data="labs:root")],
+            [InlineKeyboardButton(text="Панели", callback_data="labs:entry:panels")],
+            [InlineKeyboardButton(text="ИИ", callback_data="labs:entry:ai")],
+            [InlineKeyboardButton(text="Действия", callback_data="labs:entry:actions")],
+            [InlineKeyboardButton(text="← Назад к лабам", callback_data="labs:root")],
         ]
     )
 
@@ -944,13 +944,13 @@ def build_report_entry_actions() -> InlineKeyboardMarkup:
 def build_report_panel_actions() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Male hormones", callback_data="labs:panel:male_hormones")],
-            [InlineKeyboardButton(text="Hematology / blood thickness", callback_data="labs:panel:hematology")],
-            [InlineKeyboardButton(text="Lipids", callback_data="labs:panel:lipids")],
-            [InlineKeyboardButton(text="Liver", callback_data="labs:panel:liver")],
-            [InlineKeyboardButton(text="Metabolic", callback_data="labs:panel:metabolic")],
-            [InlineKeyboardButton(text="GH-related", callback_data="labs:panel:gh_related")],
-            [InlineKeyboardButton(text="← Report workspace", callback_data="labs:entry")],
+            [InlineKeyboardButton(text="Мужские гормоны", callback_data="labs:panel:male_hormones")],
+            [InlineKeyboardButton(text="Гематология / вязкость крови", callback_data="labs:panel:hematology")],
+            [InlineKeyboardButton(text="Липиды", callback_data="labs:panel:lipids")],
+            [InlineKeyboardButton(text="Печень", callback_data="labs:panel:liver")],
+            [InlineKeyboardButton(text="Метаболизм", callback_data="labs:panel:metabolic")],
+            [InlineKeyboardButton(text="Связано с GH", callback_data="labs:panel:gh_related")],
+            [InlineKeyboardButton(text="← К рабочей зоне отчёта", callback_data="labs:entry")],
         ]
     )
 
@@ -961,7 +961,7 @@ def build_report_ai_actions() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="Run triage", callback_data="labs:triage:run")],
             [InlineKeyboardButton(text="Latest triage", callback_data="labs:triage:latest")],
             [InlineKeyboardButton(text="Regenerate", callback_data="labs:triage:regenerate")],
-            [InlineKeyboardButton(text="← Report workspace", callback_data="labs:entry")],
+            [InlineKeyboardButton(text="← К рабочей зоне отчёта", callback_data="labs:entry")],
         ]
     )
 
@@ -971,7 +971,7 @@ def build_report_action_actions() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="Finalize report", callback_data="labs:finish")],
             [InlineKeyboardButton(text="Consult specialist", callback_data="labs:case:consult")],
-            [InlineKeyboardButton(text="← Report workspace", callback_data="labs:entry")],
+            [InlineKeyboardButton(text="← К рабочей зоне отчёта", callback_data="labs:entry")],
         ]
     )
 
@@ -979,7 +979,7 @@ def build_report_action_actions() -> InlineKeyboardMarkup:
 def build_report_details_actions() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Open workspace", callback_data="labs:entry")],
+            [InlineKeyboardButton(text="Открыть рабочую зону", callback_data="labs:entry")],
             [InlineKeyboardButton(text="Run triage", callback_data="labs:triage:run")],
             [InlineKeyboardButton(text="← History", callback_data="labs:history")],
         ]
@@ -989,8 +989,8 @@ def build_report_details_actions() -> InlineKeyboardMarkup:
 def build_panel_marker_actions() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Skip marker", callback_data="labs:panel:skip")],
-            [InlineKeyboardButton(text="Finish panel", callback_data="labs:panel:finish")],
+            [InlineKeyboardButton(text="Пропустить маркер", callback_data="labs:panel:skip")],
+            [InlineKeyboardButton(text="Завершить панель", callback_data="labs:panel:finish")],
         ]
     )
 
@@ -1040,7 +1040,7 @@ def build_operator_actions(case_id: str) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="Take in review", callback_data=f"labs:ops:take:{case_id}")],
             [InlineKeyboardButton(text="Submit answer", callback_data=f"labs:ops:answer:{case_id}")],
             [InlineKeyboardButton(text="Close case", callback_data=f"labs:ops:close:{case_id}")],
-            [InlineKeyboardButton(text="Back to awaiting", callback_data="labs:ops:awaiting")],
+            [InlineKeyboardButton(text="К ожидающим", callback_data="labs:ops:awaiting")],
         ]
     )
 
@@ -1073,7 +1073,7 @@ def _parse_decimal(raw: str | None) -> Decimal | None:
 
 
 def _render_labs_root_panel(notice: str | None = None, active_report_date: str | None = None) -> str:
-    lines = ["<b>Labs</b>", "Единая панель для отчетов, triage и консультаций."]
+    lines = ["<b>Лабы</b>", "Единая панель для отчётов, триажа и консультаций."]
     lines.append(f"Активный отчет: <b>{escape_html_text(active_report_date or 'нет')}</b>")
     if notice:
         lines.extend(["", notice])
@@ -1106,7 +1106,7 @@ def _render_report_entry_actions_panel() -> str:
 def _render_history_panel(items: list[tuple], notice: str | None = None) -> str:
     lines = ["<b>History</b>"]
     if not items:
-        lines.append("История пустая. Добавьте первый отчет через New report.")
+        lines.append("История пустая. Добавьте первый отчёт через «Новый отчёт».")
     else:
         for idx, (report, marker_count) in enumerate(items, start=1):
             protocol = f"protocol {mask_human_id(report.protocol_id)}" if report.protocol_id else "без protocol"
@@ -1235,7 +1235,7 @@ def _render_ops_case_detail(detail, notice: str | None = None) -> str:
 
 
 def _format_triage_result(result) -> str:
-    urgent = "🔴 urgent" if result.run.urgent_flag else "🟢 no urgent"
+    urgent = "🔴 срочно" if result.run.urgent_flag else "🟢 без срочности"
     severity_order = {"urgent": 0, "warning": 1, "watch": 2}
     sorted_flags = sorted(result.flags, key=lambda flag: severity_order.get(flag.severity.lower(), 3))
     lines = [

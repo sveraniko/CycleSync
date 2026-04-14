@@ -95,7 +95,7 @@ def _checkout_state(checkout_id=None, status: str = "created", total: int = 1500
 
 def test_checkout_panel_rendering_smoke() -> None:
     text = _render_checkout(_checkout_state())
-    assert "🧾 Checkout" in text
+    assert "🧾 Оформление доступа" in text
     assert "Товар: Specialist consult access" in text
     assert "Сумма:" in text
 

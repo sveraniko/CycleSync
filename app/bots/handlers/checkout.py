@@ -33,7 +33,7 @@ async def checkout_demo(
         await safe_edit_or_send(
             state=state,
             source_message=message,
-            text="🧾 Checkout demo недоступен: commerce_enabled=OFF. Используйте Activate key для доступа по ключу.",
+            text="🧾 Оплата недоступна: коммерческий режим выключен. Используйте активационный ключ.",
         )
         return
     user_id = f"tg:{message.from_user.id}" if message.from_user else "tg:unknown"
@@ -128,7 +128,7 @@ async def settle_free(
     await safe_edit_or_send(
         state=state,
         source_message=callback.message,
-        text=_render_checkout(checkout_state, notice="Checkout отмечен как бесплатный."),
+        text=_render_checkout(checkout_state, notice="Заказ отмечен как бесплатный."),
         reply_markup=build_checkout_actions(checkout_id, show_debug_actions=True),
     )
     await callback.answer()
@@ -158,7 +158,7 @@ async def settle_gift_coupon(
             state=state,
             checkout_service=checkout_service,
             checkout_id=checkout_id,
-            notice=f"Gift settlement отклонен: {exc}",
+            notice=f"Подарочное списание отклонено: {exc}",
             admin_ids=admin_ids,
             debug_enabled=effective_debug,
         )
@@ -167,7 +167,7 @@ async def settle_gift_coupon(
     await safe_edit_or_send(
         state=state,
         source_message=callback.message,
-        text=_render_checkout(checkout_state, notice="Gift settlement применен."),
+        text=_render_checkout(checkout_state, notice="Подарочное списание применено."),
         reply_markup=build_checkout_actions(checkout_id, show_debug_actions=True),
     )
     await callback.answer()
@@ -231,9 +231,9 @@ async def show_status(
 async def list_offers(message: Message, checkout_service: CheckoutService) -> None:
     offers = await checkout_service.list_offers()
     if not offers:
-        await message.answer("No active offers available.")
+        await message.answer("Сейчас нет активных предложений.")
         return
-    lines = ["Active offers:"]
+    lines = ["Активные предложения:"]
     for offer in offers:
         lines.append(f"- {offer.offer_code}: {offer.title} — {offer.default_amount} {offer.currency}")
     await message.answer("\n".join(lines))
@@ -310,17 +310,17 @@ async def coupon_submit(
 def build_checkout_actions(checkout_id, *, show_debug_actions: bool = False) -> InlineKeyboardMarkup:
     checkout_id = str(checkout_id)
     rows = [
-        [InlineKeyboardButton(text="Apply coupon", callback_data=f"checkout:coupon:ask:{checkout_id}")],
-        [InlineKeyboardButton(text="Pay with Stars", callback_data=f"checkout:provider:init:stars:{checkout_id}")],
-        [InlineKeyboardButton(text="Confirm Stars paid", callback_data=f"checkout:provider:confirm:stars:{checkout_id}")],
-        [InlineKeyboardButton(text="Refresh status", callback_data=f"checkout:status:{checkout_id}")],
+        [InlineKeyboardButton(text="🏷 Применить купон", callback_data=f"checkout:coupon:ask:{checkout_id}")],
+        [InlineKeyboardButton(text="⭐ Оплатить через Stars", callback_data=f"checkout:provider:init:stars:{checkout_id}")],
+        [InlineKeyboardButton(text="✅ Подтвердить оплату", callback_data=f"checkout:provider:confirm:stars:{checkout_id}")],
+        [InlineKeyboardButton(text="🔄 Обновить статус", callback_data=f"checkout:status:{checkout_id}")],
     ]
     if show_debug_actions:
         rows.extend(
             [
-                [InlineKeyboardButton(text="Debug: mark provider failed", callback_data=f"checkout:provider:fail:stars:{checkout_id}")],
-                [InlineKeyboardButton(text="Debug: complete gift", callback_data=f"checkout:gift:{checkout_id}")],
-                [InlineKeyboardButton(text="Debug: settle free", callback_data=f"checkout:free:{checkout_id}")],
+                [InlineKeyboardButton(text="🧪 Debug: ошибка провайдера", callback_data=f"checkout:provider:fail:stars:{checkout_id}")],
+                [InlineKeyboardButton(text="🧪 Debug: подарочный зачёт", callback_data=f"checkout:gift:{checkout_id}")],
+                [InlineKeyboardButton(text="🧪 Debug: бесплатный зачёт", callback_data=f"checkout:free:{checkout_id}")],
             ]
         )
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -438,7 +438,7 @@ async def fail_provider_checkout(
             state=state,
             checkout_service=checkout_service,
             checkout_id=checkout_id,
-            notice=f"Не удалось зафиксировать provider failure: {exc}",
+            notice=f"Не удалось зафиксировать ошибку провайдера: {exc}",
             admin_ids=admin_ids,
             debug_enabled=effective_debug,
         )
@@ -447,7 +447,7 @@ async def fail_provider_checkout(
     await safe_edit_or_send(
         state=state,
         source_message=callback.message,
-        text=_render_checkout(checkout_state, notice="Провайдер помечен как failed (debug)."),
+        text=_render_checkout(checkout_state, notice="Провайдер помечен как ошибка (debug)."),
         reply_markup=build_checkout_actions(checkout_id, show_debug_actions=True),
     )
     await callback.answer()
@@ -455,9 +455,9 @@ async def fail_provider_checkout(
 
 def _render_checkout(state, notice: str | None = None) -> str:
     item = state.items[0] if state.items else None
-    title = item.title if item is not None else "Offer"
+    title = item.title if item is not None else "Предложение"
     base = [
-        "🧾 Checkout",
+        "🧾 Оформление доступа",
         f"Товар: {title}",
         f"Статус: {compact_status_label(state.checkout.checkout_status)}",
         (
