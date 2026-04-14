@@ -26,8 +26,6 @@ def _gate(user_id: int | None, admin_ids: tuple[int, ...] | None) -> bool:
     return is_admin_user(user_id, admin_ids)
 
 
-# ── Admin panel ────────────────────────────────────────────────────────────────
-
 @router.callback_query(F.data == "admin:panel")
 async def on_admin_panel(
     callback: CallbackQuery,
@@ -43,7 +41,7 @@ async def on_admin_panel(
     await safe_edit_or_send(
         state=state,
         source_message=callback.message,
-        text=_render_admin_panel(admin_config, debug_enabled, admin_ids),
+        text=_render_admin_panel(admin_config, _effective_debug_enabled(admin_config, debug_enabled), admin_ids),
         reply_markup=_build_admin_keyboard(admin_config),
         parse_mode=ParseMode.HTML,
     )
@@ -64,14 +62,40 @@ async def on_commerce_toggle(
         return
     if admin_config is not None:
         admin_config.commerce_enabled = not admin_config.commerce_enabled
+    commerce_enabled = admin_config.commerce_enabled if admin_config else False
     await safe_edit_or_send(
         state=state,
         source_message=callback.message,
-        text=_render_admin_panel(admin_config, debug_enabled, admin_ids),
+        text=_render_admin_panel(admin_config, _effective_debug_enabled(admin_config, debug_enabled), admin_ids),
         reply_markup=_build_admin_keyboard(admin_config),
         parse_mode=ParseMode.HTML,
     )
-    await callback.answer("Изменено")
+    await callback.answer("Коммерческий режим включён" if commerce_enabled else "Коммерческий режим выключен")
+
+
+@router.callback_query(F.data == "admin:debug:toggle")
+async def on_debug_toggle(
+    callback: CallbackQuery,
+    state: FSMContext,
+    admin_ids: tuple[int, ...] | None = None,
+    admin_config: AdminRuntimeConfig | None = None,
+    debug_enabled: bool = False,
+) -> None:
+    uid = callback.from_user.id if callback.from_user else None
+    if not _gate(uid, admin_ids):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    if admin_config is not None:
+        admin_config.debug_enabled = not admin_config.debug_enabled
+    effective_debug = _effective_debug_enabled(admin_config, debug_enabled)
+    await safe_edit_or_send(
+        state=state,
+        source_message=callback.message,
+        text=_render_admin_panel(admin_config, effective_debug, admin_ids),
+        reply_markup=_build_admin_keyboard(admin_config),
+        parse_mode=ParseMode.HTML,
+    )
+    await callback.answer("Debug режим включён" if effective_debug else "Debug режим выключен")
 
 
 @router.callback_query(F.data == "admin:catalog:panel")
@@ -175,8 +199,6 @@ async def on_catalog_search_rebuild(
     _persist_last_catalog_operation(admin_config, summary)
     await _show_catalog_action_result(callback, state, summary)
 
-
-# ── Media upload ───────────────────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("admin:media:start:"))
 async def on_media_upload_start(
@@ -287,8 +309,6 @@ async def on_media_input(
 
     notice = "✅ Медиа добавлено в карточку." if added else "⚠️ Такой ref уже существует, дубликат не добавлен."
 
-    # Edit the container FIRST (while state data still has ui_container_message_id),
-    # then clean up FSM state. This prevents orphaned panel spam.
     await safe_edit_or_send(
         state=state,
         source_message=message,
@@ -301,38 +321,89 @@ async def on_media_input(
         ),
         parse_mode=ParseMode.HTML,
     )
-    await delete_user_input_message(message)  # delete the user's photo/video/text
-    # Clean up only the media-upload FSM keys, keep ui_container_message_id intact
+    await delete_user_input_message(message)
     await state.set_state(None)
     await state.update_data(admin_media_product_id=None)
 
-
-# ── Rendering ──────────────────────────────────────────────────────────────────
 
 def _render_admin_panel(
     admin_config: AdminRuntimeConfig | None,
     debug_enabled: bool,
     admin_ids: tuple[int, ...] | None,
 ) -> str:
-    commerce = admin_config.commerce_enabled if admin_config else False
-    commerce_label = "✅ Включён" if commerce else "❌ Выключен"
-    debug_label = "✅ Включён" if debug_enabled else "❌ Выключен"
+    commerce_enabled = admin_config.commerce_enabled if admin_config else False
     ids_label = ", ".join(str(i) for i in (admin_ids or [])) or "—"
+    runtime_block = _render_runtime_status_block(admin_config, debug_enabled)
+    commerce_block = (
+        "<b>💳 Commerce controls</b>\n"
+        f"• commerce_enabled: <b>{'ON' if commerce_enabled else 'OFF'}</b>\n"
+        f"• User checkout/demo entry: <b>{'доступен' if commerce_enabled else 'скрыт'}</b>\n"
+        "• Access key activation: <b>всегда доступна</b> (не зависит от checkout)\n"
+        f"• Что это меняет: {'видны checkout-энтрипойнты и команды оплаты' if commerce_enabled else 'checkout и коммерческие кнопки скрыты/заблокированы'}"
+    )
+    debug_block = (
+        "<b>🧪 Debug controls</b>\n"
+        f"• debug_enabled: <b>{'ON' if debug_enabled else 'OFF'}</b>\n"
+        f"• Debug checkout actions: <b>{'активны только для админа' if debug_enabled else 'выключены'}</b>\n"
+        f"• Demo/test paths: <b>{'доступны администратору' if debug_enabled else 'недоступны'}</b>"
+    )
+    nav_block = (
+        "<b>🧭 Навигация</b>\n"
+        "• Runtime status — этот экран\n"
+        "• Catalog sync — импорт/синк каталога\n"
+        "• Media/source policy — из карточек поиска (admin controls)\n"
+        "• Access/commerce entrypoints — в Settings"
+    )
     return (
         "<b>🔧 Панель администратора</b>\n\n"
-        f"Коммерческий слой: <b>{commerce_label}</b>\n"
-        f"Debug режим: <b>{debug_label}</b>\n"
-        f"Admin IDs: <code>{ids_label}</code>\n\n"
-        "<i>Изменения действуют до перезапуска бота.</i>"
+        f"{runtime_block}\n\n"
+        f"{commerce_block}\n\n"
+        f"{debug_block}\n\n"
+        f"<b>👤 Admin IDs:</b> <code>{ids_label}</code>\n\n"
+        f"{nav_block}\n\n"
+        "<i>Изменения runtime-флагов применяются сразу в текущем процессе бота.</i>"
     )
+
+
+def _render_runtime_status_block(admin_config: AdminRuntimeConfig | None, debug_enabled: bool) -> str:
+    commerce = admin_config.commerce_enabled if admin_config else False
+    pulse_version = admin_config.pulse_engine_version if admin_config else "—"
+    app_env = admin_config.app_env if admin_config else "—"
+    catalog_status = _render_runtime_catalog_status(admin_config.last_catalog_operation if admin_config else None)
+    return (
+        "<b>📡 Runtime status</b>\n"
+        f"• commerce_enabled: <b>{'ON' if commerce else 'OFF'}</b>\n"
+        f"• debug_enabled: <b>{'ON' if debug_enabled else 'OFF'}</b>\n"
+        f"• pulse_engine_version: <code>{pulse_version}</code>\n"
+        f"• launch_mode: <code>{app_env}</code>\n"
+        f"• catalog_sync: {catalog_status}"
+    )
+
+
+def _render_runtime_catalog_status(last_operation: dict[str, object] | None) -> str:
+    if not last_operation:
+        return "<i>ещё не запускали</i>"
+    status = str(last_operation.get("status", "unknown"))
+    ts = str(last_operation.get("timestamp", "—"))
+    source = str(last_operation.get("source_type", "—"))
+    return f"<b>{status}</b> ({source}, {ts})"
+
+
+def _effective_debug_enabled(admin_config: AdminRuntimeConfig | None, debug_enabled: bool) -> bool:
+    if admin_config is None:
+        return debug_enabled
+    return admin_config.debug_enabled
 
 
 def _build_admin_keyboard(admin_config: AdminRuntimeConfig | None) -> InlineKeyboardMarkup:
     commerce_enabled = admin_config.commerce_enabled if admin_config else False
-    toggle_text = "Выключить коммерцию" if commerce_enabled else "Включить коммерцию"
+    debug_enabled = admin_config.debug_enabled if admin_config else False
+    commerce_toggle_text = "💳 Выключить commerce" if commerce_enabled else "💳 Включить commerce"
+    debug_toggle_text = "🧪 Выключить debug" if debug_enabled else "🧪 Включить debug"
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=toggle_text, callback_data="admin:commerce:toggle")],
+            [InlineKeyboardButton(text=commerce_toggle_text, callback_data="admin:commerce:toggle")],
+            [InlineKeyboardButton(text=debug_toggle_text, callback_data="admin:debug:toggle")],
             [InlineKeyboardButton(text="📦 Catalog sync", callback_data="admin:catalog:panel")],
             [InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")],
         ]

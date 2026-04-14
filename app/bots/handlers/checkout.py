@@ -8,6 +8,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.types.callback_query import CallbackQuery
 
 from app.application.commerce import CheckoutItemCreate, CheckoutService, CommerceError
+from app.bots.core.admin_config import AdminRuntimeConfig
 from app.bots.core.flow import delete_user_input_message, safe_edit_or_send
 from app.bots.core.formatting import compact_status_label, format_decimal_human
 from app.bots.core.permissions import can_view_debug
@@ -20,7 +21,21 @@ class CheckoutState(StatesGroup):
 
 
 @router.message(Command("checkout_demo"))
-async def checkout_demo(message: Message, state: FSMContext, checkout_service: CheckoutService) -> None:
+async def checkout_demo(
+    message: Message,
+    state: FSMContext,
+    checkout_service: CheckoutService,
+    admin_config: AdminRuntimeConfig | None = None,
+    admin_ids: tuple[int, ...] | None = None,
+    debug_enabled: bool = False,
+) -> None:
+    if not _is_commerce_enabled(admin_config):
+        await safe_edit_or_send(
+            state=state,
+            source_message=message,
+            text="🧾 Checkout demo недоступен: commerce_enabled=OFF. Используйте Activate key для доступа по ключу.",
+        )
+        return
     user_id = f"tg:{message.from_user.id}" if message.from_user else "tg:unknown"
     checkout = await checkout_service.create_checkout(
         user_id=user_id,
@@ -33,8 +48,51 @@ async def checkout_demo(message: Message, state: FSMContext, checkout_service: C
         state=state,
         source_message=message,
         text=_render_checkout(checkout),
-        reply_markup=build_checkout_actions(checkout.checkout.checkout_id),
+        reply_markup=build_checkout_actions(
+            checkout.checkout.checkout_id,
+            show_debug_actions=_can_view_debug_user(
+                message.from_user.id if message.from_user else None,
+                admin_ids=admin_ids,
+                debug_enabled=_effective_debug_enabled(admin_config, debug_enabled),
+            ),
+        ),
     )
+
+
+@router.callback_query(F.data == "checkout:demo:start")
+async def checkout_demo_callback(
+    callback: CallbackQuery,
+    state: FSMContext,
+    checkout_service: CheckoutService,
+    admin_config: AdminRuntimeConfig | None = None,
+    admin_ids: tuple[int, ...] | None = None,
+    debug_enabled: bool = False,
+) -> None:
+    if not _is_commerce_enabled(admin_config):
+        await callback.answer("Commerce выключен", show_alert=True)
+        return
+    user_id = f"tg:{callback.from_user.id}" if callback.from_user else "tg:unknown"
+    checkout = await checkout_service.create_checkout(
+        user_id=user_id,
+        currency="USD",
+        settlement_mode="internal",
+        source_context="specialist_access",
+        items=(CheckoutItemCreate(offer_code="expert_case_access", qty=1),),
+    )
+    await safe_edit_or_send(
+        state=state,
+        source_message=callback.message,
+        text=_render_checkout(checkout),
+        reply_markup=build_checkout_actions(
+            checkout.checkout.checkout_id,
+            show_debug_actions=_can_view_debug_user(
+                callback.from_user.id if callback.from_user else None,
+                admin_ids=admin_ids,
+                debug_enabled=_effective_debug_enabled(admin_config, debug_enabled),
+            ),
+        ),
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("checkout:free:"))
@@ -44,8 +102,10 @@ async def settle_free(
     checkout_service: CheckoutService,
     admin_ids: tuple[int, ...] | None = None,
     debug_enabled: bool = False,
+    admin_config: AdminRuntimeConfig | None = None,
 ) -> None:
-    if not _can_view_debug_actions(callback, admin_ids=admin_ids, debug_enabled=debug_enabled):
+    effective_debug = _effective_debug_enabled(admin_config, debug_enabled)
+    if not _can_view_debug_actions(callback, admin_ids=admin_ids, debug_enabled=effective_debug):
         await callback.answer("Недоступно", show_alert=True)
         return
     checkout_id = UUID(callback.data.split(":")[-1])
@@ -61,7 +121,7 @@ async def settle_free(
             checkout_id=checkout_id,
             notice=f"Не удалось завершить free settlement: {exc}",
             admin_ids=admin_ids,
-            debug_enabled=debug_enabled,
+            debug_enabled=effective_debug,
         )
         await callback.answer()
         return
@@ -81,8 +141,10 @@ async def settle_gift_coupon(
     checkout_service: CheckoutService,
     admin_ids: tuple[int, ...] | None = None,
     debug_enabled: bool = False,
+    admin_config: AdminRuntimeConfig | None = None,
 ) -> None:
-    if not _can_view_debug_actions(callback, admin_ids=admin_ids, debug_enabled=debug_enabled):
+    effective_debug = _effective_debug_enabled(admin_config, debug_enabled)
+    if not _can_view_debug_actions(callback, admin_ids=admin_ids, debug_enabled=effective_debug):
         await callback.answer("Недоступно", show_alert=True)
         return
     checkout_id = UUID(callback.data.split(":")[-1])
@@ -98,7 +160,7 @@ async def settle_gift_coupon(
             checkout_id=checkout_id,
             notice=f"Gift settlement отклонен: {exc}",
             admin_ids=admin_ids,
-            debug_enabled=debug_enabled,
+            debug_enabled=effective_debug,
         )
         await callback.answer()
         return
@@ -118,6 +180,7 @@ async def coupon_prompt(
     checkout_service: CheckoutService,
     admin_ids: tuple[int, ...] | None = None,
     debug_enabled: bool = False,
+    admin_config: AdminRuntimeConfig | None = None,
 ) -> None:
     checkout_id = UUID(callback.data.split(":")[-1])
     await state.set_state(CheckoutState.waiting_coupon_code)
@@ -133,7 +196,9 @@ async def coupon_prompt(
         reply_markup=build_checkout_actions(
             checkout_id,
             show_debug_actions=_can_view_debug_actions(
-                callback, admin_ids=admin_ids, debug_enabled=debug_enabled
+                callback,
+                admin_ids=admin_ids,
+                debug_enabled=_effective_debug_enabled(admin_config, debug_enabled),
             ),
         ),
     )
@@ -147,6 +212,7 @@ async def show_status(
     checkout_service: CheckoutService,
     admin_ids: tuple[int, ...] | None = None,
     debug_enabled: bool = False,
+    admin_config: AdminRuntimeConfig | None = None,
 ) -> None:
     checkout_id = UUID(callback.data.split(":")[-1])
     await _show_checkout_panel(
@@ -156,7 +222,7 @@ async def show_status(
         checkout_id=checkout_id,
         notice="Статус обновлен.",
         admin_ids=admin_ids,
-        debug_enabled=debug_enabled,
+        debug_enabled=_effective_debug_enabled(admin_config, debug_enabled),
     )
     await callback.answer()
 
@@ -180,6 +246,7 @@ async def coupon_submit(
     checkout_service: CheckoutService,
     admin_ids: tuple[int, ...] | None = None,
     debug_enabled: bool = False,
+    admin_config: AdminRuntimeConfig | None = None,
 ) -> None:
     payload = await state.get_data()
     checkout_id_raw = payload.get("checkout_coupon_checkout_id")
@@ -200,7 +267,7 @@ async def coupon_submit(
                 show_debug_actions=_can_view_debug_user(
                     message.from_user.id if message.from_user else None,
                     admin_ids=admin_ids,
-                    debug_enabled=debug_enabled,
+                    debug_enabled=_effective_debug_enabled(admin_config, debug_enabled),
                 ),
             ),
         )
@@ -233,7 +300,7 @@ async def coupon_submit(
             show_debug_actions=_can_view_debug_user(
                 message.from_user.id if message.from_user else None,
                 admin_ids=admin_ids,
-                debug_enabled=debug_enabled,
+                debug_enabled=_effective_debug_enabled(admin_config, debug_enabled),
             ),
         ),
     )
@@ -266,6 +333,7 @@ async def init_provider_checkout(
     checkout_service: CheckoutService,
     admin_ids: tuple[int, ...] | None = None,
     debug_enabled: bool = False,
+    admin_config: AdminRuntimeConfig | None = None,
 ) -> None:
     _, _, _, provider_code, checkout_id_text = callback.data.split(":")
     checkout_id = UUID(checkout_id_text)
@@ -279,7 +347,7 @@ async def init_provider_checkout(
             checkout_id=checkout_id,
             notice=f"Не удалось запустить оплату: {exc}",
             admin_ids=admin_ids,
-            debug_enabled=debug_enabled,
+            debug_enabled=_effective_debug_enabled(admin_config, debug_enabled),
         )
         await callback.answer()
         return
@@ -292,7 +360,7 @@ async def init_provider_checkout(
             show_debug_actions=_can_view_debug_actions(
                 callback,
                 admin_ids=admin_ids,
-                debug_enabled=debug_enabled,
+                debug_enabled=_effective_debug_enabled(admin_config, debug_enabled),
             ),
         ),
     )
@@ -306,6 +374,7 @@ async def confirm_provider_checkout(
     checkout_service: CheckoutService,
     admin_ids: tuple[int, ...] | None = None,
     debug_enabled: bool = False,
+    admin_config: AdminRuntimeConfig | None = None,
 ) -> None:
     _, _, _, provider_code, checkout_id_text = callback.data.split(":")
     checkout_id = UUID(checkout_id_text)
@@ -321,7 +390,7 @@ async def confirm_provider_checkout(
             checkout_id=checkout_id,
             notice=f"Подтверждение оплаты не удалось: {exc}",
             admin_ids=admin_ids,
-            debug_enabled=debug_enabled,
+            debug_enabled=_effective_debug_enabled(admin_config, debug_enabled),
         )
         await callback.answer()
         return
@@ -334,7 +403,7 @@ async def confirm_provider_checkout(
             show_debug_actions=_can_view_debug_actions(
                 callback,
                 admin_ids=admin_ids,
-                debug_enabled=debug_enabled,
+                debug_enabled=_effective_debug_enabled(admin_config, debug_enabled),
             ),
         ),
     )
@@ -348,8 +417,10 @@ async def fail_provider_checkout(
     checkout_service: CheckoutService,
     admin_ids: tuple[int, ...] | None = None,
     debug_enabled: bool = False,
+    admin_config: AdminRuntimeConfig | None = None,
 ) -> None:
-    if not _can_view_debug_actions(callback, admin_ids=admin_ids, debug_enabled=debug_enabled):
+    effective_debug = _effective_debug_enabled(admin_config, debug_enabled)
+    if not _can_view_debug_actions(callback, admin_ids=admin_ids, debug_enabled=effective_debug):
         await callback.answer("Недоступно", show_alert=True)
         return
     _, _, _, provider_code, checkout_id_text = callback.data.split(":")
@@ -369,7 +440,7 @@ async def fail_provider_checkout(
             checkout_id=checkout_id,
             notice=f"Не удалось зафиксировать provider failure: {exc}",
             admin_ids=admin_ids,
-            debug_enabled=debug_enabled,
+            debug_enabled=effective_debug,
         )
         await callback.answer()
         return
@@ -441,6 +512,18 @@ async def _show_checkout_panel(
             ),
         ),
     )
+
+
+def _effective_debug_enabled(admin_config: AdminRuntimeConfig | None, debug_enabled: bool) -> bool:
+    if admin_config is None:
+        return debug_enabled
+    return admin_config.debug_enabled
+
+
+def _is_commerce_enabled(admin_config: AdminRuntimeConfig | None) -> bool:
+    if admin_config is None:
+        return False
+    return admin_config.commerce_enabled
 
 
 def _can_view_debug_actions(

@@ -2,6 +2,7 @@ from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message
+from aiogram.types.callback_query import CallbackQuery
 
 from app.application.access import AccessKeyService
 from app.bots.core.flow import delete_user_input_message, safe_edit_or_send
@@ -12,6 +13,17 @@ router = Router(name="access_keys")
 
 class AccessKeyRedeemState(StatesGroup):
     waiting_for_key = State()
+
+
+@router.callback_query(F.data == "access:activate:start")
+async def redeem_key_entrypoint_callback(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(AccessKeyRedeemState.waiting_for_key)
+    await safe_edit_or_send(
+        state=state,
+        source_message=callback.message,
+        text="🔐 Активация доступа\n\nОтправьте activation key следующим сообщением.",
+    )
+    await callback.answer()
 
 
 @router.message(F.text.func(lambda value: (value or "").strip().lower() in {"activate", "redeem key", "активировать"}))

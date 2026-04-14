@@ -7,6 +7,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.types.callback_query import CallbackQuery
 
 from app.application.reminders import ReminderAccessError, ReminderApplicationService
+from app.bots.core.admin_config import AdminRuntimeConfig
 from app.bots.core.flow import delete_user_input_message, safe_edit_or_send
 from app.bots.core.formatting import compact_status_label, format_decimal_human
 
@@ -22,6 +23,7 @@ async def settings_entrypoint(
     message: Message,
     state: FSMContext,
     reminder_service: ReminderApplicationService,
+    admin_config: AdminRuntimeConfig | None = None,
 ) -> None:
     user_id = _resolve_user_id(message.from_user.id if message.from_user else None)
     settings = await reminder_service.get_reminder_settings(user_id)
@@ -29,7 +31,7 @@ async def settings_entrypoint(
         state=state,
         source_message=message,
         text=_render_settings(settings),
-        reply_markup=build_settings_actions(settings.reminders_enabled),
+        reply_markup=build_settings_actions(settings.reminders_enabled, commerce_enabled=_is_commerce_enabled(admin_config)),
     )
 
 
@@ -38,6 +40,7 @@ async def on_settings_open(
     callback: CallbackQuery,
     state: FSMContext,
     reminder_service: ReminderApplicationService,
+    admin_config: AdminRuntimeConfig | None = None,
 ) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     settings = await reminder_service.get_reminder_settings(user_id)
@@ -45,7 +48,7 @@ async def on_settings_open(
         state=state,
         source_message=callback.message,
         text=_render_settings(settings),
-        reply_markup=build_settings_actions(settings.reminders_enabled),
+        reply_markup=build_settings_actions(settings.reminders_enabled, commerce_enabled=_is_commerce_enabled(admin_config)),
     )
     await callback.answer()
 
@@ -55,6 +58,7 @@ async def on_reminders_on(
     callback: CallbackQuery,
     state: FSMContext,
     reminder_service: ReminderApplicationService,
+    admin_config: AdminRuntimeConfig | None = None,
 ) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     current = await reminder_service.get_reminder_settings(user_id)
@@ -72,7 +76,7 @@ async def on_reminders_on(
         state=state,
         source_message=callback.message,
         text=_render_settings(updated, notice="Reminders включены."),
-        reply_markup=build_settings_actions(updated.reminders_enabled),
+        reply_markup=build_settings_actions(updated.reminders_enabled, commerce_enabled=_is_commerce_enabled(admin_config)),
     )
     await callback.answer("Готово")
 
@@ -82,6 +86,7 @@ async def on_reminders_off(
     callback: CallbackQuery,
     state: FSMContext,
     reminder_service: ReminderApplicationService,
+    admin_config: AdminRuntimeConfig | None = None,
 ) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     current = await reminder_service.get_reminder_settings(user_id)
@@ -98,7 +103,7 @@ async def on_reminders_off(
             updated,
             notice="Reminders выключены (opt-out, без breach semantics).",
         ),
-        reply_markup=build_settings_actions(updated.reminders_enabled),
+        reply_markup=build_settings_actions(updated.reminders_enabled, commerce_enabled=_is_commerce_enabled(admin_config)),
     )
     await callback.answer("Готово")
 
@@ -108,6 +113,7 @@ async def on_set_time_prompt(
     callback: CallbackQuery,
     state: FSMContext,
     reminder_service: ReminderApplicationService,
+    admin_config: AdminRuntimeConfig | None = None,
 ) -> None:
     await state.set_state(ReminderSettingsState.reminder_time)
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
@@ -119,7 +125,7 @@ async def on_set_time_prompt(
             settings,
             notice="Введите reminder time в формате HH:MM (локальное время), например 09:30.",
         ),
-        reply_markup=build_settings_actions(settings.reminders_enabled),
+        reply_markup=build_settings_actions(settings.reminders_enabled, commerce_enabled=_is_commerce_enabled(admin_config)),
     )
     await callback.answer()
 
@@ -129,6 +135,7 @@ async def on_protocol_status(
     callback: CallbackQuery,
     state: FSMContext,
     reminder_service: ReminderApplicationService,
+    admin_config: AdminRuntimeConfig | None = None,
 ) -> None:
     user_id = _resolve_user_id(callback.from_user.id if callback.from_user else None)
     settings = await reminder_service.get_reminder_settings(user_id)
@@ -137,7 +144,7 @@ async def on_protocol_status(
         state=state,
         source_message=callback.message,
         text=_render_settings(settings, notice=_render_protocol_status(status)),
-        reply_markup=build_settings_actions(settings.reminders_enabled),
+        reply_markup=build_settings_actions(settings.reminders_enabled, commerce_enabled=_is_commerce_enabled(admin_config)),
     )
     await callback.answer()
 
@@ -147,6 +154,7 @@ async def on_set_time_input(
     message: Message,
     state: FSMContext,
     reminder_service: ReminderApplicationService,
+    admin_config: AdminRuntimeConfig | None = None,
 ) -> None:
     parsed = _parse_time(message.text)
     user_id = _resolve_user_id(message.from_user.id if message.from_user else None)
@@ -160,7 +168,7 @@ async def on_set_time_input(
                 current,
                 notice="Неверный формат. Используйте HH:MM, например 08:45.",
             ),
-            reply_markup=build_settings_actions(current.reminders_enabled),
+            reply_markup=build_settings_actions(current.reminders_enabled, commerce_enabled=_is_commerce_enabled(admin_config)),
         )
         await delete_user_input_message(message)
         return
@@ -180,36 +188,28 @@ async def on_set_time_input(
             updated,
             notice=f"Reminder time обновлено: {parsed.strftime('%H:%M')}.",
         ),
-        reply_markup=build_settings_actions(updated.reminders_enabled),
+        reply_markup=build_settings_actions(updated.reminders_enabled, commerce_enabled=_is_commerce_enabled(admin_config)),
     )
     await delete_user_input_message(message)
 
 
-def build_settings_actions(reminders_enabled: bool) -> InlineKeyboardMarkup:
+def build_settings_actions(reminders_enabled: bool, *, commerce_enabled: bool = False) -> InlineKeyboardMarkup:
     toggle_button = InlineKeyboardButton(
         text="Turn Off" if reminders_enabled else "Turn On",
         callback_data=(
             "settings:reminders:off" if reminders_enabled else "settings:reminders:on"
         ),
     )
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [toggle_button],
-            [
-                InlineKeyboardButton(
-                    text="Set reminder time", callback_data="settings:time:set"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Protocol status", callback_data="settings:protocol:status"
-                )
-            ],
-            [
-                InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home"),
-            ],
-        ]
-    )
+    rows = [
+        [toggle_button],
+        [InlineKeyboardButton(text="Set reminder time", callback_data="settings:time:set")],
+        [InlineKeyboardButton(text="Protocol status", callback_data="settings:protocol:status")],
+        [InlineKeyboardButton(text="🔐 Activate key", callback_data="access:activate:start")],
+    ]
+    if commerce_enabled:
+        rows.append([InlineKeyboardButton(text="🧾 Checkout demo", callback_data="checkout:demo:start")])
+    rows.append([InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _render_settings(settings, notice: str | None = None) -> str:
@@ -255,6 +255,12 @@ def _parse_time(raw: str | None) -> time | None:
     if hour < 0 or hour > 23 or minute < 0 or minute > 59:
         return None
     return time(hour=hour, minute=minute)
+
+
+def _is_commerce_enabled(admin_config: AdminRuntimeConfig | None) -> bool:
+    if admin_config is None:
+        return False
+    return admin_config.commerce_enabled
 
 
 def _resolve_user_id(telegram_user_id: int | None) -> str:
