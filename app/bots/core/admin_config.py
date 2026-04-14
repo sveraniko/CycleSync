@@ -6,3 +6,4 @@ class AdminRuntimeConfig:
     """Mutable runtime admin flags — ephemeral, reset on bot restart."""
 
     commerce_enabled: bool = True
+    last_catalog_operation: dict[str, object] | None = None

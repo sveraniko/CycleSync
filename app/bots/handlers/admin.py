@@ -9,6 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.types.callback_query import CallbackQuery
 
+from app.application.catalog.admin_sync import CatalogAdminRunSummary, CatalogAdminSyncService
 from app.application.search.service import SearchApplicationService
 from app.bots.core.admin_config import AdminRuntimeConfig
 from app.bots.core.flow import delete_user_input_message, safe_edit_or_send
@@ -71,6 +72,108 @@ async def on_commerce_toggle(
         parse_mode=ParseMode.HTML,
     )
     await callback.answer("Изменено")
+
+
+@router.callback_query(F.data == "admin:catalog:panel")
+async def on_catalog_sync_panel(
+    callback: CallbackQuery,
+    state: FSMContext,
+    admin_ids: tuple[int, ...] | None = None,
+    admin_config: AdminRuntimeConfig | None = None,
+    catalog_admin_service: CatalogAdminSyncService | None = None,
+) -> None:
+    uid = callback.from_user.id if callback.from_user else None
+    if not _gate(uid, admin_ids):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    await safe_edit_or_send(
+        state=state,
+        source_message=callback.message,
+        text=_render_catalog_sync_panel(catalog_admin_service, admin_config),
+        reply_markup=_build_catalog_sync_keyboard(),
+        parse_mode=ParseMode.HTML,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:catalog:xlsx:validate")
+async def on_catalog_xlsx_validate(
+    callback: CallbackQuery,
+    state: FSMContext,
+    admin_ids: tuple[int, ...] | None = None,
+    admin_config: AdminRuntimeConfig | None = None,
+    catalog_admin_service: CatalogAdminSyncService | None = None,
+) -> None:
+    uid = callback.from_user.id if callback.from_user else None
+    if not _gate(uid, admin_ids):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    if catalog_admin_service is None:
+        await callback.answer("Catalog sync service недоступен", show_alert=True)
+        return
+    summary = catalog_admin_service.validate_workbook()
+    _persist_last_catalog_operation(admin_config, summary)
+    await _show_catalog_action_result(callback, state, summary)
+
+
+@router.callback_query(F.data == "admin:catalog:xlsx:apply")
+async def on_catalog_xlsx_apply(
+    callback: CallbackQuery,
+    state: FSMContext,
+    admin_ids: tuple[int, ...] | None = None,
+    admin_config: AdminRuntimeConfig | None = None,
+    catalog_admin_service: CatalogAdminSyncService | None = None,
+) -> None:
+    uid = callback.from_user.id if callback.from_user else None
+    if not _gate(uid, admin_ids):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    if catalog_admin_service is None:
+        await callback.answer("Catalog sync service недоступен", show_alert=True)
+        return
+    summary = await catalog_admin_service.run_xlsx_ingest_apply()
+    _persist_last_catalog_operation(admin_config, summary)
+    await _show_catalog_action_result(callback, state, summary)
+
+
+@router.callback_query(F.data == "admin:catalog:gsheets:apply")
+async def on_catalog_gsheets_apply(
+    callback: CallbackQuery,
+    state: FSMContext,
+    admin_ids: tuple[int, ...] | None = None,
+    admin_config: AdminRuntimeConfig | None = None,
+    catalog_admin_service: CatalogAdminSyncService | None = None,
+) -> None:
+    uid = callback.from_user.id if callback.from_user else None
+    if not _gate(uid, admin_ids):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    if catalog_admin_service is None:
+        await callback.answer("Catalog sync service недоступен", show_alert=True)
+        return
+    summary = await catalog_admin_service.run_gsheets_sync_apply()
+    _persist_last_catalog_operation(admin_config, summary)
+    await _show_catalog_action_result(callback, state, summary)
+
+
+@router.callback_query(F.data == "admin:catalog:search:rebuild")
+async def on_catalog_search_rebuild(
+    callback: CallbackQuery,
+    state: FSMContext,
+    admin_ids: tuple[int, ...] | None = None,
+    admin_config: AdminRuntimeConfig | None = None,
+    catalog_admin_service: CatalogAdminSyncService | None = None,
+) -> None:
+    uid = callback.from_user.id if callback.from_user else None
+    if not _gate(uid, admin_ids):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    if catalog_admin_service is None:
+        await callback.answer("Catalog sync service недоступен", show_alert=True)
+        return
+    summary = await catalog_admin_service.rebuild_search()
+    _persist_last_catalog_operation(admin_config, summary)
+    await _show_catalog_action_result(callback, state, summary)
 
 
 # ── Media upload ───────────────────────────────────────────────────────────────
@@ -230,6 +333,114 @@ def _build_admin_keyboard(admin_config: AdminRuntimeConfig | None) -> InlineKeyb
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=toggle_text, callback_data="admin:commerce:toggle")],
+            [InlineKeyboardButton(text="📦 Catalog sync", callback_data="admin:catalog:panel")],
             [InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")],
         ]
     )
+
+
+def _build_catalog_sync_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Validate workbook (dry-run)", callback_data="admin:catalog:xlsx:validate")],
+            [InlineKeyboardButton(text="🚀 Run XLSX ingest (apply)", callback_data="admin:catalog:xlsx:apply")],
+            [InlineKeyboardButton(text="☁️ Run Google Sheets sync", callback_data="admin:catalog:gsheets:apply")],
+            [InlineKeyboardButton(text="🔎 Rebuild search", callback_data="admin:catalog:search:rebuild")],
+            [InlineKeyboardButton(text="↩️ Назад в админку", callback_data="admin:panel")],
+        ]
+    )
+
+
+def _render_catalog_sync_panel(
+    catalog_admin_service: CatalogAdminSyncService | None,
+    admin_config: AdminRuntimeConfig | None,
+) -> str:
+    xlsx_path = catalog_admin_service.get_default_workbook_path() if catalog_admin_service else "—"
+    gsheets_ok, gsheets_note = (
+        catalog_admin_service.gsheets_is_configured() if catalog_admin_service else (False, "Catalog sync service недоступен.")
+    )
+    gsheets_label = "✅ Готово" if gsheets_ok else "⚠️ Не настроено"
+    last_run = _render_last_catalog_run(admin_config.last_catalog_operation if admin_config else None)
+    return (
+        "<b>📦 Catalog sync</b>\n\n"
+        "<b>Режимы:</b>\n"
+        "• Validate workbook (dry-run) — без записи в БД\n"
+        "• Run XLSX ingest (apply) — применяет изменения в каталог\n"
+        "• Run Google Sheets sync — синхронизация из Google Sheets\n"
+        "• Rebuild search — обновляет поисковую проекцию\n\n"
+        f"Workbook (default): <code>{xlsx_path}</code>\n"
+        f"Google Sheets: <b>{gsheets_label}</b>\n"
+        f"<i>{gsheets_note}</i>\n\n"
+        f"{last_run}"
+    )
+
+
+def _persist_last_catalog_operation(
+    admin_config: AdminRuntimeConfig | None,
+    summary: CatalogAdminRunSummary,
+) -> None:
+    if admin_config is None:
+        return
+    admin_config.last_catalog_operation = {
+        "source_type": summary.source_type,
+        "mode": summary.mode,
+        "status": summary.status,
+        "timestamp": summary.timestamp,
+        "message": summary.message,
+        "counts": dict(summary.counts),
+    }
+
+
+def _render_last_catalog_run(last_operation: dict[str, object] | None) -> str:
+    if not last_operation:
+        return "<b>Last run:</b> <i>ещё не запускали</i>"
+    counts = last_operation.get("counts")
+    counts_lines = []
+    if isinstance(counts, dict):
+        for key, value in counts.items():
+            counts_lines.append(f"• {key}: <b>{value}</b>")
+    counts_block = "\n".join(counts_lines) if counts_lines else "• без счётчиков"
+    return (
+        "<b>Last run:</b>\n"
+        f"• source: <code>{last_operation.get('source_type', '—')}</code>\n"
+        f"• mode: <code>{last_operation.get('mode', '—')}</code>\n"
+        f"• status: <b>{last_operation.get('status', '—')}</b>\n"
+        f"• timestamp: <code>{last_operation.get('timestamp', '—')}</code>\n"
+        f"• note: {last_operation.get('message', '—')}\n"
+        f"{counts_block}"
+    )
+
+
+def _render_catalog_result(summary: CatalogAdminRunSummary) -> str:
+    counts = "\n".join(f"• {key}: <b>{value}</b>" for key, value in summary.counts.items()) or "• без счётчиков"
+    return (
+        "<b>📦 Catalog sync result</b>\n\n"
+        f"source: <code>{summary.source_type}</code>\n"
+        f"mode: <code>{summary.mode}</code>\n"
+        f"status: <b>{summary.status}</b>\n"
+        f"timestamp: <code>{summary.timestamp}</code>\n"
+        f"message: {summary.message}\n\n"
+        "<b>Summary:</b>\n"
+        f"{counts}\n\n"
+        "<i>При ошибке смотри логи приложения для деталей.</i>"
+    )
+
+
+async def _show_catalog_action_result(
+    callback: CallbackQuery,
+    state: FSMContext,
+    summary: CatalogAdminRunSummary,
+) -> None:
+    await safe_edit_or_send(
+        state=state,
+        source_message=callback.message,
+        text=_render_catalog_result(summary),
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Back to Catalog sync", callback_data="admin:catalog:panel")],
+                [InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")],
+            ]
+        ),
+        parse_mode=ParseMode.HTML,
+    )
+    await callback.answer("Готово")
