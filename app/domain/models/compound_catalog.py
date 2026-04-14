@@ -78,6 +78,9 @@ class CompoundProduct(SchemaTableMixin, BaseModel):
     media_refs: Mapped[list["ProductMediaRef"]] = relationship(
         back_populates="product", cascade="all, delete-orphan"
     )
+    source_refs: Mapped[list["ProductSourceRef"]] = relationship(
+        back_populates="product", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         UniqueConstraint(
@@ -174,6 +177,8 @@ class ProductMediaRef(SchemaTableMixin, BaseModel):
     media_kind: Mapped[str] = mapped_column(String(16), nullable=False)
     ref_url: Mapped[str] = mapped_column(String(1024), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_cover: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source_layer: Mapped[str] = mapped_column(String(16), nullable=False, default="import")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     product: Mapped[CompoundProduct] = relationship(back_populates="media_refs")
@@ -181,6 +186,29 @@ class ProductMediaRef(SchemaTableMixin, BaseModel):
     __table_args__ = (
         UniqueConstraint("product_id", "media_kind", "ref_url", name="uq_catalog_media_identity"),
         Index("ix_catalog_product_media_refs_product_id", "product_id"),
+        {"schema": __schema_name__},
+    )
+
+
+class ProductSourceRef(SchemaTableMixin, BaseModel):
+    __tablename__ = "product_source_refs"
+    __schema_name__ = "compound_catalog"
+
+    product_id: Mapped[UUID] = mapped_column(
+        ForeignKey("compound_catalog.compound_products.id", ondelete="CASCADE"), nullable=False
+    )
+    source_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="source")
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source_layer: Mapped[str] = mapped_column(String(16), nullable=False, default="import")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    product: Mapped[CompoundProduct] = relationship(back_populates="source_refs")
+
+    __table_args__ = (
+        UniqueConstraint("product_id", "source_kind", "url", "source_layer", name="uq_catalog_source_ref_identity"),
+        Index("ix_catalog_product_source_refs_product_id", "product_id"),
         {"schema": __schema_name__},
     )
 

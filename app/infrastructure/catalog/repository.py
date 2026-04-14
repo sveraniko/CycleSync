@@ -6,7 +6,13 @@ from sqlalchemy import and_, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.catalog.normalization import normalize_lookup
-from app.application.catalog.schemas import CatalogProductInput, IngestIssue, IngestResult
+from app.application.catalog.schemas import (
+    CatalogProductInput,
+    IngestIssue,
+    IngestResult,
+    MediaInput,
+    SourceLinkInput,
+)
 from app.domain.models import (
     Brand,
     CatalogIngestRun,
@@ -15,6 +21,7 @@ from app.domain.models import (
     CompoundIngredient,
     CompoundProduct,
     ProductMediaRef,
+    ProductSourceRef,
 )
 
 
@@ -121,8 +128,12 @@ class SqlAlchemyCatalogRepository:
 
         await self._replace_aliases(existing.id, product.aliases)
         await self._replace_ingredients(existing.id, product)
-        await self._replace_media(existing.id, "image", product.image_refs)
-        await self._replace_media(existing.id, "video", product.video_refs)
+        if product.media_items:
+            await self._replace_media_items(existing.id, product.media_items)
+        else:
+            await self._replace_media(existing.id, "image", product.image_refs)
+            await self._replace_media(existing.id, "video", product.video_refs)
+        await self._replace_source_links(existing.id, product.source_links)
         await self.session.flush()
         return existing.id, action
 
@@ -181,7 +192,38 @@ class SqlAlchemyCatalogRepository:
                     media_kind=media_kind,
                     ref_url=ref,
                     sort_order=index,
+                    source_layer="import",
                     is_active=True,
+                )
+            )
+
+    async def _replace_media_items(self, product_id: UUID, media_items: list[MediaInput]) -> None:
+        await self.session.execute(delete(ProductMediaRef).where(ProductMediaRef.product_id == product_id))
+        for item in sorted(media_items, key=lambda x: x.priority):
+            self.session.add(
+                ProductMediaRef(
+                    product_id=product_id,
+                    media_kind=item.media_kind,
+                    ref_url=item.ref,
+                    sort_order=item.priority,
+                    is_cover=item.is_cover,
+                    source_layer=item.source_layer or "import",
+                    is_active=item.is_active,
+                )
+            )
+
+    async def _replace_source_links(self, product_id: UUID, source_links: list[SourceLinkInput]) -> None:
+        await self.session.execute(delete(ProductSourceRef).where(ProductSourceRef.product_id == product_id))
+        for item in sorted(source_links, key=lambda x: x.priority):
+            self.session.add(
+                ProductSourceRef(
+                    product_id=product_id,
+                    source_kind=item.kind,
+                    label=item.label,
+                    url=item.url,
+                    sort_order=item.priority,
+                    source_layer=item.source_layer or "import",
+                    is_active=item.is_active,
                 )
             )
 

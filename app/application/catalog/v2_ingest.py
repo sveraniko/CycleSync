@@ -6,7 +6,13 @@ from openpyxl import load_workbook
 
 from app.application.catalog.ingest import CatalogIngestService
 from app.application.catalog.normalization import normalize_text, parse_bool, parse_decimal
-from app.application.catalog.schemas import CatalogProductInput, IngredientInput, IngestIssue
+from app.application.catalog.schemas import (
+    CatalogProductInput,
+    IngredientInput,
+    IngestIssue,
+    MediaInput,
+    SourceLinkInput,
+)
 
 
 @dataclass(slots=True)
@@ -59,11 +65,19 @@ def _to_decimal(value: str | None) -> Decimal | None:
     return parse_decimal(value)
 
 
+def _to_int(value: str | None) -> int:
+    try:
+        return int((value or "0").strip())
+    except ValueError:
+        return 0
+
+
 def build_v2_inputs(sheets: WorkbookV2Sheets) -> tuple[list[CatalogProductInput], list[IngestIssue]]:
     issues: list[IngestIssue] = []
     ingredients_by_product: dict[str, list[dict[str, str]]] = {}
     aliases_by_product: dict[str, list[str]] = {}
     media_by_product: dict[str, list[dict[str, str]]] = {}
+    sources_by_product: dict[str, list[dict[str, str]]] = {}
 
     for row in sheets.ingredients:
         key = normalize_text(row.get("product_key", ""))
@@ -84,6 +98,11 @@ def build_v2_inputs(sheets: WorkbookV2Sheets) -> tuple[list[CatalogProductInput]
         key = normalize_text(row.get("product_key", ""))
         if key:
             media_by_product.setdefault(key, []).append(row)
+
+    for row in sheets.sources:
+        key = normalize_text(row.get("product_key", ""))
+        if key:
+            sources_by_product.setdefault(key, []).append(row)
 
     products: list[CatalogProductInput] = []
     for row in sheets.products:
@@ -163,8 +182,33 @@ def build_v2_inputs(sheets: WorkbookV2Sheets) -> tuple[list[CatalogProductInput]
             continue
 
         media_rows = media_by_product.get(product_key, [])
-        image_refs = [r.get("ref", "") for r in media_rows if normalize_text(r.get("media_kind", "")) == "image" and parse_bool(r.get("is_active")) is not False]
-        video_refs = [r.get("ref", "") for r in media_rows if normalize_text(r.get("media_kind", "")) in {"video", "gif", "animation"} and parse_bool(r.get("is_active")) is not False]
+        media_items = [
+            MediaInput(
+                media_kind=normalize_text(r.get("media_kind", "")) or "image",
+                ref=normalize_text(r.get("ref", "")),
+                priority=_to_int(r.get("priority")),
+                is_cover=parse_bool(r.get("is_cover")) is True,
+                source_layer=normalize_text(r.get("source_layer", "")) or "import",
+                is_active=parse_bool(r.get("is_active")) is not False,
+            )
+            for r in media_rows
+            if normalize_text(r.get("ref", ""))
+        ]
+        image_refs = [m.ref for m in media_items if m.media_kind == "image" and m.is_active]
+        video_refs = [m.ref for m in media_items if m.media_kind in {"video", "gif", "animation"} and m.is_active]
+        source_rows = sources_by_product.get(product_key, [])
+        source_links = [
+            SourceLinkInput(
+                kind=normalize_text(r.get("source_kind", "")) or "source",
+                label=normalize_text(r.get("label", "")) or "Source",
+                url=normalize_text(r.get("url", "")),
+                priority=_to_int(r.get("priority")),
+                source_layer=normalize_text(r.get("source_layer", "")) or "import",
+                is_active=parse_bool(r.get("is_active")) is not False,
+            )
+            for r in source_rows
+            if normalize_text(r.get("url", ""))
+        ]
 
         products.append(
             CatalogProductInput(
@@ -188,11 +232,13 @@ def build_v2_inputs(sheets: WorkbookV2Sheets) -> tuple[list[CatalogProductInput]
                 volume_per_package_ml=volume_per_package_ml,
                 unit_strength_mg=None,
                 units_per_package=units_per_package,
+                source_payload=row,
                 aliases=aliases_by_product.get(product_key, []),
                 ingredients=mapped_ingredients,
-                image_refs=[ref for ref in image_refs if ref],
-                video_refs=[ref for ref in video_refs if ref],
-                source_payload=row,
+                image_refs=image_refs,
+                video_refs=video_refs,
+                source_links=source_links,
+                media_items=media_items,
             )
         )
 
@@ -203,6 +249,18 @@ def build_v2_inputs(sheets: WorkbookV2Sheets) -> tuple[list[CatalogProductInput]
             continue
         if key and key not in product_keys:
             issues.append(IngestIssue(row_key=key, message="Ingredient references unknown product_key"))
+    for source in sheets.sources:
+        key = normalize_text(source.get("product_key", ""))
+        if key.lower().startswith("hint:"):
+            continue
+        if key and key not in product_keys:
+            issues.append(IngestIssue(row_key=key, message="Source references unknown product_key"))
+    for media in sheets.media:
+        key = normalize_text(media.get("product_key", ""))
+        if key.lower().startswith("hint:"):
+            continue
+        if key and key not in product_keys:
+            issues.append(IngestIssue(row_key=key, message="Media references unknown product_key"))
 
     return products, issues
 

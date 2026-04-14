@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 
 
@@ -47,11 +47,33 @@ class CatalogProductInput:
     volume_per_package_ml: Decimal | None
     unit_strength_mg: Decimal | None
     units_per_package: Decimal | None
+    source_payload: dict[str, str]
     aliases: list[str]
     ingredients: list[IngredientInput]
-    image_refs: list[str]
-    video_refs: list[str]
-    source_payload: dict[str, str]
+    image_refs: list[str] = field(default_factory=list)
+    video_refs: list[str] = field(default_factory=list)
+    source_links: list["SourceLinkInput"] = field(default_factory=list)
+    media_items: list["MediaInput"] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class SourceLinkInput:
+    kind: str
+    label: str
+    url: str
+    priority: int
+    is_active: bool = True
+    source_layer: str = "import"
+
+
+@dataclass(slots=True)
+class MediaInput:
+    media_kind: str
+    ref: str
+    priority: int
+    is_cover: bool = False
+    source_layer: str = "import"
+    is_active: bool = True
 
 
 @dataclass(slots=True)

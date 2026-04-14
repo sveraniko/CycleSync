@@ -299,18 +299,19 @@ def _render_product_card(card: OpenCard, *, show_auth: bool, show_media: bool, s
 
     if show_media:
         lines.extend(["", "<b>Media references</b>"])
-        if card.media_refs:
-            for i, ref in enumerate(card.media_refs[:5], start=1):
-                lines.append(f"• ref #{i}")
+        if card.media_items:
+            for media in card.media_items[:5]:
+                cover = " • cover" if media.is_cover else ""
+                lines.append(f"• {escape_html_text(media.media_kind)} #{media.priority}{cover}")
         else:
             lines.append("Нет данных.")
 
     if show_sources:
-        lines.extend([
-            "",
-            "<b>Источники</b>",
-            "Ссылки доступны кнопками ниже.",
-        ])
+        lines.extend(["", "<b>Источники</b>"])
+        if card.official_url or card.source_links:
+            lines.append("Ссылки доступны кнопками ниже.")
+        else:
+            lines.append("Нет данных.")
 
     return "\n".join(lines)
 
@@ -390,8 +391,8 @@ def build_card_actions(
     link_buttons: list[InlineKeyboardButton] = []
     if card.official_url:
         link_buttons.append(InlineKeyboardButton(text="Official", url=card.official_url))
-    for i, ref in enumerate(card.media_refs[:3], start=1):
-        link_buttons.append(InlineKeyboardButton(text=f"Source {i}", url=ref))
+    for source in sorted(card.source_links, key=lambda item: item.priority):
+        link_buttons.append(InlineKeyboardButton(text=source.label, url=source.url))
 
     for i in range(0, len(link_buttons), 2):
         rows.append(link_buttons[i : i + 2])
