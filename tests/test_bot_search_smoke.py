@@ -202,7 +202,7 @@ def test_product_card_rendering_and_url_buttons() -> None:
 
     keyboard = build_card_actions(card, show_auth=False, show_media=False, show_sources=False)
     url_buttons = [b for row in keyboard.inline_keyboard for b in row if b.url]
-    assert any(button.text == "Официальный сайт" for button in url_buttons)
+    assert any(button.text == "Официальный источник" for button in url_buttons)
     assert any(button.text == "Lab test" for button in url_buttons)
     assert any(button.text == "Community" for button in url_buttons)
 
@@ -309,7 +309,7 @@ def test_on_demand_media_rendering_mode() -> None:
         media_items=[CardMediaItem(media_kind="video", ref="https://cdn/v.mp4", priority=1, is_cover=False, source_layer="import", is_active=True)],
     )
     text = _render_product_card(card, show_auth=False, show_media=False, show_sources=False)
-    assert "по запросу через Show media" in text
+    assert "по кнопке «Показать медиа»" in text
 
 
 def test_no_media_truthful_rendering() -> None:
@@ -354,7 +354,7 @@ def test_card_actions_preserve_official_source_media_separation_and_ordering() -
     )
     keyboard = build_card_actions(card, show_auth=False, show_media=False, show_sources=False)
     url_buttons = [b for row in keyboard.inline_keyboard for b in row if b.url]
-    assert [b.text for b in url_buttons] == ["Официальный сайт", "Source 1", "Source 2"]
+    assert [b.text for b in url_buttons] == ["Официальный источник", "Source 1", "Source 2"]
     assert all(not text.startswith("Image") and not text.startswith("Video") for text in [b.text for b in url_buttons])
 
 
@@ -391,7 +391,7 @@ def test_pagination_controls_smoke() -> None:
     ]
     keyboard = build_results_actions(items=items, page=0, total=11)
     labels = [b.text for row in keyboard.inline_keyboard for b in row]
-    assert "Next →" in labels
+    assert "Далее →" in labels
 
 
 def test_draft_callback_uses_toast_without_spam_message() -> None:

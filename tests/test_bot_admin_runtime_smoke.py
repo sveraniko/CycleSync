@@ -67,10 +67,10 @@ def test_admin_runtime_panel_rendering_smoke() -> None:
         app_env="pilot",
     )
     text = _render_admin_panel(config, debug_enabled=config.debug_enabled, admin_ids=(11,))
-    assert "📡 Runtime status" in text
-    assert "commerce_enabled: <b>ON</b>" in text
-    assert "debug_enabled: <b>OFF</b>" in text
-    assert "pulse_engine_version: <code>v2</code>" in text
+    assert "📡 Состояние рантайма" in text
+    assert "Коммерческий режим: <b>ВКЛ</b>" in text
+    assert "Отладка: <b>ВЫКЛ</b>" in text
+    assert "Версия Pulse Engine: <code>v2</code>" in text
 
 
 def test_non_admin_cannot_access_runtime_controls() -> None:
@@ -136,8 +136,8 @@ def test_runtime_status_block_rendering() -> None:
         last_catalog_operation={"status": "ok", "timestamp": "2026-04-14T12:00:00Z", "source_type": "xlsx"},
     )
     text = _render_runtime_status_block(config, debug_enabled=True)
-    assert "launch_mode: <code>pre-mvp</code>" in text
-    assert "catalog_sync: <b>ok</b> (xlsx, 2026-04-14T12:00:00Z)" in text
+    assert "Контур запуска: <code>pre-mvp</code>" in text
+    assert "Синхронизация каталога: <b>ok</b> (xlsx, 2026-04-14T12:00:00Z)" in text
 
 
 def test_access_and_commercial_surfaces_visibility_smoke() -> None:

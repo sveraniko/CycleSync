@@ -219,7 +219,7 @@ async def on_admin_product_media_policy(
         await callback.answer("Карточка не найдена", show_alert=True)
         return
     await _render_card(callback.message, state, card, is_admin=True)
-    await callback.answer("Media policy обновлена")
+    await callback.answer("Политика медиа обновлена")
 
 
 @router.callback_query(F.data.startswith("a:p:dm:"))
@@ -500,7 +500,7 @@ def _effective_source_links(card: OpenCard) -> list[CardSourceLink]:
 
 
 def _sync_flag_label(value: bool | None) -> str:
-    return "ON" if bool(value) else "OFF"
+    return "ВКЛ" if bool(value) else "ВЫКЛ"
 
 
 def _render_admin_media_status(card: OpenCard) -> list[str]:
@@ -518,9 +518,9 @@ def _render_admin_media_status(card: OpenCard) -> list[str]:
         f"Синк изображений: <b>{_sync_flag_label(card.sync_images)}</b>",
         f"Синк видео: <b>{_sync_flag_label(card.sync_videos)}</b>",
         f"Синк источников: <b>{_sync_flag_label(card.sync_sources)}</b>",
-        f"Media counts: manual={manual_media}, import={import_media}",
-        f"Source counts: effective={len(effective_sources)}, manual={manual_sources}, import={import_sources}",
-        "Official = primary button; Sources = link buttons; Media = gallery items.",
+        f"Медиа: ручные={manual_media}, импорт={import_media}",
+        f"Источники: активные={len(effective_sources)}, ручные={manual_sources}, импорт={import_sources}",
+        "«Официальный источник» — основная кнопка; «Источники» — ссылки; «Медиа» — галерея.",
     ]
 def _resolve_primary_cover(card: OpenCard) -> CardMediaItem | None:
     gallery = _effective_media_gallery(card)
@@ -568,19 +568,19 @@ def _render_product_card(
         escape_html_text(card.composition_summary) if card.composition_summary else "—",
     ]
     if not gallery:
-        lines.extend(["", "<b>Media</b>", "Нет медиа-файлов."])
+        lines.extend(["", "<b>Медиа</b>", "Нет медиа-файлов."])
     elif display_mode == MEDIA_DISPLAY_SHOW_COVER and cover is not None:
         cover_tag = "manual cover" if (cover.source_layer or "").lower() == "manual" and cover.is_cover else "cover"
         lines.extend([
             "",
-            "<b>Media</b>",
+            "<b>Медиа</b>",
             f"Обложка при открытии: {_media_type_label(cover.media_kind)} • {cover_tag}",
-            f"Доступно медиа: {len(gallery)} (открыть галерею: Show media).",
+            f"Доступно медиа: {len(gallery)} (откройте «Показать медиа»).",
         ])
     elif display_mode == MEDIA_DISPLAY_NONE:
-        lines.extend(["", "<b>Media</b>", f"Скрыто по display mode ({MEDIA_DISPLAY_NONE})."])
+        lines.extend(["", "<b>Медиа</b>", f"Скрыто режимом показа ({MEDIA_DISPLAY_NONE})."])
     else:
-        lines.extend(["", "<b>Media</b>", f"Доступно медиа: {len(gallery)} (по запросу через Show media)."])
+        lines.extend(["", "<b>Медиа</b>", f"Доступно медиа: {len(gallery)} (по кнопке «Показать медиа»)."])
 
     if show_auth:
         lines.extend([
@@ -641,7 +641,7 @@ def build_results_actions(
             draft_btn = InlineKeyboardButton(text="+В черновик", callback_data=f"search:draft:{item.product_id}")
         rows.append(
             [
-                InlineKeyboardButton(text=f"Open · {item.product_name[:20]}", callback_data=f"search:open:{item.product_id}"),
+                InlineKeyboardButton(text=f"Открыть · {item.product_name[:20]}", callback_data=f"search:open:{item.product_id}"),
                 draft_btn,
             ]
         )
@@ -649,9 +649,9 @@ def build_results_actions(
     total_pages = max(1, ceil(total / PAGE_SIZE))
     nav: list[InlineKeyboardButton] = []
     if page > 0:
-        nav.append(InlineKeyboardButton(text="← Prev", callback_data=f"search:page:{page - 1}"))
+        nav.append(InlineKeyboardButton(text="← Назад", callback_data=f"search:page:{page - 1}"))
     if page + 1 < total_pages:
-        nav.append(InlineKeyboardButton(text="Next →", callback_data=f"search:page:{page + 1}"))
+        nav.append(InlineKeyboardButton(text="Далее →", callback_data=f"search:page:{page + 1}"))
     if nav:
         rows.append(nav)
 
@@ -676,15 +676,15 @@ def build_card_actions(
         else InlineKeyboardButton(text="+В черновик", callback_data=f"search:draft:{card.product_id}")
     )
     rows: list[list[InlineKeyboardButton]] = [
-        [InlineKeyboardButton(text="Back to results", callback_data="search:back")],
+        [InlineKeyboardButton(text="← К результатам", callback_data="search:back")],
         [draft_btn],
         [
             InlineKeyboardButton(
-                text=("Hide" if show_auth else "Show") + " authenticity",
+                text=("Скрыть" if show_auth else "Показать") + " проверку",
                 callback_data="search:toggle:auth",
             ),
             InlineKeyboardButton(
-                text=("Hide" if show_media else "Show") + " media",
+                text=("Скрыть" if show_media else "Показать") + " медиа",
                 callback_data="search:toggle:media",
             ),
         ],
@@ -692,14 +692,14 @@ def build_card_actions(
     if show_media and len(gallery) > 1:
         rows.append(
             [
-                InlineKeyboardButton(text="◀️ Prev media", callback_data="search:media:prev"),
-                InlineKeyboardButton(text="Next media ▶️", callback_data="search:media:next"),
+                InlineKeyboardButton(text="◀️ Предыдущее медиа", callback_data="search:media:prev"),
+                InlineKeyboardButton(text="Следующее медиа ▶️", callback_data="search:media:next"),
             ]
         )
 
     source_row = [
         InlineKeyboardButton(
-            text=("Hide" if show_sources else "Show") + " sources",
+            text=("Скрыть" if show_sources else "Показать") + " источники",
             callback_data="search:toggle:sources",
         )
     ]
@@ -707,7 +707,7 @@ def build_card_actions(
 
     link_buttons: list[InlineKeyboardButton] = []
     if card.official_url:
-        link_buttons.append(InlineKeyboardButton(text="Официальный сайт", url=card.official_url))
+        link_buttons.append(InlineKeyboardButton(text="Официальный источник", url=card.official_url))
     for source in _effective_source_links(card):
         link_buttons.append(InlineKeyboardButton(text=source.label, url=source.url))
 
@@ -768,7 +768,7 @@ def build_result_actions(product_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="Open", callback_data=f"search:open:{product_id}"),
+                InlineKeyboardButton(text="Открыть", callback_data=f"search:open:{product_id}"),
                 InlineKeyboardButton(text="+В черновик", callback_data=f"search:draft:{product_id}"),
             ]
         ]

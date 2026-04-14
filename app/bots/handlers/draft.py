@@ -470,11 +470,11 @@ async def on_view_protocol(
             text=(
                 "<b>🧬 Мой протокол</b>\n\n"
                 "Активных протоколов нет.\n"
-                "Создайте Draft, запустите расчёт и активируйте протокол."
+                "Создайте черновик, запустите расчёт и активируйте протокол."
             ),
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [InlineKeyboardButton(text="📋 Открыть Draft", callback_data="draft:open")],
+                    [InlineKeyboardButton(text="📋 Открыть черновик", callback_data="draft:open")],
                     [InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")],
                 ]
             ),
@@ -503,8 +503,8 @@ async def on_view_protocol(
         text=_render_active_protocol_summary(active),
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="📊 Course estimate", callback_data="draft:estimate:active:latest")],
-                [InlineKeyboardButton(text="📋 Draft", callback_data="draft:open")],
+                [InlineKeyboardButton(text="📊 Оценка курса", callback_data="draft:estimate:active:latest")],
+                [InlineKeyboardButton(text="📋 Черновик", callback_data="draft:open")],
                 [InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")],
             ]
         ),
@@ -915,9 +915,9 @@ def build_draft_actions(draft: DraftView, *, clear_confirm: bool = False) -> Inl
 def _render_draft_summary(draft: DraftView) -> str:
     if not draft.items:
         return (
-            "<b>Draft • Рабочая панель</b>\n"
+            "<b>Черновик • Рабочая панель</b>\n"
             "Позиции: <b>0</b>\n\n"
-            "Добавьте продукты через <b>+Draft</b> в карточке поиска.\n"
+            "Добавьте продукты через <b>+В черновик</b> в карточке поиска.\n"
             "Следующий шаг: соберите состав и нажмите <b>К расчету</b>."
         )
 

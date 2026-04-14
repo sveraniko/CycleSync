@@ -335,31 +335,31 @@ def _render_admin_panel(
     ids_label = ", ".join(str(i) for i in (admin_ids or [])) or "—"
     runtime_block = _render_runtime_status_block(admin_config, debug_enabled)
     commerce_block = (
-        "<b>💳 Commerce controls</b>\n"
-        f"• commerce_enabled: <b>{'ON' if commerce_enabled else 'OFF'}</b>\n"
-        f"• User checkout/demo entry: <b>{'доступен' if commerce_enabled else 'скрыт'}</b>\n"
-        "• Access key activation: <b>всегда доступна</b> (не зависит от checkout)\n"
-        f"• Что это меняет: {'видны checkout-энтрипойнты и команды оплаты' if commerce_enabled else 'checkout и коммерческие кнопки скрыты/заблокированы'}"
+        "<b>💳 Коммерция и доступ</b>\n"
+        f"• Коммерческий режим: <b>{'ВКЛ' if commerce_enabled else 'ВЫКЛ'}</b>\n"
+        f"• Экран оплаты: <b>{'доступен' if commerce_enabled else 'скрыт'}</b>\n"
+        "• Активация ключа: <b>всегда доступна</b> (не зависит от оплаты)\n"
+        f"• Что меняется: {'появляются кнопки оплаты и демо-оплаты' if commerce_enabled else 'кнопки оплаты скрыты и недоступны'}"
     )
     debug_block = (
-        "<b>🧪 Debug controls</b>\n"
-        f"• debug_enabled: <b>{'ON' if debug_enabled else 'OFF'}</b>\n"
-        f"• Debug checkout actions: <b>{'активны только для админа' if debug_enabled else 'выключены'}</b>\n"
-        f"• Demo/test paths: <b>{'доступны администратору' if debug_enabled else 'недоступны'}</b>"
+        "<b>🧪 Отладка</b>\n"
+        f"• Отладка: <b>{'ВКЛ' if debug_enabled else 'ВЫКЛ'}</b>\n"
+        f"• Тестовые действия оплаты: <b>{'только для админа' if debug_enabled else 'выключены'}</b>\n"
+        f"• Демо-сценарии: <b>{'доступны администратору' if debug_enabled else 'недоступны'}</b>"
     )
     nav_block = (
         "<b>🧭 Навигация</b>\n"
-        "• Runtime status — этот экран\n"
-        "• Catalog sync — импорт/синк каталога\n"
-        "• Media/source policy — из карточек поиска (admin controls)\n"
-        "• Access/commerce entrypoints — в Settings"
+        "• Состояние рантайма — этот экран\n"
+        "• Синхронизация каталога — импорт и обновление каталога\n"
+        "• Политика медиа/источников — в карточках поиска (для админа)\n"
+        "• Входы в доступ и оплату — в «Настройках»"
     )
     return (
         "<b>🔧 Панель администратора</b>\n\n"
         f"{runtime_block}\n\n"
         f"{commerce_block}\n\n"
         f"{debug_block}\n\n"
-        f"<b>👤 Admin IDs:</b> <code>{ids_label}</code>\n\n"
+        f"<b>👤 ID администраторов:</b> <code>{ids_label}</code>\n\n"
         f"{nav_block}\n\n"
         "<i>Изменения флагов применяются сразу в текущем процессе бота.</i>"
     )
@@ -371,12 +371,12 @@ def _render_runtime_status_block(admin_config: AdminRuntimeConfig | None, debug_
     app_env = admin_config.app_env if admin_config else "—"
     catalog_status = _render_runtime_catalog_status(admin_config.last_catalog_operation if admin_config else None)
     return (
-        "<b>📡 Runtime status</b>\n"
-        f"• commerce_enabled: <b>{'ON' if commerce else 'OFF'}</b>\n"
-        f"• debug_enabled: <b>{'ON' if debug_enabled else 'OFF'}</b>\n"
-        f"• pulse_engine_version: <code>{pulse_version}</code>\n"
-        f"• launch_mode: <code>{app_env}</code>\n"
-        f"• catalog_sync: {catalog_status}"
+        "<b>📡 Состояние рантайма</b>\n"
+        f"• Коммерческий режим: <b>{'ВКЛ' if commerce else 'ВЫКЛ'}</b>\n"
+        f"• Отладка: <b>{'ВКЛ' if debug_enabled else 'ВЫКЛ'}</b>\n"
+        f"• Версия Pulse Engine: <code>{pulse_version}</code>\n"
+        f"• Контур запуска: <code>{app_env}</code>\n"
+        f"• Синхронизация каталога: {catalog_status}"
     )
 
 
@@ -413,7 +413,7 @@ def _build_admin_keyboard(admin_config: AdminRuntimeConfig | None) -> InlineKeyb
 def _build_catalog_sync_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Проверить workbook (dry-run)", callback_data="admin:catalog:xlsx:validate")],
+            [InlineKeyboardButton(text="✅ Проверить файл (dry-run)", callback_data="admin:catalog:xlsx:validate")],
             [InlineKeyboardButton(text="🚀 Применить XLSX импорт", callback_data="admin:catalog:xlsx:apply")],
             [InlineKeyboardButton(text="☁️ Синхронизировать Google Sheets", callback_data="admin:catalog:gsheets:apply")],
             [InlineKeyboardButton(text="🔎 Пересобрать поиск", callback_data="admin:catalog:search:rebuild")],
@@ -428,18 +428,18 @@ def _render_catalog_sync_panel(
 ) -> str:
     xlsx_path = catalog_admin_service.get_default_workbook_path() if catalog_admin_service else "—"
     gsheets_ok, gsheets_note = (
-        catalog_admin_service.gsheets_is_configured() if catalog_admin_service else (False, "Catalog sync service недоступен.")
+        catalog_admin_service.gsheets_is_configured() if catalog_admin_service else (False, "Сервис синхронизации каталога недоступен.")
     )
     gsheets_label = "✅ Готово" if gsheets_ok else "⚠️ Не настроено"
     last_run = _render_last_catalog_run(admin_config.last_catalog_operation if admin_config else None)
     return (
-        "<b>📦 Catalog sync</b>\n\n"
+        "<b>📦 Синхронизация каталога</b>\n\n"
         "<b>Режимы:</b>\n"
-        "• Validate workbook (dry-run) — без записи в БД\n"
-        "• Run XLSX ingest (apply) — применяет изменения в каталог\n"
-        "• Run Google Sheets sync — синхронизация из Google Sheets\n"
-        "• Rebuild search — обновляет поисковую проекцию\n\n"
-        f"Workbook (default): <code>{xlsx_path}</code>\n"
+        "• Проверка файла (dry-run) — без записи в БД\n"
+        "• Применить XLSX-импорт — вносит изменения в каталог\n"
+        "• Синхронизировать Google Sheets — загрузка из таблиц\n"
+        "• Пересобрать поиск — обновляет поисковую проекцию\n\n"
+        f"Файл по умолчанию: <code>{xlsx_path}</code>\n"
         f"Google Sheets: <b>{gsheets_label}</b>\n"
         f"<i>{gsheets_note}</i>\n\n"
         f"{last_run}"
@@ -472,12 +472,12 @@ def _render_last_catalog_run(last_operation: dict[str, object] | None) -> str:
             counts_lines.append(f"• {key}: <b>{value}</b>")
     counts_block = "\n".join(counts_lines) if counts_lines else "• без счётчиков"
     return (
-        "<b>Last run:</b>\n"
-        f"• source: <code>{last_operation.get('source_type', '—')}</code>\n"
-        f"• mode: <code>{last_operation.get('mode', '—')}</code>\n"
-        f"• status: <b>{last_operation.get('status', '—')}</b>\n"
-        f"• timestamp: <code>{last_operation.get('timestamp', '—')}</code>\n"
-        f"• note: {last_operation.get('message', '—')}\n"
+        "<b>Последний запуск:</b>\n"
+        f"• Источник: <code>{last_operation.get('source_type', '—')}</code>\n"
+        f"• Режим: <code>{last_operation.get('mode', '—')}</code>\n"
+        f"• Статус: <b>{last_operation.get('status', '—')}</b>\n"
+        f"• Время: <code>{last_operation.get('timestamp', '—')}</code>\n"
+        f"• Примечание: {last_operation.get('message', '—')}\n"
         f"{counts_block}"
     )
 
@@ -485,13 +485,13 @@ def _render_last_catalog_run(last_operation: dict[str, object] | None) -> str:
 def _render_catalog_result(summary: CatalogAdminRunSummary) -> str:
     counts = "\n".join(f"• {key}: <b>{value}</b>" for key, value in summary.counts.items()) or "• без счётчиков"
     return (
-        "<b>📦 Catalog sync result</b>\n\n"
-        f"source: <code>{summary.source_type}</code>\n"
-        f"mode: <code>{summary.mode}</code>\n"
-        f"status: <b>{summary.status}</b>\n"
-        f"timestamp: <code>{summary.timestamp}</code>\n"
-        f"message: {summary.message}\n\n"
-        "<b>Summary:</b>\n"
+        "<b>📦 Результат синхронизации</b>\n\n"
+        f"Источник: <code>{summary.source_type}</code>\n"
+        f"Режим: <code>{summary.mode}</code>\n"
+        f"Статус: <b>{summary.status}</b>\n"
+        f"Время: <code>{summary.timestamp}</code>\n"
+        f"Сообщение: {summary.message}\n\n"
+        "<b>Сводка:</b>\n"
         f"{counts}\n\n"
         "<i>При ошибке смотри логи приложения для деталей.</i>"
     )
