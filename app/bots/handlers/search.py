@@ -351,7 +351,7 @@ async def _render_search_page(
         await safe_edit_or_send(
             state=state,
             source_message=message,
-            text="Search временно недоступен. Попробуйте чуть позже.",
+            text="Поиск временно недоступен. Попробуйте позже.",
         )
         return
 
@@ -433,7 +433,7 @@ async def _render_card(message: Message, state: FSMContext, card: OpenCard, is_a
 def _render_search_panel(*, query: str, total: int, page: int, items: list[SearchResultItem]) -> str:
     total_pages = max(1, ceil(total / PAGE_SIZE))
     lines = [
-        "<b>Search</b>",
+        "<b>Поиск</b>",
         f"Запрос: <code>{escape_html_text(query)}</code>",
         f"Найдено: <b>{total}</b> • Страница <b>{page + 1}/{total_pages}</b>",
         "",
@@ -512,12 +512,12 @@ def _render_admin_media_status(card: OpenCard) -> list[str]:
 
     return [
         "",
-        "<b>Admin: Media/Source policy status</b>",
-        f"Media policy: <code>{(card.media_policy or MEDIA_POLICY_MERGE)}</code>",
-        f"Display mode: <code>{_resolve_media_display_mode(card)}</code>",
-        f"Sync images: <b>{_sync_flag_label(card.sync_images)}</b>",
-        f"Sync videos: <b>{_sync_flag_label(card.sync_videos)}</b>",
-        f"Sync sources: <b>{_sync_flag_label(card.sync_sources)}</b>",
+        "<b>Админ: политика медиа и источников</b>",
+        f"Политика медиа: <code>{(card.media_policy or MEDIA_POLICY_MERGE)}</code>",
+        f"Режим показа: <code>{_resolve_media_display_mode(card)}</code>",
+        f"Синк изображений: <b>{_sync_flag_label(card.sync_images)}</b>",
+        f"Синк видео: <b>{_sync_flag_label(card.sync_videos)}</b>",
+        f"Синк источников: <b>{_sync_flag_label(card.sync_sources)}</b>",
         f"Media counts: manual={manual_media}, import={import_media}",
         f"Source counts: effective={len(effective_sources)}, manual={manual_sources}, import={import_sources}",
         "Official = primary button; Sources = link buttons; Media = gallery items.",
@@ -585,12 +585,12 @@ def _render_product_card(
     if show_auth:
         lines.extend([
             "",
-            "<b>Authenticity</b>",
+            "<b>Проверка подлинности</b>",
             escape_html_text(card.authenticity_notes) if card.authenticity_notes else "Нет данных.",
         ])
 
     if show_media:
-        lines.extend(["", "<b>Media gallery</b>"])
+        lines.extend(["", "<b>Галерея медиа</b>"])
         if gallery:
             image_count = sum(1 for item in gallery if _media_type_label(item.media_kind) == "Image")
             video_count = sum(1 for item in gallery if _media_type_label(item.media_kind) in {"Video", "Animation"})
@@ -638,7 +638,7 @@ def build_results_actions(
         if pid in _in_draft:
             draft_btn = InlineKeyboardButton(text="✅", callback_data="draft:open")
         else:
-            draft_btn = InlineKeyboardButton(text="+Draft", callback_data=f"search:draft:{item.product_id}")
+            draft_btn = InlineKeyboardButton(text="+В черновик", callback_data=f"search:draft:{item.product_id}")
         rows.append(
             [
                 InlineKeyboardButton(text=f"Open · {item.product_name[:20]}", callback_data=f"search:open:{item.product_id}"),
@@ -671,9 +671,9 @@ def build_card_actions(
 ) -> InlineKeyboardMarkup:
     gallery = _effective_media_gallery(card)
     draft_btn = (
-        InlineKeyboardButton(text="✅ В Draft — тап чтобы открыть", callback_data="draft:open")
+        InlineKeyboardButton(text="✅ Уже в черновике — открыть", callback_data="draft:open")
         if is_in_draft
-        else InlineKeyboardButton(text="+Draft", callback_data=f"search:draft:{card.product_id}")
+        else InlineKeyboardButton(text="+В черновик", callback_data=f"search:draft:{card.product_id}")
     )
     rows: list[list[InlineKeyboardButton]] = [
         [InlineKeyboardButton(text="Back to results", callback_data="search:back")],
@@ -707,7 +707,7 @@ def build_card_actions(
 
     link_buttons: list[InlineKeyboardButton] = []
     if card.official_url:
-        link_buttons.append(InlineKeyboardButton(text="Official", url=card.official_url))
+        link_buttons.append(InlineKeyboardButton(text="Официальный сайт", url=card.official_url))
     for source in _effective_source_links(card):
         link_buttons.append(InlineKeyboardButton(text=source.label, url=source.url))
 
@@ -729,7 +729,7 @@ def build_card_actions(
     if is_admin:
         rows.append([
             InlineKeyboardButton(
-                text=("✖ Закрыть policy" if show_admin_media_controls else "🛠 Media/source policy"),
+                text=("✖ Закрыть policy" if show_admin_media_controls else "🛠 Политика медиа/источников"),
                 callback_data="search:toggle:admin_media",
             ),
             InlineKeyboardButton(text="🖼️ Добавить медиа", callback_data=f"admin:media:start:{card.product_id}"),
@@ -737,26 +737,26 @@ def build_card_actions(
         if show_admin_media_controls:
             rows.extend([
                 [
-                    InlineKeyboardButton(text="Policy: import_only", callback_data=f"a:p:mp:{card.product_id}:import_only"),
-                    InlineKeyboardButton(text="Policy: manual_only", callback_data=f"a:p:mp:{card.product_id}:manual_only"),
+                    InlineKeyboardButton(text="Режим: только import", callback_data=f"a:p:mp:{card.product_id}:import_only"),
+                    InlineKeyboardButton(text="Режим: только manual", callback_data=f"a:p:mp:{card.product_id}:manual_only"),
                 ],
                 [
-                    InlineKeyboardButton(text="Policy: prefer_manual", callback_data=f"a:p:mp:{card.product_id}:prefer_manual"),
-                    InlineKeyboardButton(text="Policy: merge", callback_data=f"a:p:mp:{card.product_id}:merge"),
+                    InlineKeyboardButton(text="Режим: manual в приоритете", callback_data=f"a:p:mp:{card.product_id}:prefer_manual"),
+                    InlineKeyboardButton(text="Режим: объединение", callback_data=f"a:p:mp:{card.product_id}:merge"),
                 ],
                 [
-                    InlineKeyboardButton(text="Display: none", callback_data=f"a:p:dm:{card.product_id}:n"),
-                    InlineKeyboardButton(text="Display: on_demand", callback_data=f"a:p:dm:{card.product_id}:od"),
+                    InlineKeyboardButton(text="Показ: none", callback_data=f"a:p:dm:{card.product_id}:n"),
+                    InlineKeyboardButton(text="Показ: on_demand", callback_data=f"a:p:dm:{card.product_id}:od"),
                 ],
                 [
-                    InlineKeyboardButton(text="Display: show_cover_on_open", callback_data=f"a:p:dm:{card.product_id}:sc"),
+                    InlineKeyboardButton(text="Показ: cover при открытии", callback_data=f"a:p:dm:{card.product_id}:sc"),
                 ],
                 [
-                    InlineKeyboardButton(text=f"Sync images: {_sync_flag_label(card.sync_images)}", callback_data=f"a:p:st:{card.product_id}:i"),
-                    InlineKeyboardButton(text=f"Sync videos: {_sync_flag_label(card.sync_videos)}", callback_data=f"a:p:st:{card.product_id}:v"),
+                    InlineKeyboardButton(text=f"Синк изображений: {_sync_flag_label(card.sync_images)}", callback_data=f"a:p:st:{card.product_id}:i"),
+                    InlineKeyboardButton(text=f"Синк видео: {_sync_flag_label(card.sync_videos)}", callback_data=f"a:p:st:{card.product_id}:v"),
                 ],
                 [
-                    InlineKeyboardButton(text=f"Sync sources: {_sync_flag_label(card.sync_sources)}", callback_data=f"a:p:st:{card.product_id}:s"),
+                    InlineKeyboardButton(text=f"Синк источников: {_sync_flag_label(card.sync_sources)}", callback_data=f"a:p:st:{card.product_id}:s"),
                 ],
             ])
 
@@ -769,7 +769,7 @@ def build_result_actions(product_id: str) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="Open", callback_data=f"search:open:{product_id}"),
-                InlineKeyboardButton(text="+Draft", callback_data=f"search:draft:{product_id}"),
+                InlineKeyboardButton(text="+В черновик", callback_data=f"search:draft:{product_id}"),
             ]
         ]
     )

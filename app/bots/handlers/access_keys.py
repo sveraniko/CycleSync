@@ -21,7 +21,7 @@ async def redeem_key_entrypoint_callback(callback: CallbackQuery, state: FSMCont
     await safe_edit_or_send(
         state=state,
         source_message=callback.message,
-        text="🔐 Активация доступа\n\nОтправьте activation key следующим сообщением.",
+        text="🔐 Активация доступа\n\nОтправьте ключ активации следующим сообщением.",
     )
     await callback.answer()
 
@@ -32,7 +32,7 @@ async def redeem_key_entrypoint(message: Message, state: FSMContext) -> None:
     await safe_edit_or_send(
         state=state,
         source_message=message,
-        text="🔐 Активация доступа\n\nОтправьте activation key следующим сообщением.",
+        text="🔐 Активация доступа\n\nОтправьте ключ активации следующим сообщением.",
     )
 
 
@@ -44,7 +44,7 @@ async def redeem_key_submit(message: Message, state: FSMContext, access_key_serv
         await safe_edit_or_send(
             state=state,
             source_message=message,
-            text="🔐 Активация доступа\n\nКлюч пустой. Введите корректный activation key.",
+            text="🔐 Активация доступа\n\nКлюч пустой. Введите корректный ключ активации.",
         )
         await delete_user_input_message(message)
         return

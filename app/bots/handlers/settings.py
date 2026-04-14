@@ -75,7 +75,7 @@ async def on_reminders_on(
     await safe_edit_or_send(
         state=state,
         source_message=callback.message,
-        text=_render_settings(updated, notice="Reminders включены."),
+        text=_render_settings(updated, notice="Напоминания включены."),
         reply_markup=build_settings_actions(updated.reminders_enabled, commerce_enabled=_is_commerce_enabled(admin_config)),
     )
     await callback.answer("Готово")
@@ -101,7 +101,7 @@ async def on_reminders_off(
         source_message=callback.message,
         text=_render_settings(
             updated,
-            notice="Reminders выключены (opt-out, без breach semantics).",
+            notice="Напоминания выключены.",
         ),
         reply_markup=build_settings_actions(updated.reminders_enabled, commerce_enabled=_is_commerce_enabled(admin_config)),
     )
@@ -123,7 +123,7 @@ async def on_set_time_prompt(
         source_message=callback.message,
         text=_render_settings(
             settings,
-            notice="Введите reminder time в формате HH:MM (локальное время), например 09:30.",
+            notice="Введите время напоминания в формате HH:MM, например 09:30.",
         ),
         reply_markup=build_settings_actions(settings.reminders_enabled, commerce_enabled=_is_commerce_enabled(admin_config)),
     )
@@ -186,7 +186,7 @@ async def on_set_time_input(
         source_message=message,
         text=_render_settings(
             updated,
-            notice=f"Reminder time обновлено: {parsed.strftime('%H:%M')}.",
+            notice=f"Время напоминания обновлено: {parsed.strftime('%H:%M')}.",
         ),
         reply_markup=build_settings_actions(updated.reminders_enabled, commerce_enabled=_is_commerce_enabled(admin_config)),
     )
@@ -195,29 +195,29 @@ async def on_set_time_input(
 
 def build_settings_actions(reminders_enabled: bool, *, commerce_enabled: bool = False) -> InlineKeyboardMarkup:
     toggle_button = InlineKeyboardButton(
-        text="Turn Off" if reminders_enabled else "Turn On",
+        text="🔕 Выключить напоминания" if reminders_enabled else "🔔 Включить напоминания",
         callback_data=(
             "settings:reminders:off" if reminders_enabled else "settings:reminders:on"
         ),
     )
     rows = [
         [toggle_button],
-        [InlineKeyboardButton(text="Set reminder time", callback_data="settings:time:set")],
-        [InlineKeyboardButton(text="Protocol status", callback_data="settings:protocol:status")],
-        [InlineKeyboardButton(text="🔐 Activate key", callback_data="access:activate:start")],
+        [InlineKeyboardButton(text="⏰ Время напоминания", callback_data="settings:time:set")],
+        [InlineKeyboardButton(text="📋 Статус протокола", callback_data="settings:protocol:status")],
+        [InlineKeyboardButton(text="🔐 Активировать ключ", callback_data="access:activate:start")],
     ]
     if commerce_enabled:
-        rows.append([InlineKeyboardButton(text="🧾 Checkout demo", callback_data="checkout:demo:start")])
+        rows.append([InlineKeyboardButton(text="🧾 Оплата доступа", callback_data="checkout:demo:start")])
     rows.append([InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def _render_settings(settings, notice: str | None = None) -> str:
     lines = [
-        "Settings / Reminder execution:",
-        f"- reminders_enabled: {'on' if settings.reminders_enabled else 'off'}",
-        f"- preferred_time_local: {settings.preferred_reminder_time_local.strftime('%H:%M') if settings.preferred_reminder_time_local else 'default'}",
-        f"- timezone: {settings.timezone_name or 'default'}",
+        "⚙️ Настройки напоминаний",
+        f"• Напоминания: {'✅ включены' if settings.reminders_enabled else '❌ выключены'}",
+        f"• Время: {settings.preferred_reminder_time_local.strftime('%H:%M') if settings.preferred_reminder_time_local else 'по умолчанию'}",
+        f"• Часовой пояс: {settings.timezone_name or 'по умолчанию'}",
     ]
     if notice:
         lines.extend(["", notice])
@@ -233,11 +233,11 @@ def _render_protocol_status(status) -> str:
     misses = s.skipped_count + s.expired_count
     return "\n".join(
         [
-            "Protocol adherence status:",
-            f"- integrity: {compact_status_label(s.integrity_state)}",
-            f"- completion_rate: {format_decimal_human(s.completion_rate * 100, precision=0)}%",
-            f"- misses: {misses} (skip={s.skipped_count}, expired={s.expired_count})",
-            f"- reason: {compact_status_label(s.integrity_reason_code)}",
+            "Соблюдение протокола:",
+            f"• Целостность: {compact_status_label(s.integrity_state)}",
+            f"• Выполнение: {format_decimal_human(s.completion_rate * 100, precision=0)}%",
+            f"• Пропуски: {misses} (пропущено: {s.skipped_count}, просрочено: {s.expired_count})",
+            f"• Причина: {compact_status_label(s.integrity_reason_code)}",
         ]
     )
 

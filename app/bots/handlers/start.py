@@ -22,8 +22,8 @@ _HOME_TEXT = (
 def _build_home_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = [
         [
-            InlineKeyboardButton(text="📋 Draft", callback_data="draft:open"),
-            InlineKeyboardButton(text="🧪 Labs", callback_data="labs:root"),
+            InlineKeyboardButton(text="📋 Черновик", callback_data="draft:open"),
+            InlineKeyboardButton(text="🧪 Лабы", callback_data="labs:root"),
         ],
         [
             InlineKeyboardButton(text="🧬 Мой протокол", callback_data="protocol:view"),

@@ -95,7 +95,7 @@ async def on_debug_toggle(
         reply_markup=_build_admin_keyboard(admin_config),
         parse_mode=ParseMode.HTML,
     )
-    await callback.answer("Debug режим включён" if effective_debug else "Debug режим выключен")
+    await callback.answer("Режим отладки включён" if effective_debug else "Режим отладки выключен")
 
 
 @router.callback_query(F.data == "admin:catalog:panel")
@@ -133,7 +133,7 @@ async def on_catalog_xlsx_validate(
         await callback.answer("Нет доступа", show_alert=True)
         return
     if catalog_admin_service is None:
-        await callback.answer("Catalog sync service недоступен", show_alert=True)
+        await callback.answer("Сервис синхронизации каталога недоступен", show_alert=True)
         return
     summary = catalog_admin_service.validate_workbook()
     _persist_last_catalog_operation(admin_config, summary)
@@ -153,7 +153,7 @@ async def on_catalog_xlsx_apply(
         await callback.answer("Нет доступа", show_alert=True)
         return
     if catalog_admin_service is None:
-        await callback.answer("Catalog sync service недоступен", show_alert=True)
+        await callback.answer("Сервис синхронизации каталога недоступен", show_alert=True)
         return
     summary = await catalog_admin_service.run_xlsx_ingest_apply()
     _persist_last_catalog_operation(admin_config, summary)
@@ -173,7 +173,7 @@ async def on_catalog_gsheets_apply(
         await callback.answer("Нет доступа", show_alert=True)
         return
     if catalog_admin_service is None:
-        await callback.answer("Catalog sync service недоступен", show_alert=True)
+        await callback.answer("Сервис синхронизации каталога недоступен", show_alert=True)
         return
     summary = await catalog_admin_service.run_gsheets_sync_apply()
     _persist_last_catalog_operation(admin_config, summary)
@@ -193,7 +193,7 @@ async def on_catalog_search_rebuild(
         await callback.answer("Нет доступа", show_alert=True)
         return
     if catalog_admin_service is None:
-        await callback.answer("Catalog sync service недоступен", show_alert=True)
+        await callback.answer("Сервис синхронизации каталога недоступен", show_alert=True)
         return
     summary = await catalog_admin_service.rebuild_search()
     _persist_last_catalog_operation(admin_config, summary)
@@ -307,7 +307,7 @@ async def on_media_input(
         product_id=product_id, ref_url=ref_url, media_kind=media_kind
     )
 
-    notice = "✅ Медиа добавлено в карточку." if added else "⚠️ Такой ref уже существует, дубликат не добавлен."
+    notice = "✅ Медиа добавлено в карточку." if added else "⚠️ Такая ссылка уже существует, дубликат не добавлен."
 
     await safe_edit_or_send(
         state=state,
@@ -361,7 +361,7 @@ def _render_admin_panel(
         f"{debug_block}\n\n"
         f"<b>👤 Admin IDs:</b> <code>{ids_label}</code>\n\n"
         f"{nav_block}\n\n"
-        "<i>Изменения runtime-флагов применяются сразу в текущем процессе бота.</i>"
+        "<i>Изменения флагов применяются сразу в текущем процессе бота.</i>"
     )
 
 
@@ -398,13 +398,13 @@ def _effective_debug_enabled(admin_config: AdminRuntimeConfig | None, debug_enab
 def _build_admin_keyboard(admin_config: AdminRuntimeConfig | None) -> InlineKeyboardMarkup:
     commerce_enabled = admin_config.commerce_enabled if admin_config else False
     debug_enabled = admin_config.debug_enabled if admin_config else False
-    commerce_toggle_text = "💳 Выключить commerce" if commerce_enabled else "💳 Включить commerce"
-    debug_toggle_text = "🧪 Выключить debug" if debug_enabled else "🧪 Включить debug"
+    commerce_toggle_text = "💳 Выключить коммерческий режим" if commerce_enabled else "💳 Включить коммерческий режим"
+    debug_toggle_text = "🧪 Выключить отладку" if debug_enabled else "🧪 Включить отладку"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=commerce_toggle_text, callback_data="admin:commerce:toggle")],
             [InlineKeyboardButton(text=debug_toggle_text, callback_data="admin:debug:toggle")],
-            [InlineKeyboardButton(text="📦 Catalog sync", callback_data="admin:catalog:panel")],
+            [InlineKeyboardButton(text="📦 Синхронизация каталога", callback_data="admin:catalog:panel")],
             [InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")],
         ]
     )
@@ -413,10 +413,10 @@ def _build_admin_keyboard(admin_config: AdminRuntimeConfig | None) -> InlineKeyb
 def _build_catalog_sync_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Validate workbook (dry-run)", callback_data="admin:catalog:xlsx:validate")],
-            [InlineKeyboardButton(text="🚀 Run XLSX ingest (apply)", callback_data="admin:catalog:xlsx:apply")],
-            [InlineKeyboardButton(text="☁️ Run Google Sheets sync", callback_data="admin:catalog:gsheets:apply")],
-            [InlineKeyboardButton(text="🔎 Rebuild search", callback_data="admin:catalog:search:rebuild")],
+            [InlineKeyboardButton(text="✅ Проверить workbook (dry-run)", callback_data="admin:catalog:xlsx:validate")],
+            [InlineKeyboardButton(text="🚀 Применить XLSX импорт", callback_data="admin:catalog:xlsx:apply")],
+            [InlineKeyboardButton(text="☁️ Синхронизировать Google Sheets", callback_data="admin:catalog:gsheets:apply")],
+            [InlineKeyboardButton(text="🔎 Пересобрать поиск", callback_data="admin:catalog:search:rebuild")],
             [InlineKeyboardButton(text="↩️ Назад в админку", callback_data="admin:panel")],
         ]
     )
@@ -464,7 +464,7 @@ def _persist_last_catalog_operation(
 
 def _render_last_catalog_run(last_operation: dict[str, object] | None) -> str:
     if not last_operation:
-        return "<b>Last run:</b> <i>ещё не запускали</i>"
+        return "<b>Последний запуск:</b> <i>ещё не запускали</i>"
     counts = last_operation.get("counts")
     counts_lines = []
     if isinstance(counts, dict):
@@ -508,7 +508,7 @@ async def _show_catalog_action_result(
         text=_render_catalog_result(summary),
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="⬅️ Back to Catalog sync", callback_data="admin:catalog:panel")],
+                [InlineKeyboardButton(text="⬅️ К синхронизации каталога", callback_data="admin:catalog:panel")],
                 [InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")],
             ]
         ),

@@ -128,7 +128,7 @@ def test_triage_rendering_smoke_card_like() -> None:
     )
     rendered = _format_triage_result(triage)
     assert "AI pre-triage" in rendered
-    assert "🔴 urgent" in rendered
+    assert "🔴 срочно" in rendered
     assert "🟠" in rendered
 
 
