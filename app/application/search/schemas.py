@@ -51,6 +51,8 @@ class OpenCard:
     form_factor: str | None
     official_url: str | None
     authenticity_notes: str | None
+    media_display_mode: str | None = None
+    media_policy: str | None = None
     source_links: list["CardSourceLink"] = field(default_factory=list)
     media_items: list["CardMediaItem"] = field(default_factory=list)
 

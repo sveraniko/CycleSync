@@ -21,6 +21,13 @@ router = Router(name="search")
 SEARCH_STATE_KEY = "search_panel_state"
 CARD_STATE_KEY = "search_card_state"
 PAGE_SIZE = 5
+MEDIA_DISPLAY_NONE = "none"
+MEDIA_DISPLAY_ON_DEMAND = "on_demand"
+MEDIA_DISPLAY_SHOW_COVER = "show_cover_on_open"
+MEDIA_POLICY_IMPORT_ONLY = "import_only"
+MEDIA_POLICY_MANUAL_ONLY = "manual_only"
+MEDIA_POLICY_PREFER_MANUAL = "prefer_manual"
+MEDIA_POLICY_MERGE = "merge"
 
 
 @router.message(F.text)
@@ -65,6 +72,7 @@ async def on_open_card(
                 "show_auth": False,
                 "show_media": False,
                 "show_sources": False,
+                "media_index": 0,
                 "is_in_draft": False,  # updated by on_add_to_draft when item is added
             }
         }
@@ -156,12 +164,55 @@ async def on_toggle_section(
         "sources": "show_sources",
     }[section]
     card_state[state_key] = not bool(card_state.get(state_key, False))
+    if section == "media" and not card_state[state_key]:
+        card_state["media_index"] = 0
     await state.update_data(**{CARD_STATE_KEY: card_state})
 
     card = await search_service.open_card(UUID(str(product_id)))
     if card is None:
         await callback.answer("Карточка не найдена", show_alert=True)
         return
+
+    uid = callback.from_user.id if callback.from_user else None
+    from app.bots.core.permissions import is_admin_user
+    await _render_card(callback.message, state, card, is_admin=is_admin_user(uid, admin_ids))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("search:media:"))
+async def on_media_gallery_nav(
+    callback: CallbackQuery,
+    state: FSMContext,
+    search_service: SearchApplicationService,
+    admin_ids: tuple[int, ...] | None = None,
+) -> None:
+    action = callback.data.split(":", 2)[2]
+    if action not in {"prev", "next"}:
+        await callback.answer("Неизвестное действие", show_alert=True)
+        return
+
+    data = await state.get_data()
+    card_state = dict(data.get(CARD_STATE_KEY) or {})
+    product_id = card_state.get("product_id")
+    if not product_id:
+        await callback.answer("Карточка не активна", show_alert=True)
+        return
+
+    card = await search_service.open_card(UUID(str(product_id)))
+    if card is None:
+        await callback.answer("Карточка не найдена", show_alert=True)
+        return
+
+    gallery_items = _effective_media_gallery(card)
+    if not gallery_items:
+        await callback.answer("Медиа отсутствуют", show_alert=False)
+        return
+
+    current_index = int(card_state.get("media_index", 0))
+    delta = -1 if action == "prev" else 1
+    card_state["media_index"] = (current_index + delta) % len(gallery_items)
+    card_state["show_media"] = True
+    await state.update_data(**{CARD_STATE_KEY: card_state})
 
     uid = callback.from_user.id if callback.from_user else None
     from app.bots.core.permissions import is_admin_user
@@ -240,9 +291,16 @@ async def _render_card(message: Message, state: FSMContext, card: OpenCard, is_a
     show_auth = bool(card_state.get("show_auth", False))
     show_media = bool(card_state.get("show_media", False))
     show_sources = bool(card_state.get("show_sources", False))
+    media_index = int(card_state.get("media_index", 0))
     is_in_draft = bool(card_state.get("is_in_draft", False))
 
-    text = _render_product_card(card, show_auth=show_auth, show_media=show_media, show_sources=show_sources)
+    text = _render_product_card(
+        card,
+        show_auth=show_auth,
+        show_media=show_media,
+        show_sources=show_sources,
+        media_index=media_index,
+    )
     await safe_edit_or_send(
         state=state,
         source_message=message,
@@ -280,7 +338,72 @@ def _format_result_line(idx: int, item: SearchResultItem) -> str:
     return f"<b>{idx}.</b> {name}\n   {brand} • {form}\n   {comp}"
 
 
-def _render_product_card(card: OpenCard, *, show_auth: bool, show_media: bool, show_sources: bool) -> str:
+def _resolve_media_display_mode(card: OpenCard) -> str:
+    mode = (card.media_display_mode or "").strip().lower()
+    if mode in {MEDIA_DISPLAY_NONE, MEDIA_DISPLAY_ON_DEMAND, MEDIA_DISPLAY_SHOW_COVER}:
+        return mode
+    return MEDIA_DISPLAY_ON_DEMAND
+
+
+def _policy_allows_layer(policy: str, layer: str | None) -> bool:
+    normalized_layer = (layer or "import").strip().lower()
+    if policy == MEDIA_POLICY_IMPORT_ONLY:
+        return normalized_layer != "manual"
+    if policy == MEDIA_POLICY_MANUAL_ONLY:
+        return normalized_layer == "manual"
+    return True
+
+
+def _effective_media_gallery(card: OpenCard) -> list[CardMediaItem]:
+    policy = (card.media_policy or MEDIA_POLICY_MERGE).strip().lower()
+    valid_policy = policy if policy in {
+        MEDIA_POLICY_IMPORT_ONLY,
+        MEDIA_POLICY_MANUAL_ONLY,
+        MEDIA_POLICY_PREFER_MANUAL,
+        MEDIA_POLICY_MERGE,
+    } else MEDIA_POLICY_MERGE
+    allowed = [item for item in card.media_items if item.is_active and _policy_allows_layer(valid_policy, item.source_layer)]
+    ordered = sorted(allowed, key=lambda x: x.priority)
+    if valid_policy == MEDIA_POLICY_PREFER_MANUAL:
+        return sorted(ordered, key=lambda x: ((x.source_layer or "import") != "manual", x.priority))
+    return ordered
+
+
+def _resolve_primary_cover(card: OpenCard) -> CardMediaItem | None:
+    gallery = _effective_media_gallery(card)
+    if not gallery:
+        return None
+    manual_cover = next((item for item in gallery if item.is_cover and (item.source_layer or "").lower() == "manual"), None)
+    if manual_cover:
+        return manual_cover
+    import_cover = next((item for item in gallery if item.is_cover and (item.source_layer or "").lower() != "manual"), None)
+    if import_cover:
+        return import_cover
+    return gallery[0]
+
+
+def _media_type_label(media_kind: str) -> str:
+    kind = media_kind.lower()
+    if kind in {"image", "photo", "tg_photo"}:
+        return "Image"
+    if kind in {"video", "tg_video"}:
+        return "Video"
+    if kind in {"animation", "gif", "tg_animation"}:
+        return "Animation"
+    return kind.capitalize()
+
+
+def _render_product_card(
+    card: OpenCard,
+    *,
+    show_auth: bool,
+    show_media: bool,
+    show_sources: bool,
+    media_index: int = 0,
+) -> str:
+    display_mode = _resolve_media_display_mode(card)
+    gallery = _effective_media_gallery(card)
+    cover = _resolve_primary_cover(card)
     lines = [
         f"<b>{escape_html_text(card.product_name)}</b>",
         f"Бренд: <b>{escape_html_text(card.brand) or '—'}</b>",
@@ -289,6 +412,20 @@ def _render_product_card(card: OpenCard, *, show_auth: bool, show_media: bool, s
         "<b>Состав</b>",
         escape_html_text(card.composition_summary) if card.composition_summary else "—",
     ]
+    if not gallery:
+        lines.extend(["", "<b>Media</b>", "Нет медиа-файлов."])
+    elif display_mode == MEDIA_DISPLAY_SHOW_COVER and cover is not None:
+        cover_tag = "manual cover" if (cover.source_layer or "").lower() == "manual" and cover.is_cover else "cover"
+        lines.extend([
+            "",
+            "<b>Media</b>",
+            f"Обложка при открытии: {_media_type_label(cover.media_kind)} • {cover_tag}",
+            f"Доступно медиа: {len(gallery)} (открыть галерею: Show media).",
+        ])
+    elif display_mode == MEDIA_DISPLAY_NONE:
+        lines.extend(["", "<b>Media</b>", f"Скрыто по display mode ({MEDIA_DISPLAY_NONE})."])
+    else:
+        lines.extend(["", "<b>Media</b>", f"Доступно медиа: {len(gallery)} (по запросу через Show media)."])
 
     if show_auth:
         lines.extend([
@@ -298,13 +435,26 @@ def _render_product_card(card: OpenCard, *, show_auth: bool, show_media: bool, s
         ])
 
     if show_media:
-        lines.extend(["", "<b>Media references</b>"])
-        if card.media_items:
-            for media in card.media_items[:5]:
-                cover = " • cover" if media.is_cover else ""
-                lines.append(f"• {escape_html_text(media.media_kind)} #{media.priority}{cover}")
+        lines.extend(["", "<b>Media gallery</b>"])
+        if gallery:
+            image_count = sum(1 for item in gallery if _media_type_label(item.media_kind) == "Image")
+            video_count = sum(1 for item in gallery if _media_type_label(item.media_kind) in {"Video", "Animation"})
+            lines.append(f"Изображения: {image_count} • Видео/анимации: {video_count} • Всего: {len(gallery)}")
+            if cover:
+                lines.append(
+                    f"Primary cover: {_media_type_label(cover.media_kind)}"
+                    + (" (manual)" if (cover.source_layer or "").lower() == "manual" else " (import)")
+                )
+            idx = media_index % len(gallery)
+            current = gallery[idx]
+            marker = " • COVER" if current is cover else ""
+            lines.append(
+                f"Текущий [{idx + 1}/{len(gallery)}]: {_media_type_label(current.media_kind)}"
+                f" • priority={current.priority}{marker}"
+            )
+            lines.append(f"Ref: {escape_html_text(_shorten(current.ref, limit=90))}")
         else:
-            lines.append("Нет данных.")
+            lines.append("Нет медиа-файлов.")
 
     if show_sources:
         lines.extend(["", "<b>Источники</b>"])
@@ -360,6 +510,7 @@ def build_card_actions(
     is_admin: bool = False,
     is_in_draft: bool = False,
 ) -> InlineKeyboardMarkup:
+    gallery = _effective_media_gallery(card)
     draft_btn = (
         InlineKeyboardButton(text="✅ В Draft — тап чтобы открыть", callback_data="draft:open")
         if is_in_draft
@@ -379,6 +530,13 @@ def build_card_actions(
             ),
         ],
     ]
+    if show_media and len(gallery) > 1:
+        rows.append(
+            [
+                InlineKeyboardButton(text="◀️ Prev media", callback_data="search:media:prev"),
+                InlineKeyboardButton(text="Next media ▶️", callback_data="search:media:next"),
+            ]
+        )
 
     source_row = [
         InlineKeyboardButton(
@@ -396,6 +554,18 @@ def build_card_actions(
 
     for i in range(0, len(link_buttons), 2):
         rows.append(link_buttons[i : i + 2])
+
+    if show_media and gallery:
+        media_links: list[InlineKeyboardButton] = []
+        for idx, media in enumerate(gallery, start=1):
+            if media.ref.startswith("http://") or media.ref.startswith("https://"):
+                media_links.append(
+                    InlineKeyboardButton(text=f"{_media_type_label(media.media_kind)} {idx}", url=media.ref)
+                )
+            if len(media_links) >= 4:
+                break
+        for i in range(0, len(media_links), 2):
+            rows.append(media_links[i : i + 2])
 
     if is_admin:
         rows.append([
