@@ -226,9 +226,9 @@ def _render_settings(settings, notice: str | None = None) -> str:
 
 def _render_protocol_status(status) -> str:
     if not status.has_active_protocol:
-        return "Protocol status:\n- no active protocol"
+        return "Статус протокола:\n• активный протокол не найден"
     if status.summary is None:
-        return "Protocol status:\n- healthy\n- no adherence actions yet"
+        return "Статус протокола:\n• состояние стабильное\n• действий по соблюдению пока нет"
     s = status.summary
     misses = s.skipped_count + s.expired_count
     return "\n".join(

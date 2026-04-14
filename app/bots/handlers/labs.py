@@ -191,7 +191,7 @@ async def on_panel_selected(callback: CallbackQuery, state: FSMContext, labs_ser
         await _show_report_entry_panel(
             source_message=callback.message,
             state=state,
-            notice="Сначала создайте отчет в разделе New report.",
+            notice="Сначала создайте отчёт в разделе «Новый отчёт».",
         )
         await callback.answer()
         return
@@ -305,7 +305,7 @@ async def on_ref_min(message: Message, state: FSMContext, labs_service: LabsAppl
                 message,
                 state,
                 labs_service,
-                notice="Reference min должен быть числом или <code>-</code>.",
+                notice="Нижняя граница референса должна быть числом или <code>-</code>.",
             )
             await delete_user_input_message(message)
             return
@@ -331,7 +331,7 @@ async def on_ref_max(message: Message, state: FSMContext, labs_service: LabsAppl
                 message,
                 state,
                 labs_service,
-                notice="Reference max должен быть числом или <code>-</code>.",
+                notice="Верхняя граница референса должна быть числом или <code>-</code>.",
             )
             await delete_user_input_message(message)
             return
@@ -385,7 +385,7 @@ async def on_run_triage(
     data = await state.get_data()
     report_id_raw = data.get("report_id")
     if not report_id_raw:
-        await _show_labs_root(source_message=callback.message, state=state, notice="Нет активного отчета для triage.")
+        await _show_labs_root(source_message=callback.message, state=state, notice="Нет активного отчёта для триажа.")
         await callback.answer()
         return
     try:
@@ -439,7 +439,7 @@ async def on_regenerate_triage(
         await _show_report_entry_panel(
             source_message=callback.message,
             state=state,
-            notice=f"Regenerate не выполнен: {escape_html_text(str(exc))}",
+            notice=f"Перегенерация не выполнена: {escape_html_text(str(exc))}",
         )
         await callback.answer()
         return
@@ -471,7 +471,7 @@ async def on_latest_triage(
         await _show_report_entry_panel(
             source_message=callback.message,
             state=state,
-            notice="Для этого отчета triage пока не запускался.",
+            notice="Для этого отчёта триаж пока не запускался.",
         )
         await callback.answer()
         return
@@ -639,7 +639,7 @@ async def on_specialist_ops_menu(callback: CallbackQuery, state: FSMContext) -> 
     await safe_edit_or_send(
         state=state,
         source_message=callback.message,
-        text="<b>Operator / Specialist</b>\nСтатусы и обработка кейсов без лишнего шума.",
+        text="<b>Оператор / Специалист</b>\nСтатусы и обработка кейсов без лишнего шума.",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="Ожидающие кейсы", callback_data="labs:ops:awaiting")],
@@ -919,13 +919,13 @@ def build_labs_root_actions(can_access_operator: bool = False) -> InlineKeyboard
     rows = [
         [InlineKeyboardButton(text="🆕 Новый отчёт", callback_data="labs:new")],
         [InlineKeyboardButton(text="📂 Рабочая зона отчёта", callback_data="labs:entry")],
-        [InlineKeyboardButton(text="🕘 History", callback_data="labs:history")],
-        [InlineKeyboardButton(text="🤖 Run AI triage", callback_data="labs:triage:run")],
-        [InlineKeyboardButton(text="👩‍⚕️ Consult specialist", callback_data="labs:case:consult")],
-        [InlineKeyboardButton(text="📨 My specialist cases", callback_data="labs:case:list")],
+        [InlineKeyboardButton(text="🕘 История", callback_data="labs:history")],
+        [InlineKeyboardButton(text="🤖 Запустить AI-триаж", callback_data="labs:triage:run")],
+        [InlineKeyboardButton(text="👩‍⚕️ Консультация специалиста", callback_data="labs:case:consult")],
+        [InlineKeyboardButton(text="📨 Мои кейсы специалиста", callback_data="labs:case:list")],
     ]
     if can_access_operator:
-        rows.append([InlineKeyboardButton(text="🛠 Operator", callback_data="labs:ops:menu")])
+        rows.append([InlineKeyboardButton(text="🛠 Оператор", callback_data="labs:ops:menu")])
     rows.append([InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -958,9 +958,9 @@ def build_report_panel_actions() -> InlineKeyboardMarkup:
 def build_report_ai_actions() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Run triage", callback_data="labs:triage:run")],
-            [InlineKeyboardButton(text="Latest triage", callback_data="labs:triage:latest")],
-            [InlineKeyboardButton(text="Regenerate", callback_data="labs:triage:regenerate")],
+            [InlineKeyboardButton(text="Запустить триаж", callback_data="labs:triage:run")],
+            [InlineKeyboardButton(text="Последний триаж", callback_data="labs:triage:latest")],
+            [InlineKeyboardButton(text="Перегенерировать", callback_data="labs:triage:regenerate")],
             [InlineKeyboardButton(text="← К рабочей зоне отчёта", callback_data="labs:entry")],
         ]
     )
@@ -969,8 +969,8 @@ def build_report_ai_actions() -> InlineKeyboardMarkup:
 def build_report_action_actions() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Finalize report", callback_data="labs:finish")],
-            [InlineKeyboardButton(text="Consult specialist", callback_data="labs:case:consult")],
+            [InlineKeyboardButton(text="Завершить отчёт", callback_data="labs:finish")],
+            [InlineKeyboardButton(text="Консультация специалиста", callback_data="labs:case:consult")],
             [InlineKeyboardButton(text="← К рабочей зоне отчёта", callback_data="labs:entry")],
         ]
     )
@@ -980,8 +980,8 @@ def build_report_details_actions() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="Открыть рабочую зону", callback_data="labs:entry")],
-            [InlineKeyboardButton(text="Run triage", callback_data="labs:triage:run")],
-            [InlineKeyboardButton(text="← History", callback_data="labs:history")],
+            [InlineKeyboardButton(text="Запустить триаж", callback_data="labs:triage:run")],
+            [InlineKeyboardButton(text="← История", callback_data="labs:history")],
         ]
     )
 
@@ -996,18 +996,18 @@ def build_panel_marker_actions() -> InlineKeyboardMarkup:
 
 
 def build_case_actions(items: list | None = None) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(text="Latest case", callback_data="labs:case:latest")]]
+    rows = [[InlineKeyboardButton(text="Последний кейс", callback_data="labs:case:latest")]]
     for item in (items or [])[:5]:
         rows.append(
-            [InlineKeyboardButton(text=f"Case {mask_human_id(item.case_id)}", callback_data=f"labs:case:open:{item.case_id}")]
+            [InlineKeyboardButton(text=f"Кейс {mask_human_id(item.case_id)}", callback_data=f"labs:case:open:{item.case_id}")]
         )
-    rows.append([InlineKeyboardButton(text="← Labs", callback_data="labs:root")])
+    rows.append([InlineKeyboardButton(text="← Лабы", callback_data="labs:root")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def build_case_prompt_actions() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="← Back", callback_data="labs:entry:actions")]]
+        inline_keyboard=[[InlineKeyboardButton(text="← Назад", callback_data="labs:entry:actions")]]
     )
 
 
@@ -1017,29 +1017,29 @@ def build_history_actions(items: list[tuple] | None = None) -> InlineKeyboardMar
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"Open {report.report_date.isoformat()} · {mask_human_id(report.report_id)}",
+                    text=f"Открыть {report.report_date.isoformat()} · {mask_human_id(report.report_id)}",
                     callback_data=f"labs:history:open:{report.report_id}",
                 )
             ]
         )
-    rows.append([InlineKeyboardButton(text="← Labs", callback_data="labs:root")])
+    rows.append([InlineKeyboardButton(text="← Лабы", callback_data="labs:root")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def build_ops_awaiting_actions(items: list | None = None) -> InlineKeyboardMarkup:
     rows = []
     for item in (items or [])[:8]:
-        rows.append([InlineKeyboardButton(text=f"Open {mask_human_id(item.case_id)}", callback_data=f"labs:ops:open:{item.case_id}")])
-    rows.append([InlineKeyboardButton(text="← Operator", callback_data="labs:ops:menu")])
+        rows.append([InlineKeyboardButton(text=f"Открыть {mask_human_id(item.case_id)}", callback_data=f"labs:ops:open:{item.case_id}")])
+    rows.append([InlineKeyboardButton(text="← Оператор", callback_data="labs:ops:menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def build_operator_actions(case_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Take in review", callback_data=f"labs:ops:take:{case_id}")],
-            [InlineKeyboardButton(text="Submit answer", callback_data=f"labs:ops:answer:{case_id}")],
-            [InlineKeyboardButton(text="Close case", callback_data=f"labs:ops:close:{case_id}")],
+            [InlineKeyboardButton(text="Взять в работу", callback_data=f"labs:ops:take:{case_id}")],
+            [InlineKeyboardButton(text="Отправить ответ", callback_data=f"labs:ops:answer:{case_id}")],
+            [InlineKeyboardButton(text="Закрыть кейс", callback_data=f"labs:ops:close:{case_id}")],
             [InlineKeyboardButton(text="К ожидающим", callback_data="labs:ops:awaiting")],
         ]
     )
@@ -1082,9 +1082,9 @@ def _render_labs_root_panel(notice: str | None = None, active_report_date: str |
 
 def _render_report_entry_root_panel(report_date: str | None, notice: str | None = None) -> str:
     lines = [
-        "<b>Report workspace</b>",
+        "<b>Рабочая зона отчёта</b>",
         f"Отчет: <b>{escape_html_text(report_date or 'не выбран')}</b>",
-        "Выберите раздел: панели, AI или действия.",
+        "Выберите раздел: панели, триаж или действия.",
     ]
     if notice:
         lines.extend(["", notice])
@@ -1092,24 +1092,24 @@ def _render_report_entry_root_panel(report_date: str | None, notice: str | None 
 
 
 def _render_report_entry_panels_panel() -> str:
-    return "<b>Panels</b>\nЗаполняйте маркеры по группам без спама в чате."
+    return "<b>Панели</b>\nЗаполняйте маркеры по группам без лишних сообщений."
 
 
 def _render_report_entry_ai_panel() -> str:
-    return "<b>AI triage</b>\nЗапуск, просмотр и перегенерация triage для активного отчета."
+    return "<b>AI-триаж</b>\nЗапуск, просмотр и перегенерация триажа для активного отчёта."
 
 
 def _render_report_entry_actions_panel() -> str:
-    return "<b>Actions</b>\nФинализация отчета и передача кейса специалисту."
+    return "<b>Действия</b>\nЗавершение отчёта и передача кейса специалисту."
 
 
 def _render_history_panel(items: list[tuple], notice: str | None = None) -> str:
-    lines = ["<b>History</b>"]
+    lines = ["<b>История</b>"]
     if not items:
         lines.append("История пустая. Добавьте первый отчёт через «Новый отчёт».")
     else:
         for idx, (report, marker_count) in enumerate(items, start=1):
-            protocol = f"protocol {mask_human_id(report.protocol_id)}" if report.protocol_id else "без protocol"
+            protocol = f"протокол {mask_human_id(report.protocol_id)}" if report.protocol_id else "без протокола"
             lines.append(
                 f"{idx}. <b>{report.report_date.isoformat()}</b> · {escape_html_text(report.source_lab_name or '—')} · "
                 f"{marker_count} марк. · {protocol}"
@@ -1122,14 +1122,14 @@ def _render_history_panel(items: list[tuple], notice: str | None = None) -> str:
 def _render_report_details_panel(details) -> str:
     report = details.report
     lines = [
-        "<b>Report card</b>",
+        "<b>Карточка отчёта</b>",
         f"Дата: <b>{report.report_date.isoformat()}</b>",
         f"Лаборатория: {escape_html_text(report.source_lab_name or '—')}",
         f"Маркеров: <b>{len(details.entries)}</b>",
         f"Статус: {compact_status_label('finalized' if report.finalized_at else 'draft')}",
     ]
     if report.protocol_id:
-        lines.append(f"Protocol: <code>{mask_human_id(report.protocol_id)}</code>")
+        lines.append(f"Протокол: <code>{mask_human_id(report.protocol_id)}</code>")
     return "\n".join(lines)
 
 
@@ -1140,11 +1140,11 @@ def _render_marker_panel(marker, panel_name: str | None, index: int, total: int,
     if state_name.endswith("marker_unit"):
         step_hint = "единицу"
     elif state_name.endswith("reference_min"):
-        step_hint = "reference min"
+        step_hint = "нижнюю границу референса"
     elif state_name.endswith("reference_max"):
-        step_hint = "reference max"
+        step_hint = "верхнюю границу референса"
     lines = [
-        "<b>Panel input</b>",
+        "<b>Ввод панели</b>",
         f"Панель: <b>{escape_html_text(panel_name or '—')}</b>",
         f"Шаг {index}/{total}: <b>{escape_html_text(label)}</b>",
         f"Единицы: {escape_html_text(units)}",
@@ -1157,7 +1157,7 @@ def _render_marker_panel(marker, panel_name: str | None, index: int, total: int,
 
 def _render_specialist_note_prompt() -> str:
     return (
-        "<b>Consult specialist</b>\n"
+        "<b>Консультация специалиста</b>\n"
         "Напишите короткий вопрос к врачу или отправьте <code>-</code> без комментария."
     )
 
@@ -1166,9 +1166,9 @@ def _render_specialist_case_opened(opened) -> str:
     return "\n".join(
         [
             "<b>Кейс открыт ✅</b>",
-            f"Case: <code>{mask_human_id(opened.case.case_id)}</code>",
+            f"Кейс: <code>{mask_human_id(opened.case.case_id)}</code>",
             f"Статус: {compact_status_label(opened.case.case_status)}",
-            f"Snapshot: v{opened.snapshot.snapshot_version}",
+            f"Снимок: v{opened.snapshot.snapshot_version}",
         ]
     )
 
@@ -1190,8 +1190,8 @@ def _render_specialist_case_list_panel(items: list) -> str:
 def _render_specialist_case_detail(item, detail) -> str:
     case = detail.case
     lines = [
-        "<b>Case detail</b>",
-        f"Case: <code>{mask_human_id(case.case_id)}</code>",
+        "<b>Карточка кейса</b>",
+        f"Кейс: <code>{mask_human_id(case.case_id)}</code>",
         f"Статус: <b>{compact_status_label(case.case_status)}</b>",
         f"Открыт: {case.opened_at.date().isoformat()}",
         f"Причина: {compact_status_label(case.opened_reason_code)}",
@@ -1210,20 +1210,20 @@ def _render_specialist_case_detail(item, detail) -> str:
 
 
 def _render_awaiting_cases_panel(items: list) -> str:
-    lines = ["<b>Awaiting cases</b>"]
+    lines = ["<b>Кейсы в ожидании</b>"]
     if not items:
         lines.append("Нет кейсов в ожидании.")
     else:
         for idx, item in enumerate(items[:10], start=1):
-            lines.append(f"{idx}. <code>{mask_human_id(item.case_id)}</code> · opened {item.opened_at.date().isoformat()}")
+            lines.append(f"{idx}. <code>{mask_human_id(item.case_id)}</code> · открыт {item.opened_at.date().isoformat()}")
     return "\n".join(lines)
 
 
 def _render_ops_case_detail(detail, notice: str | None = None) -> str:
     case = detail.case
     lines = [
-        "<b>Operator case</b>",
-        f"Case: <code>{mask_human_id(case.case_id)}</code>",
+        "<b>Кейс оператора</b>",
+        f"Кейс: <code>{mask_human_id(case.case_id)}</code>",
         f"Статус: <b>{compact_status_label(case.case_status)}</b>",
         f"Пациент: <code>{mask_human_id(case.user_id)}</code>",
         f"Назначен: {escape_html_text(case.assigned_specialist_id or '—')}",
@@ -1239,11 +1239,11 @@ def _format_triage_result(result) -> str:
     severity_order = {"urgent": 0, "warning": 1, "watch": 2}
     sorted_flags = sorted(result.flags, key=lambda flag: severity_order.get(flag.severity.lower(), 3))
     lines = [
-        "<b>AI pre-triage</b>",
+        "<b>AI пре-триаж</b>",
         f"Статус: <b>{compact_status_label(result.run.triage_status)}</b> · {urgent}",
-        f"Summary: {escape_html_text(result.run.summary_text or '—')}",
+        f"Сводка: {escape_html_text(result.run.summary_text or '—')}",
         "",
-        "<b>Flags</b>",
+        "<b>Флаги</b>",
     ]
     if not sorted_flags:
         lines.append("• Нет критичных флагов.")
