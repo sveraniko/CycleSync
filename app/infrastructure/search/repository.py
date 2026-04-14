@@ -143,6 +143,8 @@ class SqlAlchemySearchRepository:
                 form_factor=product.release_form,
                 official_url=product.official_url,
                 authenticity_notes=product.authenticity_notes,
+                media_display_mode=None,
+                media_policy=None,
                 source_links=[
                     CardSourceLink(
                         kind=src.source_kind,

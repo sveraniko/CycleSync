@@ -7,12 +7,18 @@ from app.bots.handlers.draft import on_add_to_draft
 from app.bots.handlers.search import (
     SEARCH_STATE_KEY,
     PAGE_SIZE,
+    CARD_STATE_KEY,
+    _effective_media_gallery,
     _render_product_card,
+    _resolve_media_display_mode,
+    _resolve_primary_cover,
     _render_search_panel,
     build_card_actions,
     build_results_actions,
     on_back_to_results,
+    on_media_gallery_nav,
     on_search_page,
+    on_toggle_section,
     search_entrypoint,
 )
 
@@ -76,6 +82,36 @@ class FakeSearchService:
     def __init__(self, total: int = 6) -> None:
         self.total = total
         self.calls: list[dict[str, object]] = []
+        self.card = OpenCard(
+            product_id=UUID("00000000-0000-0000-0000-000000000001"),
+            product_name="Prod",
+            brand="Brand",
+            composition_summary="Comp",
+            form_factor="oil",
+            official_url="https://official.example",
+            authenticity_notes="Auth",
+            source_links=[
+                CardSourceLink(kind="source", label="Source A", url="https://src.example", priority=1, is_active=True)
+            ],
+            media_items=[
+                CardMediaItem(
+                    media_kind="image",
+                    ref="https://cdn/1.png",
+                    priority=1,
+                    is_cover=True,
+                    source_layer="import",
+                    is_active=True,
+                ),
+                CardMediaItem(
+                    media_kind="video",
+                    ref="https://cdn/2.mp4",
+                    priority=2,
+                    is_cover=False,
+                    source_layer="import",
+                    is_active=True,
+                ),
+            ],
+        )
 
     async def search_products(self, query: str, user_id: str | None, limit: int = 5, offset: int = 0, source: str = "text"):
         self.calls.append({"query": query, "user_id": user_id, "limit": limit, "offset": offset})
@@ -93,6 +129,11 @@ class FakeSearchService:
             for i in range(start + 1, end + 1)
         ]
         return SearchResponse(query=query, normalized_query=query, results=items, total=self.total)
+
+    async def open_card(self, product_id: UUID) -> OpenCard | None:
+        if product_id == self.card.product_id:
+            return self.card
+        return None
 
 
 class FakeDraftService:
@@ -189,7 +230,87 @@ def test_media_section_renders_structured_media_items() -> None:
         ],
     )
     text = _render_product_card(card, show_auth=False, show_media=True, show_sources=False)
-    assert "image #1 • cover" in text
+    assert "Primary cover: Image (import)" in text
+    assert "Текущий [1/1]: Image" in text
+
+
+def test_cover_resolution_prefers_manual_cover_then_import_then_priority() -> None:
+    card = OpenCard(
+        product_id=UUID("00000000-0000-0000-0000-000000000001"),
+        product_name="Prod",
+        brand="Brand",
+        composition_summary="Comp",
+        form_factor="oil",
+        official_url=None,
+        authenticity_notes=None,
+        media_policy="merge",
+        source_links=[],
+        media_items=[
+            CardMediaItem(media_kind="image", ref="https://cdn/import-cover.png", priority=2, is_cover=True, source_layer="import", is_active=True),
+            CardMediaItem(media_kind="image", ref="https://cdn/manual-cover.png", priority=3, is_cover=True, source_layer="manual", is_active=True),
+            CardMediaItem(media_kind="image", ref="https://cdn/fallback.png", priority=1, is_cover=False, source_layer="import", is_active=True),
+        ],
+    )
+    assert _resolve_primary_cover(card).ref == "https://cdn/manual-cover.png"
+
+    card.media_policy = "import_only"
+    assert _resolve_primary_cover(card).ref == "https://cdn/import-cover.png"
+
+    card.media_items = [CardMediaItem(media_kind="image", ref="https://cdn/p1.png", priority=1, is_cover=False, source_layer="import", is_active=True)]
+    assert _resolve_primary_cover(card).ref == "https://cdn/p1.png"
+
+
+def test_show_cover_on_open_rendering() -> None:
+    card = OpenCard(
+        product_id=UUID("00000000-0000-0000-0000-000000000001"),
+        product_name="Prod",
+        brand="Brand",
+        composition_summary="Comp",
+        form_factor="oil",
+        official_url=None,
+        authenticity_notes=None,
+        media_display_mode="show_cover_on_open",
+        source_links=[],
+        media_items=[
+            CardMediaItem(media_kind="image", ref="https://cdn/x.png", priority=1, is_cover=True, source_layer="import", is_active=True)
+        ],
+    )
+    text = _render_product_card(card, show_auth=False, show_media=False, show_sources=False)
+    assert "Обложка при открытии: Image • cover" in text
+    assert _resolve_media_display_mode(card) == "show_cover_on_open"
+
+
+def test_on_demand_media_rendering_mode() -> None:
+    card = OpenCard(
+        product_id=UUID("00000000-0000-0000-0000-000000000001"),
+        product_name="Prod",
+        brand="Brand",
+        composition_summary="Comp",
+        form_factor="oil",
+        official_url=None,
+        authenticity_notes=None,
+        media_display_mode="on_demand",
+        source_links=[],
+        media_items=[CardMediaItem(media_kind="video", ref="https://cdn/v.mp4", priority=1, is_cover=False, source_layer="import", is_active=True)],
+    )
+    text = _render_product_card(card, show_auth=False, show_media=False, show_sources=False)
+    assert "по запросу через Show media" in text
+
+
+def test_no_media_truthful_rendering() -> None:
+    card = OpenCard(
+        product_id=UUID("00000000-0000-0000-0000-000000000001"),
+        product_name="Prod",
+        brand="Brand",
+        composition_summary="Comp",
+        form_factor="oil",
+        official_url=None,
+        authenticity_notes=None,
+        source_links=[],
+        media_items=[],
+    )
+    text = _render_product_card(card, show_auth=False, show_media=False, show_sources=False)
+    assert "Нет медиа-файлов." in text
 
 
 def test_card_actions_preserve_official_source_media_separation_and_ordering() -> None:
@@ -219,6 +340,27 @@ def test_card_actions_preserve_official_source_media_separation_and_ordering() -
     keyboard = build_card_actions(card, show_auth=False, show_media=False, show_sources=False)
     url_buttons = [b for row in keyboard.inline_keyboard for b in row if b.url]
     assert [b.text for b in url_buttons] == ["Official", "Source 1", "Source 2"]
+    assert all(not text.startswith("Image") and not text.startswith("Video") for text in [b.text for b in url_buttons])
+
+
+def test_effective_media_gallery_respects_manual_only_policy() -> None:
+    card = OpenCard(
+        product_id=UUID("00000000-0000-0000-0000-000000000001"),
+        product_name="Prod",
+        brand="Brand",
+        composition_summary=None,
+        form_factor=None,
+        official_url=None,
+        authenticity_notes=None,
+        media_policy="manual_only",
+        source_links=[],
+        media_items=[
+            CardMediaItem(media_kind="image", ref="https://cdn/import.png", priority=1, is_cover=False, source_layer="import", is_active=True),
+            CardMediaItem(media_kind="image", ref="https://cdn/manual.png", priority=2, is_cover=False, source_layer="manual", is_active=True),
+        ],
+    )
+    gallery = _effective_media_gallery(card)
+    assert [item.ref for item in gallery] == ["https://cdn/manual.png"]
 
 
 def test_pagination_controls_smoke() -> None:
@@ -289,5 +431,56 @@ def test_search_flow_uses_single_panel_container_semantics() -> None:
         callback = FakeCallback(message, "search:page:0")
         await on_search_page(callback=callback, state=state, search_service=service, draft_service=FakeDraftService(added=True))
         assert len(message.bot.edits) == 1
+
+    asyncio.run(runner())
+
+
+def test_product_card_media_toggle_smoke() -> None:
+    async def runner() -> None:
+        state = FakeFSMContext()
+        message = FakeMessage()
+        service = FakeSearchService(total=1)
+        await state.update_data(
+            **{
+                CARD_STATE_KEY: {
+                    "product_id": str(service.card.product_id),
+                    "show_auth": False,
+                    "show_media": False,
+                    "show_sources": False,
+                    "media_index": 0,
+                }
+            }
+        )
+        callback = FakeCallback(message, "search:toggle:media")
+        await on_toggle_section(callback=callback, state=state, search_service=service)
+        card_state = (await state.get_data())[CARD_STATE_KEY]
+        assert card_state["show_media"] is True
+        assert "Media gallery" in message.answers[0]["text"]
+
+    asyncio.run(runner())
+
+
+def test_panel_driven_media_interaction_smoke() -> None:
+    async def runner() -> None:
+        state = FakeFSMContext()
+        message = FakeMessage()
+        service = FakeSearchService(total=1)
+        await state.update_data(
+            **{
+                CARD_STATE_KEY: {
+                    "product_id": str(service.card.product_id),
+                    "show_auth": False,
+                    "show_media": True,
+                    "show_sources": False,
+                    "media_index": 0,
+                }
+            }
+        )
+        callback = FakeCallback(message, "search:media:next")
+        await on_media_gallery_nav(callback=callback, state=state, search_service=service)
+        card_state = (await state.get_data())[CARD_STATE_KEY]
+        assert card_state["media_index"] == 1
+        assert len(message.answers) == 1
+        assert len(message.bot.edits) == 0
 
     asyncio.run(runner())
