@@ -34,3 +34,14 @@ class SearchRepository(Protocol):
     async def get_open_card(self, product_id: UUID) -> OpenCard | None: ...
 
     async def add_product_media_ref(self, product_id: UUID, ref_url: str, media_kind: str) -> bool: ...
+
+    async def update_product_media_admin_settings(
+        self,
+        product_id: UUID,
+        *,
+        media_policy: str | None = None,
+        media_display_mode: str | None = None,
+        sync_images: bool | None = None,
+        sync_videos: bool | None = None,
+        sync_sources: bool | None = None,
+    ) -> bool: ...

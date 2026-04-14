@@ -143,14 +143,18 @@ class SqlAlchemySearchRepository:
                 form_factor=product.release_form,
                 official_url=product.official_url,
                 authenticity_notes=product.authenticity_notes,
-                media_display_mode=None,
-                media_policy=None,
+                media_display_mode=product.media_display_mode,
+                media_policy=product.media_policy,
+                sync_images=product.sync_images,
+                sync_videos=product.sync_videos,
+                sync_sources=product.sync_sources,
                 source_links=[
                     CardSourceLink(
                         kind=src.source_kind,
                         label=src.label,
                         url=src.url,
                         priority=src.sort_order,
+                        source_layer=src.source_layer,
                         is_active=src.is_active,
                     )
                     for src in sorted(product.source_refs, key=lambda x: x.sort_order)
@@ -192,6 +196,33 @@ class SqlAlchemySearchRepository:
                     source_layer="manual",
                 )
             )
+            await session.commit()
+            return True
+
+    async def update_product_media_admin_settings(
+        self,
+        product_id: UUID,
+        *,
+        media_policy: str | None = None,
+        media_display_mode: str | None = None,
+        sync_images: bool | None = None,
+        sync_videos: bool | None = None,
+        sync_sources: bool | None = None,
+    ) -> bool:
+        async with self.session_factory() as session:
+            product = await session.get(CompoundProduct, product_id)
+            if product is None:
+                return False
+            if media_policy is not None:
+                product.media_policy = media_policy
+            if media_display_mode is not None:
+                product.media_display_mode = media_display_mode
+            if sync_images is not None:
+                product.sync_images = sync_images
+            if sync_videos is not None:
+                product.sync_videos = sync_videos
+            if sync_sources is not None:
+                product.sync_sources = sync_sources
             await session.commit()
             return True
 

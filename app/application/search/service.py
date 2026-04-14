@@ -116,3 +116,23 @@ class SearchApplicationService:
         return await self.repository.add_product_media_ref(
             product_id=product_id, ref_url=ref_url, media_kind=media_kind
         )
+
+
+    async def admin_update_product_media_settings(
+        self,
+        product_id: UUID,
+        *,
+        media_policy: str | None = None,
+        media_display_mode: str | None = None,
+        sync_images: bool | None = None,
+        sync_videos: bool | None = None,
+        sync_sources: bool | None = None,
+    ) -> bool:
+        return await self.repository.update_product_media_admin_settings(
+            product_id=product_id,
+            media_policy=media_policy,
+            media_display_mode=media_display_mode,
+            sync_images=sync_images,
+            sync_videos=sync_videos,
+            sync_sources=sync_sources,
+        )

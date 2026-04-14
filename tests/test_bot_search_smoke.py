@@ -20,6 +20,9 @@ from app.bots.handlers.search import (
     on_search_page,
     on_toggle_section,
     search_entrypoint,
+    on_admin_product_media_policy,
+    on_admin_product_display_mode,
+    on_admin_product_sync_toggle,
 )
 
 
@@ -90,8 +93,13 @@ class FakeSearchService:
             form_factor="oil",
             official_url="https://official.example",
             authenticity_notes="Auth",
+            media_policy="merge",
+            media_display_mode="on_demand",
+            sync_images=True,
+            sync_videos=True,
+            sync_sources=True,
             source_links=[
-                CardSourceLink(kind="source", label="Source A", url="https://src.example", priority=1, is_active=True)
+                CardSourceLink(kind="source", label="Source A", url="https://src.example", priority=1, source_layer="import", is_active=True)
             ],
             media_items=[
                 CardMediaItem(
@@ -134,6 +142,13 @@ class FakeSearchService:
         if product_id == self.card.product_id:
             return self.card
         return None
+
+    async def admin_update_product_media_settings(self, product_id: UUID, **kwargs):
+        if product_id != self.card.product_id:
+            return False
+        for k, v in kwargs.items():
+            setattr(self.card, k, v)
+        return True
 
 
 class FakeDraftService:
@@ -482,5 +497,120 @@ def test_panel_driven_media_interaction_smoke() -> None:
         assert card_state["media_index"] == 1
         assert len(message.answers) == 1
         assert len(message.bot.edits) == 0
+
+    asyncio.run(runner())
+
+
+def test_admin_sees_media_source_policy_controls() -> None:
+    card = OpenCard(
+        product_id=UUID("00000000-0000-0000-0000-000000000001"),
+        product_name="Prod",
+        brand="Brand",
+        composition_summary="Comp",
+        form_factor="oil",
+        official_url=None,
+        authenticity_notes=None,
+        media_policy="merge",
+        media_display_mode="on_demand",
+        sync_images=True,
+        sync_videos=False,
+        sync_sources=True,
+        source_links=[],
+        media_items=[],
+    )
+    text = _render_product_card(card, show_auth=False, show_media=False, show_sources=False, is_admin=True, show_admin_media_controls=True)
+    keyboard = build_card_actions(
+        card,
+        show_auth=False,
+        show_media=False,
+        show_sources=False,
+        is_admin=True,
+        show_admin_media_controls=True,
+    )
+    labels = [b.text for row in keyboard.inline_keyboard for b in row]
+    assert "Admin: Media/Source policy status" in text
+    assert "Media policy: <code>merge</code>" in text
+    assert "Display mode: <code>on_demand</code>" in text
+    assert any("Sync images:" in label for label in labels)
+    assert any("Sync videos:" in label for label in labels)
+    assert any("Sync sources:" in label for label in labels)
+
+
+def test_non_admin_does_not_see_media_source_controls() -> None:
+    card = OpenCard(
+        product_id=UUID("00000000-0000-0000-0000-000000000001"),
+        product_name="Prod",
+        brand="Brand",
+        composition_summary="Comp",
+        form_factor="oil",
+        official_url=None,
+        authenticity_notes=None,
+        source_links=[],
+        media_items=[],
+    )
+    keyboard = build_card_actions(card, show_auth=False, show_media=False, show_sources=False, is_admin=False)
+    labels = [b.text for row in keyboard.inline_keyboard for b in row]
+    assert not any("Media/source policy" in label for label in labels)
+
+
+def test_source_links_obey_media_policy() -> None:
+    card = OpenCard(
+        product_id=UUID("00000000-0000-0000-0000-000000000001"),
+        product_name="Prod",
+        brand="Brand",
+        composition_summary="Comp",
+        form_factor="oil",
+        official_url=None,
+        authenticity_notes=None,
+        media_policy="manual_only",
+        source_links=[
+            CardSourceLink(kind="source", label="Import src", url="https://import.example", priority=1, source_layer="import", is_active=True),
+            CardSourceLink(kind="source", label="Manual src", url="https://manual.example", priority=2, source_layer="manual", is_active=True),
+        ],
+        media_items=[],
+    )
+    keyboard = build_card_actions(card, show_auth=False, show_media=False, show_sources=True)
+    labels = [b.text for row in keyboard.inline_keyboard for b in row if b.url]
+    assert "Manual src" in labels
+    assert "Import src" not in labels
+
+
+def test_admin_policy_and_display_persist_and_affect_card_behavior() -> None:
+    async def runner() -> None:
+        state = FakeFSMContext()
+        message = FakeMessage()
+        service = FakeSearchService(total=1)
+        callback_policy = FakeCallback(message, f"a:p:mp:{service.card.product_id}:manual_only")
+        await on_admin_product_media_policy(callback=callback_policy, state=state, search_service=service, admin_ids=(11,))
+        assert service.card.media_policy == "manual_only"
+
+        text = message.answers[0]["text"]
+        assert "Нет медиа-файлов." in text
+
+        callback_mode = FakeCallback(message, f"a:p:dm:{service.card.product_id}:sc")
+        await on_admin_product_display_mode(callback=callback_mode, state=state, search_service=service, admin_ids=(11,))
+        assert service.card.media_display_mode == "show_cover_on_open"
+        assert "Нет медиа-файлов." in message.bot.edits[-1]["text"]
+
+    asyncio.run(runner())
+
+
+def test_admin_sync_toggles_persist() -> None:
+    async def runner() -> None:
+        state = FakeFSMContext()
+        message = FakeMessage()
+        service = FakeSearchService(total=1)
+
+        c1 = FakeCallback(message, f"a:p:st:{service.card.product_id}:i")
+        await on_admin_product_sync_toggle(callback=c1, state=state, search_service=service, admin_ids=(11,))
+        assert service.card.sync_images is False
+
+        c2 = FakeCallback(message, f"a:p:st:{service.card.product_id}:v")
+        await on_admin_product_sync_toggle(callback=c2, state=state, search_service=service, admin_ids=(11,))
+        assert service.card.sync_videos is False
+
+        c3 = FakeCallback(message, f"a:p:st:{service.card.product_id}:s")
+        await on_admin_product_sync_toggle(callback=c3, state=state, search_service=service, admin_ids=(11,))
+        assert service.card.sync_sources is False
 
     asyncio.run(runner())
