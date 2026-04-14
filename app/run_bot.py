@@ -14,6 +14,7 @@ from app.application.reminders import ReminderApplicationService
 from app.application.labs import LabsApplicationService, LabsTriageService
 from app.application.expert_cases import SpecialistCaseAssemblyService
 from app.application.search import SearchApplicationService
+from app.application.catalog.admin_sync import CatalogAdminSyncService
 from app.application.commerce import CheckoutFulfillmentService, CheckoutService, FreePaymentProvider, PaymentProviderRegistry, StarsPaymentProvider
 from app.bots.router import get_root_router
 from app.bots.core.admin_config import AdminRuntimeConfig
@@ -106,6 +107,7 @@ async def run_bot() -> None:
     admin_config = AdminRuntimeConfig(
         commerce_enabled=settings.commerce_mode != "disabled",
     )
+    catalog_admin_service = CatalogAdminSyncService(settings=settings)
 
     logger.info("bot_startup", env=settings.app_env)
     try:
@@ -123,6 +125,7 @@ async def run_bot() -> None:
             checkout_service=checkout_service,
             admin_ids=admin_ids,
             admin_config=admin_config,
+            catalog_admin_service=catalog_admin_service,
             debug_enabled=settings.bot_debug_enabled,
         )
     finally:
