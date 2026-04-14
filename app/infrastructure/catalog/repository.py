@@ -106,7 +106,8 @@ class SqlAlchemyCatalogRepository:
             existing.display_name = product.display_name
             existing.normalized_display_name = normalized_display_name
             existing.trade_name = product.trade_name
-            existing.official_url = product.official_url
+            if existing.sync_sources:
+                existing.official_url = product.official_url
             existing.authenticity_notes = product.authenticity_notes
             existing.max_injection_volume_ml = product.max_injection_volume_ml
             existing.is_automatable = product.is_automatable
@@ -129,11 +130,18 @@ class SqlAlchemyCatalogRepository:
         await self._replace_aliases(existing.id, product.aliases)
         await self._replace_ingredients(existing.id, product)
         if product.media_items:
-            await self._replace_media_items(existing.id, product.media_items)
+            await self._sync_import_media_items(
+                existing.id,
+                product.media_items,
+                sync_images=existing.sync_images,
+                sync_videos=existing.sync_videos,
+            )
         else:
-            await self._replace_media(existing.id, "image", product.image_refs)
-            await self._replace_media(existing.id, "video", product.video_refs)
-        await self._replace_source_links(existing.id, product.source_links)
+            if existing.sync_images:
+                await self._replace_import_media(existing.id, "image", product.image_refs)
+            if existing.sync_videos:
+                await self._replace_import_media(existing.id, "video", product.video_refs)
+        await self._sync_import_source_links(existing.id, product.source_links, sync_sources=existing.sync_sources)
         await self.session.flush()
         return existing.id, action
 
@@ -179,10 +187,14 @@ class SqlAlchemyCatalogRepository:
                 )
             )
 
-    async def _replace_media(self, product_id: UUID, media_kind: str, refs: list[str]) -> None:
+    async def _replace_import_media(self, product_id: UUID, media_kind: str, refs: list[str]) -> None:
         await self.session.execute(
             delete(ProductMediaRef).where(
-                and_(ProductMediaRef.product_id == product_id, ProductMediaRef.media_kind == media_kind)
+                and_(
+                    ProductMediaRef.product_id == product_id,
+                    ProductMediaRef.media_kind == media_kind,
+                    ProductMediaRef.source_layer == "import",
+                )
             )
         )
         for index, ref in enumerate(refs):
@@ -197,24 +209,75 @@ class SqlAlchemyCatalogRepository:
                 )
             )
 
-    async def _replace_media_items(self, product_id: UUID, media_items: list[MediaInput]) -> None:
-        await self.session.execute(delete(ProductMediaRef).where(ProductMediaRef.product_id == product_id))
-        for item in sorted(media_items, key=lambda x: x.priority):
-            self.session.add(
-                ProductMediaRef(
-                    product_id=product_id,
-                    media_kind=item.media_kind,
-                    ref_url=item.ref,
-                    sort_order=item.priority,
-                    is_cover=item.is_cover,
-                    source_layer=item.source_layer or "import",
-                    is_active=item.is_active,
+    async def _sync_import_media_items(
+        self,
+        product_id: UUID,
+        media_items: list[MediaInput],
+        *,
+        sync_images: bool,
+        sync_videos: bool,
+    ) -> None:
+        import_items = [item for item in media_items if (item.source_layer or "import") == "import"]
+        image_items = [item for item in import_items if item.media_kind == "image"]
+        video_items = [item for item in import_items if item.media_kind in {"video", "gif", "animation"}]
+
+        if sync_images:
+            await self.session.execute(
+                delete(ProductMediaRef).where(
+                    and_(
+                        ProductMediaRef.product_id == product_id,
+                        ProductMediaRef.media_kind == "image",
+                        ProductMediaRef.source_layer == "import",
+                    )
                 )
             )
+            for item in sorted(image_items, key=lambda x: x.priority):
+                self.session.add(
+                    ProductMediaRef(
+                        product_id=product_id,
+                        media_kind=item.media_kind,
+                        ref_url=item.ref,
+                        sort_order=item.priority,
+                        is_cover=item.is_cover,
+                        source_layer="import",
+                        is_active=item.is_active,
+                    )
+                )
 
-    async def _replace_source_links(self, product_id: UUID, source_links: list[SourceLinkInput]) -> None:
-        await self.session.execute(delete(ProductSourceRef).where(ProductSourceRef.product_id == product_id))
+        if sync_videos:
+            await self.session.execute(
+                delete(ProductMediaRef).where(
+                    and_(
+                        ProductMediaRef.product_id == product_id,
+                        ProductMediaRef.media_kind.in_(["video", "gif", "animation"]),
+                        ProductMediaRef.source_layer == "import",
+                    )
+                )
+            )
+            for item in sorted(video_items, key=lambda x: x.priority):
+                self.session.add(
+                    ProductMediaRef(
+                        product_id=product_id,
+                        media_kind=item.media_kind,
+                        ref_url=item.ref,
+                        sort_order=item.priority,
+                        is_cover=item.is_cover,
+                        source_layer="import",
+                        is_active=item.is_active,
+                    )
+                )
+
+    async def _sync_import_source_links(self, product_id: UUID, source_links: list[SourceLinkInput], *, sync_sources: bool) -> None:
+        if not sync_sources:
+            return
+        await self.session.execute(
+            delete(ProductSourceRef).where(
+                and_(ProductSourceRef.product_id == product_id, ProductSourceRef.source_layer == "import")
+            )
+        )
         for item in sorted(source_links, key=lambda x: x.priority):
+            if (item.source_layer or "import") != "import":
+                continue
             self.session.add(
                 ProductSourceRef(
                     product_id=product_id,
@@ -222,7 +285,7 @@ class SqlAlchemyCatalogRepository:
                     label=item.label,
                     url=item.url,
                     sort_order=item.priority,
-                    source_layer=item.source_layer or "import",
+                    source_layer="import",
                     is_active=item.is_active,
                 )
             )

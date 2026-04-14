@@ -53,6 +53,9 @@ class OpenCard:
     authenticity_notes: str | None
     media_display_mode: str | None = None
     media_policy: str | None = None
+    sync_images: bool | None = None
+    sync_videos: bool | None = None
+    sync_sources: bool | None = None
     source_links: list["CardSourceLink"] = field(default_factory=list)
     media_items: list["CardMediaItem"] = field(default_factory=list)
 
@@ -63,7 +66,8 @@ class CardSourceLink:
     label: str
     url: str
     priority: int
-    is_active: bool
+    source_layer: str | None = None
+    is_active: bool = True
 
 
 @dataclass(slots=True)

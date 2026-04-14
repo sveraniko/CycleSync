@@ -11,10 +11,11 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.types.callback_query import CallbackQuery
 
 from app.application.protocols import DraftApplicationService
-from app.application.search.schemas import OpenCard, SearchResponse, SearchResultItem
+from app.application.search.schemas import CardMediaItem, CardSourceLink, OpenCard, SearchResponse, SearchResultItem
 from app.application.search.service import SearchApplicationService
 from app.bots.core.flow import delete_user_input_message, safe_edit_or_send
 from app.bots.core.formatting import escape_html_text
+from app.bots.core.permissions import is_admin_user
 
 router = Router(name="search")
 
@@ -74,12 +75,12 @@ async def on_open_card(
                 "show_sources": False,
                 "media_index": 0,
                 "is_in_draft": False,  # updated by on_add_to_draft when item is added
+                "show_admin_media_controls": False,
             }
         }
     )
 
     uid = callback.from_user.id if callback.from_user else None
-    from app.bots.core.permissions import is_admin_user
     await _render_card(callback.message, state, card, is_admin=is_admin_user(uid, admin_ids))
     await callback.answer()
 
@@ -147,7 +148,7 @@ async def on_toggle_section(
     admin_ids: tuple[int, ...] | None = None,
 ) -> None:
     section = callback.data.split(":", 2)[2]
-    if section not in {"auth", "media", "sources"}:
+    if section not in {"auth", "media", "sources", "admin_media"}:
         await callback.answer("Неизвестный раздел", show_alert=True)
         return
 
@@ -156,6 +157,22 @@ async def on_toggle_section(
     product_id = card_state.get("product_id")
     if not product_id:
         await callback.answer("Карточка не активна", show_alert=True)
+        return
+
+    if section == "admin_media":
+        uid = callback.from_user.id if callback.from_user else None
+        if not is_admin_user(uid, admin_ids):
+            await callback.answer("Нет доступа", show_alert=True)
+            return
+        card_state["show_admin_media_controls"] = not bool(card_state.get("show_admin_media_controls", False))
+        await state.update_data(**{CARD_STATE_KEY: card_state})
+
+        card = await search_service.open_card(UUID(str(product_id)))
+        if card is None:
+            await callback.answer("Карточка не найдена", show_alert=True)
+            return
+        await _render_card(callback.message, state, card, is_admin=True)
+        await callback.answer()
         return
 
     state_key = {
@@ -174,9 +191,103 @@ async def on_toggle_section(
         return
 
     uid = callback.from_user.id if callback.from_user else None
-    from app.bots.core.permissions import is_admin_user
     await _render_card(callback.message, state, card, is_admin=is_admin_user(uid, admin_ids))
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("a:p:mp:"))
+async def on_admin_product_media_policy(
+    callback: CallbackQuery,
+    state: FSMContext,
+    search_service: SearchApplicationService,
+    admin_ids: tuple[int, ...] | None = None,
+) -> None:
+    uid = callback.from_user.id if callback.from_user else None
+    if not is_admin_user(uid, admin_ids):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    _, _, _, product_id, value = callback.data.split(":", 4)
+    if value not in {MEDIA_POLICY_IMPORT_ONLY, MEDIA_POLICY_MANUAL_ONLY, MEDIA_POLICY_PREFER_MANUAL, MEDIA_POLICY_MERGE}:
+        await callback.answer("Некорректная policy", show_alert=True)
+        return
+    updated = await search_service.admin_update_product_media_settings(UUID(product_id), media_policy=value)
+    if not updated:
+        await callback.answer("Карточка не найдена", show_alert=True)
+        return
+    card = await search_service.open_card(UUID(product_id))
+    if card is None:
+        await callback.answer("Карточка не найдена", show_alert=True)
+        return
+    await _render_card(callback.message, state, card, is_admin=True)
+    await callback.answer("Media policy обновлена")
+
+
+@router.callback_query(F.data.startswith("a:p:dm:"))
+async def on_admin_product_display_mode(
+    callback: CallbackQuery,
+    state: FSMContext,
+    search_service: SearchApplicationService,
+    admin_ids: tuple[int, ...] | None = None,
+) -> None:
+    uid = callback.from_user.id if callback.from_user else None
+    if not is_admin_user(uid, admin_ids):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    _, _, _, product_id, value = callback.data.split(":", 4)
+    mode_map = {"n": MEDIA_DISPLAY_NONE, "od": MEDIA_DISPLAY_ON_DEMAND, "sc": MEDIA_DISPLAY_SHOW_COVER}
+    mode_value = mode_map.get(value)
+    if mode_value is None:
+        await callback.answer("Некорректный display mode", show_alert=True)
+        return
+    updated = await search_service.admin_update_product_media_settings(UUID(product_id), media_display_mode=mode_value)
+    if not updated:
+        await callback.answer("Карточка не найдена", show_alert=True)
+        return
+    card = await search_service.open_card(UUID(product_id))
+    if card is None:
+        await callback.answer("Карточка не найдена", show_alert=True)
+        return
+    await _render_card(callback.message, state, card, is_admin=True)
+    await callback.answer("Display mode обновлён")
+
+
+@router.callback_query(F.data.startswith("a:p:st:"))
+async def on_admin_product_sync_toggle(
+    callback: CallbackQuery,
+    state: FSMContext,
+    search_service: SearchApplicationService,
+    admin_ids: tuple[int, ...] | None = None,
+) -> None:
+    uid = callback.from_user.id if callback.from_user else None
+    if not is_admin_user(uid, admin_ids):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    _, _, _, product_id, channel = callback.data.split(":", 4)
+    card = await search_service.open_card(UUID(product_id))
+    if card is None:
+        await callback.answer("Карточка не найдена", show_alert=True)
+        return
+    kwargs: dict[str, bool] = {}
+    if channel == "i":
+        kwargs["sync_images"] = not bool(card.sync_images)
+    elif channel == "v":
+        kwargs["sync_videos"] = not bool(card.sync_videos)
+    elif channel == "s":
+        kwargs["sync_sources"] = not bool(card.sync_sources)
+    else:
+        await callback.answer("Некорректный sync-канал", show_alert=True)
+        return
+
+    updated = await search_service.admin_update_product_media_settings(UUID(product_id), **kwargs)
+    if not updated:
+        await callback.answer("Карточка не найдена", show_alert=True)
+        return
+    updated_card = await search_service.open_card(UUID(product_id))
+    if updated_card is None:
+        await callback.answer("Карточка не найдена", show_alert=True)
+        return
+    await _render_card(callback.message, state, updated_card, is_admin=True)
+    await callback.answer("Sync-флаг обновлён")
 
 
 @router.callback_query(F.data.startswith("search:media:"))
@@ -215,7 +326,6 @@ async def on_media_gallery_nav(
     await state.update_data(**{CARD_STATE_KEY: card_state})
 
     uid = callback.from_user.id if callback.from_user else None
-    from app.bots.core.permissions import is_admin_user
     await _render_card(callback.message, state, card, is_admin=is_admin_user(uid, admin_ids))
     await callback.answer()
 
@@ -300,6 +410,8 @@ async def _render_card(message: Message, state: FSMContext, card: OpenCard, is_a
         show_media=show_media,
         show_sources=show_sources,
         media_index=media_index,
+        is_admin=is_admin,
+        show_admin_media_controls=bool(card_state.get("show_admin_media_controls", False)),
     )
     await safe_edit_or_send(
         state=state,
@@ -312,6 +424,7 @@ async def _render_card(message: Message, state: FSMContext, card: OpenCard, is_a
             show_sources=show_sources,
             is_admin=is_admin,
             is_in_draft=is_in_draft,
+            show_admin_media_controls=bool(card_state.get("show_admin_media_controls", False)),
         ),
         parse_mode=ParseMode.HTML,
     )
@@ -369,6 +482,46 @@ def _effective_media_gallery(card: OpenCard) -> list[CardMediaItem]:
     return ordered
 
 
+
+
+def _effective_source_links(card: OpenCard) -> list[CardSourceLink]:
+    policy = (card.media_policy or MEDIA_POLICY_MERGE).strip().lower()
+    valid_policy = policy if policy in {
+        MEDIA_POLICY_IMPORT_ONLY,
+        MEDIA_POLICY_MANUAL_ONLY,
+        MEDIA_POLICY_PREFER_MANUAL,
+        MEDIA_POLICY_MERGE,
+    } else MEDIA_POLICY_MERGE
+    allowed = [item for item in card.source_links if item.is_active and _policy_allows_layer(valid_policy, item.source_layer)]
+    ordered = sorted(allowed, key=lambda x: x.priority)
+    if valid_policy == MEDIA_POLICY_PREFER_MANUAL:
+        return sorted(ordered, key=lambda x: ((x.source_layer or "import") != "manual", x.priority))
+    return ordered
+
+
+def _sync_flag_label(value: bool | None) -> str:
+    return "ON" if bool(value) else "OFF"
+
+
+def _render_admin_media_status(card: OpenCard) -> list[str]:
+    effective_sources = _effective_source_links(card)
+    manual_media = sum(1 for item in card.media_items if item.is_active and (item.source_layer or "import") == "manual")
+    import_media = sum(1 for item in card.media_items if item.is_active and (item.source_layer or "import") != "manual")
+    manual_sources = sum(1 for item in card.source_links if item.is_active and (item.source_layer or "import") == "manual")
+    import_sources = sum(1 for item in card.source_links if item.is_active and (item.source_layer or "import") != "manual")
+
+    return [
+        "",
+        "<b>Admin: Media/Source policy status</b>",
+        f"Media policy: <code>{(card.media_policy or MEDIA_POLICY_MERGE)}</code>",
+        f"Display mode: <code>{_resolve_media_display_mode(card)}</code>",
+        f"Sync images: <b>{_sync_flag_label(card.sync_images)}</b>",
+        f"Sync videos: <b>{_sync_flag_label(card.sync_videos)}</b>",
+        f"Sync sources: <b>{_sync_flag_label(card.sync_sources)}</b>",
+        f"Media counts: manual={manual_media}, import={import_media}",
+        f"Source counts: effective={len(effective_sources)}, manual={manual_sources}, import={import_sources}",
+        "Official = primary button; Sources = link buttons; Media = gallery items.",
+    ]
 def _resolve_primary_cover(card: OpenCard) -> CardMediaItem | None:
     gallery = _effective_media_gallery(card)
     if not gallery:
@@ -400,6 +553,8 @@ def _render_product_card(
     show_media: bool,
     show_sources: bool,
     media_index: int = 0,
+    is_admin: bool = False,
+    show_admin_media_controls: bool = False,
 ) -> str:
     display_mode = _resolve_media_display_mode(card)
     gallery = _effective_media_gallery(card)
@@ -458,10 +613,13 @@ def _render_product_card(
 
     if show_sources:
         lines.extend(["", "<b>Источники</b>"])
-        if card.official_url or card.source_links:
+        if card.official_url or _effective_source_links(card):
             lines.append("Ссылки доступны кнопками ниже.")
         else:
             lines.append("Нет данных.")
+
+    if is_admin and show_admin_media_controls:
+        lines.extend(_render_admin_media_status(card))
 
     return "\n".join(lines)
 
@@ -509,6 +667,7 @@ def build_card_actions(
     show_sources: bool,
     is_admin: bool = False,
     is_in_draft: bool = False,
+    show_admin_media_controls: bool = False,
 ) -> InlineKeyboardMarkup:
     gallery = _effective_media_gallery(card)
     draft_btn = (
@@ -549,7 +708,7 @@ def build_card_actions(
     link_buttons: list[InlineKeyboardButton] = []
     if card.official_url:
         link_buttons.append(InlineKeyboardButton(text="Official", url=card.official_url))
-    for source in sorted(card.source_links, key=lambda item: item.priority):
+    for source in _effective_source_links(card):
         link_buttons.append(InlineKeyboardButton(text=source.label, url=source.url))
 
     for i in range(0, len(link_buttons), 2):
@@ -569,8 +728,37 @@ def build_card_actions(
 
     if is_admin:
         rows.append([
+            InlineKeyboardButton(
+                text=("✖ Закрыть policy" if show_admin_media_controls else "🛠 Media/source policy"),
+                callback_data="search:toggle:admin_media",
+            ),
             InlineKeyboardButton(text="🖼️ Добавить медиа", callback_data=f"admin:media:start:{card.product_id}"),
         ])
+        if show_admin_media_controls:
+            rows.extend([
+                [
+                    InlineKeyboardButton(text="Policy: import_only", callback_data=f"a:p:mp:{card.product_id}:import_only"),
+                    InlineKeyboardButton(text="Policy: manual_only", callback_data=f"a:p:mp:{card.product_id}:manual_only"),
+                ],
+                [
+                    InlineKeyboardButton(text="Policy: prefer_manual", callback_data=f"a:p:mp:{card.product_id}:prefer_manual"),
+                    InlineKeyboardButton(text="Policy: merge", callback_data=f"a:p:mp:{card.product_id}:merge"),
+                ],
+                [
+                    InlineKeyboardButton(text="Display: none", callback_data=f"a:p:dm:{card.product_id}:n"),
+                    InlineKeyboardButton(text="Display: on_demand", callback_data=f"a:p:dm:{card.product_id}:od"),
+                ],
+                [
+                    InlineKeyboardButton(text="Display: show_cover_on_open", callback_data=f"a:p:dm:{card.product_id}:sc"),
+                ],
+                [
+                    InlineKeyboardButton(text=f"Sync images: {_sync_flag_label(card.sync_images)}", callback_data=f"a:p:st:{card.product_id}:i"),
+                    InlineKeyboardButton(text=f"Sync videos: {_sync_flag_label(card.sync_videos)}", callback_data=f"a:p:st:{card.product_id}:v"),
+                ],
+                [
+                    InlineKeyboardButton(text=f"Sync sources: {_sync_flag_label(card.sync_sources)}", callback_data=f"a:p:st:{card.product_id}:s"),
+                ],
+            ])
 
     rows.append([InlineKeyboardButton(text="🏠 Главная", callback_data="nav:home")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
