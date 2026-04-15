@@ -27,6 +27,20 @@ services:
       meilisearch:
         condition: service_started
 
+  reminder_scheduler:
+    build: .
+    command: python -m app.workers.reminder_scheduler
+    env_file:
+      - .env
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
+
   postgres:
     image: postgres:16-alpine
     environment:

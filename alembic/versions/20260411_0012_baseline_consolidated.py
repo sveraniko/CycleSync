@@ -515,6 +515,7 @@ def upgrade() -> None:
     # from 20260409_0002_compound_catalog_foundation.py
     op.create_table(
         "brands",
+        sa.Column("product_key", sa.String(length=128), nullable=True),
         sa.Column("display_name", sa.String(length=255), nullable=False),
         sa.Column("normalized_name", sa.String(length=255), nullable=False),
         sa.Column("source", sa.String(length=64), nullable=False),
@@ -559,6 +560,10 @@ def upgrade() -> None:
         sa.Column("sync_videos", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("sync_sources", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("authenticity_notes", sa.Text(), nullable=True),
+        sa.Column("max_injection_volume_ml", sa.Numeric(precision=10, scale=3), nullable=True),
+        sa.Column("is_automatable", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column("pharmacology_notes", sa.Text(), nullable=True),
+        sa.Column("composition_basis_notes", sa.Text(), nullable=True),
         sa.Column("source", sa.String(length=64), nullable=False),
         sa.Column("source_ref", sa.String(length=255), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
@@ -876,53 +881,6 @@ def upgrade() -> None:
         schema="protocols",
     )
     # from 20260409_0005_wave2_pr1_pulse_prep_foundation.py
-    op.add_column(
-        "compound_products",
-        sa.Column("max_injection_volume_ml", sa.Numeric(precision=10, scale=3), nullable=True),
-        schema="compound_catalog",
-    )
-    op.add_column(
-        "compound_products",
-        sa.Column("is_automatable", sa.Boolean(), nullable=False, server_default=sa.text("true")),
-        schema="compound_catalog",
-    )
-    op.add_column(
-        "compound_products",
-        sa.Column("pharmacology_notes", sa.Text(), nullable=True),
-        schema="compound_catalog",
-    )
-    op.add_column(
-        "compound_products",
-        sa.Column("composition_basis_notes", sa.Text(), nullable=True),
-        schema="compound_catalog",
-    )
-    
-    op.add_column(
-        "compound_ingredients",
-        sa.Column("half_life_days", sa.Numeric(precision=8, scale=3), nullable=True),
-        schema="compound_catalog",
-    )
-    op.add_column(
-        "compound_ingredients",
-        sa.Column("dose_guidance_min_mg_week", sa.Numeric(precision=12, scale=4), nullable=True),
-        schema="compound_catalog",
-    )
-    op.add_column(
-        "compound_ingredients",
-        sa.Column("dose_guidance_max_mg_week", sa.Numeric(precision=12, scale=4), nullable=True),
-        schema="compound_catalog",
-    )
-    op.add_column(
-        "compound_ingredients",
-        sa.Column("dose_guidance_typical_mg_week", sa.Numeric(precision=12, scale=4), nullable=True),
-        schema="compound_catalog",
-    )
-    op.add_column(
-        "compound_ingredients",
-        sa.Column("is_pulse_driver", sa.Boolean(), nullable=True),
-        schema="compound_catalog",
-    )
-    
     op.create_table(
         "protocol_draft_settings",
         sa.Column("draft_id", postgresql.UUID(as_uuid=True), nullable=False),

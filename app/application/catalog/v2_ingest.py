@@ -275,4 +275,4 @@ class CatalogIngestServiceV2(CatalogIngestService):
         if issues:
             messages = "; ".join(issue.message for issue in issues[:5])
             raise ValueError(f"V2 workbook validation failed: {messages}")
-        return await super().run_from_products(products)
+        return await CatalogIngestService.run_from_products(self, products)
